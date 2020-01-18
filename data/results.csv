@@ -1,0 +1,1297 @@
+,forename,surname,year,name,driver_effect,cy_effect
+581,Jim,Clark,1968,Lotus-Ford,-0.866312,-0.37849942
+576,Jim,Clark,1963,Lotus-Climax,-0.866312,-0.27233148
+578,Jim,Clark,1965,Lotus-Climax,-0.866312,-0.18096796
+575,Jim,Clark,1962,Lotus-Climax,-0.866312,-0.13354407
+577,Jim,Clark,1964,Lotus-Climax,-0.866312,-0.08875721
+574,Jim,Clark,1961,Lotus-Climax,-0.866312,-0.054153487
+580,Jim,Clark,1967,Lotus-Ford,-0.866312,-0.04743874
+573,Jim,Clark,1960,Team Lotus,-0.866312,0.042577058
+579,Jim,Clark,1966,Lotus-BRM,-0.866312,0.2661812
+73,Ayrton,Senna,1988,McLaren,-0.6711581,-0.36588854
+75,Ayrton,Senna,1990,McLaren,-0.6711581,-0.33411533
+76,Ayrton,Senna,1991,McLaren,-0.6711581,-0.28297505
+74,Ayrton,Senna,1989,McLaren,-0.6711581,-0.15776668
+72,Ayrton,Senna,1987,Team Lotus,-0.6711581,0.012199455
+78,Ayrton,Senna,1993,McLaren,-0.6711581,0.044885203
+77,Ayrton,Senna,1992,McLaren,-0.6711581,0.09759892
+69,Ayrton,Senna,1984,Toleman,-0.6711581,0.13727583
+71,Ayrton,Senna,1986,Team Lotus,-0.6711581,0.15895317
+70,Ayrton,Senna,1985,Team Lotus,-0.6711581,0.17857799
+761,Lewis,Hamilton,2014,Mercedes,-0.6421175,-1.0205126
+762,Lewis,Hamilton,2015,Mercedes,-0.6421175,-0.79886436
+763,Lewis,Hamilton,2016,Mercedes,-0.6421175,-0.7056354
+766,Lewis,Hamilton,2019,Mercedes,-0.6421175,-0.6821665
+764,Lewis,Hamilton,2017,Mercedes,-0.6421175,-0.6365984
+765,Lewis,Hamilton,2018,Mercedes,-0.6421175,-0.5233169
+757,Lewis,Hamilton,2010,McLaren,-0.6421175,-0.5020387
+754,Lewis,Hamilton,2007,McLaren,-0.6421175,-0.4169738
+759,Lewis,Hamilton,2012,McLaren,-0.6421175,-0.38233313
+755,Lewis,Hamilton,2008,McLaren,-0.6421175,-0.3752496
+758,Lewis,Hamilton,2011,McLaren,-0.6421175,-0.25651735
+756,Lewis,Hamilton,2009,McLaren,-0.6421175,-0.22048645
+760,Lewis,Hamilton,2013,Mercedes,-0.6421175,-0.08844342
+502,James,Hunt,1977,McLaren,-0.6386398,-0.42940655
+501,James,Hunt,1976,McLaren,-0.6386398,-0.23111007
+500,James,Hunt,1975,Hesketh,-0.6386398,-0.072063394
+498,James,Hunt,1973,March,-0.6386398,0.11874463
+503,James,Hunt,1978,McLaren,-0.6386398,0.118836254
+499,James,Hunt,1974,Hesketh,-0.6386398,0.19446512
+33,Alberto,Ascari,1952,Ferrari,-0.6369613,-0.1208008
+34,Alberto,Ascari,1953,Ferrari,-0.6369613,-0.048015893
+32,Alberto,Ascari,1951,Ferrari,-0.6369613,0.11073803
+861,Michael,Schumacher,2004,Ferrari,-0.6286975,-0.7861282
+859,Michael,Schumacher,2002,Ferrari,-0.6286975,-0.7425019
+863,Michael,Schumacher,2006,Ferrari,-0.6286975,-0.5684506
+856,Michael,Schumacher,1999,Ferrari,-0.6286975,-0.5358789
+857,Michael,Schumacher,2000,Ferrari,-0.6286975,-0.5154091
+858,Michael,Schumacher,2001,Ferrari,-0.6286975,-0.48244908
+854,Michael,Schumacher,1997,Ferrari,-0.6286975,-0.37462708
+851,Michael,Schumacher,1994,Benetton,-0.6286975,-0.3565965
+855,Michael,Schumacher,1998,Ferrari,-0.6286975,-0.35258123
+852,Michael,Schumacher,1995,Benetton,-0.6286975,-0.35022008
+860,Michael,Schumacher,2003,Ferrari,-0.6286975,-0.317806
+853,Michael,Schumacher,1996,Ferrari,-0.6286975,-0.23993753
+849,Michael,Schumacher,1992,Benetton,-0.6286975,0.097054854
+848,Michael,Schumacher,1991,Benetton,-0.6286975,0.12307964
+850,Michael,Schumacher,1993,Benetton,-0.6286975,0.19338377
+864,Michael,Schumacher,2010,Mercedes,-0.6286975,0.2921233
+866,Michael,Schumacher,2012,Mercedes,-0.6286975,0.32219088
+862,Michael,Schumacher,2005,Ferrari,-0.6286975,0.33427426
+865,Michael,Schumacher,2011,Mercedes,-0.6286975,0.50145465
+1188,Sebastian,Vettel,2013,Red Bull,-0.6261723,-0.9279927
+1184,Sebastian,Vettel,2009,Red Bull,-0.6261723,-0.7763174
+1186,Sebastian,Vettel,2011,Red Bull,-0.6261723,-0.6850007
+1187,Sebastian,Vettel,2012,Red Bull,-0.6261723,-0.61813504
+1185,Sebastian,Vettel,2010,Red Bull,-0.6261723,-0.533874
+1193,Sebastian,Vettel,2018,Ferrari,-0.6261723,-0.26338014
+1194,Sebastian,Vettel,2019,Ferrari,-0.6261723,-0.2598369
+1192,Sebastian,Vettel,2017,Ferrari,-0.6261723,-0.17420171
+1191,Sebastian,Vettel,2016,Ferrari,-0.6261723,-0.13766551
+1189,Sebastian,Vettel,2014,Red Bull,-0.6261723,-0.13259563
+1190,Sebastian,Vettel,2015,Ferrari,-0.6261723,-0.12205099
+1182,Sebastian,Vettel,2007,BMW Sauber,-0.6261723,0.098504856
+1183,Sebastian,Vettel,2008,Toro Rosso,-0.6261723,0.17908575
+19,Alain,Prost,1988,McLaren,-0.622851,-0.36588854
+23,Alain,Prost,1993,Williams,-0.622851,-0.29789698
+15,Alain,Prost,1984,McLaren,-0.622851,-0.2475154
+13,Alain,Prost,1982,Renault,-0.622851,-0.19935043
+14,Alain,Prost,1983,Renault,-0.622851,-0.18269973
+21,Alain,Prost,1990,Ferrari,-0.622851,-0.18190828
+20,Alain,Prost,1989,McLaren,-0.622851,-0.15776668
+16,Alain,Prost,1985,McLaren,-0.622851,-0.15041706
+12,Alain,Prost,1981,Renault,-0.622851,-0.058978435
+22,Alain,Prost,1991,Ferrari,-0.622851,0.13248889
+18,Alain,Prost,1987,McLaren,-0.622851,0.14550866
+17,Alain,Prost,1986,McLaren,-0.622851,0.26709777
+11,Alain,Prost,1980,McLaren,-0.622851,0.45753002
+312,Fernando,Alonso,2005,Renault,-0.6206117,-0.5720567
+313,Fernando,Alonso,2006,Renault,-0.6206117,-0.4731335
+314,Fernando,Alonso,2007,McLaren,-0.6206117,-0.4169738
+319,Fernando,Alonso,2012,Ferrari,-0.6206117,-0.41650778
+317,Fernando,Alonso,2010,Ferrari,-0.6206117,-0.33934775
+320,Fernando,Alonso,2013,Ferrari,-0.6206117,-0.21754616
+318,Fernando,Alonso,2011,Ferrari,-0.6206117,-0.116784126
+315,Fernando,Alonso,2008,Renault,-0.6206117,0.06861128
+311,Fernando,Alonso,2004,Renault,-0.6206117,0.21359192
+310,Fernando,Alonso,2003,Renault,-0.6206117,0.24595754
+325,Fernando,Alonso,2018,McLaren,-0.6206117,0.28191832
+316,Fernando,Alonso,2009,Renault,-0.6206117,0.4091143
+322,Fernando,Alonso,2015,McLaren,-0.6206117,0.43085712
+321,Fernando,Alonso,2014,Ferrari,-0.6206117,0.45603842
+324,Fernando,Alonso,2017,McLaren,-0.6206117,0.56243664
+323,Fernando,Alonso,2016,McLaren,-0.6206117,0.76160145
+1214,Stirling,Moss,1955,Mercedes,-0.5774897,-0.31878224
+1216,Stirling,Moss,1957,Vanwall,-0.5774897,-0.17468062
+1217,Stirling,Moss,1958,Cooper,-0.5774897,-0.15891004
+1220,Stirling,Moss,1961,Lotus-Climax,-0.5774897,-0.054153487
+1218,Stirling,Moss,1959,BRM,-0.5774897,-0.04135137
+1219,Stirling,Moss,1960,Team Lotus,-0.5774897,0.042577058
+1215,Stirling,Moss,1956,Maserati,-0.5774897,0.07551641
+971,Niki,Lauda,1978,Brabham,-0.575558,-0.31606337
+975,Niki,Lauda,1984,McLaren,-0.575558,-0.2475154
+974,Niki,Lauda,1983,McLaren,-0.575558,-0.22945885
+967,Niki,Lauda,1974,Ferrari,-0.575558,-0.17921181
+968,Niki,Lauda,1975,Ferrari,-0.575558,-0.15350322
+976,Niki,Lauda,1985,McLaren,-0.575558,-0.15041706
+969,Niki,Lauda,1976,Ferrari,-0.575558,-0.106082045
+973,Niki,Lauda,1982,McLaren,-0.575558,0.0087045515
+970,Niki,Lauda,1977,Ferrari,-0.575558,0.020091789
+972,Niki,Lauda,1979,Brabham-Alfa Romeo,-0.575558,0.08806927
+966,Niki,Lauda,1973,BRM,-0.575558,0.42009813
+464,Jackie,Stewart,1971,Tyrrell,-0.5528906,-0.5715505
+466,Jackie,Stewart,1973,Tyrrell,-0.5528906,-0.2974073
+465,Jackie,Stewart,1972,Tyrrell,-0.5528906,-0.2951003
+461,Jackie,Stewart,1968,Matra-Ford,-0.5528906,-0.27884272
+462,Jackie,Stewart,1969,Matra-Ford,-0.5528906,-0.14334005
+458,Jackie,Stewart,1965,BRM,-0.5528906,-0.012829073
+459,Jackie,Stewart,1966,BRM,-0.5528906,0.029712439
+460,Jackie,Stewart,1967,BRM,-0.5528906,0.03430448
+463,Jackie,Stewart,1970,March,-0.5528906,0.3015385
+693,Juan,Fangio,1955,Mercedes,-0.5520478,-0.31878224
+692,Juan,Fangio,1954,Mercedes,-0.5520478,-0.24618079
+690,Juan,Fangio,1951,Alfa Romeo,-0.5520478,-0.19972236
+694,Juan,Fangio,1956,Ferrari,-0.5520478,-0.17940538
+689,Juan,Fangio,1950,Alfa Romeo,-0.5520478,-0.17663632
+695,Juan,Fangio,1957,Maserati,-0.5520478,-0.039709345
+691,Juan,Fangio,1953,Maserati,-0.5520478,-0.010831035
+696,Juan,Fangio,1958,Maserati,-0.5520478,0.21275257
+963,Nigel,Mansell,1991,Williams,-0.5268953,-0.63909835
+964,Nigel,Mansell,1992,Williams,-0.5268953,-0.543044
+965,Nigel,Mansell,1994,Williams,-0.5268953,-0.5318146
+959,Nigel,Mansell,1987,Williams,-0.5268953,-0.37230936
+961,Nigel,Mansell,1989,Ferrari,-0.5268953,-0.28198043
+962,Nigel,Mansell,1990,Ferrari,-0.5268953,-0.18190828
+958,Nigel,Mansell,1986,Williams,-0.5268953,-0.1595269
+954,Nigel,Mansell,1982,Team Lotus,-0.5268953,-0.074867904
+957,Nigel,Mansell,1985,Williams,-0.5268953,-0.05526089
+953,Nigel,Mansell,1981,Team Lotus,-0.5268953,-0.05245302
+960,Nigel,Mansell,1988,Williams,-0.5268953,0.068464644
+955,Nigel,Mansell,1983,Team Lotus,-0.5268953,0.27950445
+956,Nigel,Mansell,1984,Team Lotus,-0.5268953,0.36969492
+175,Dan,Gurney,1964,Brabham-Climax,-0.51935786,-0.2565937
+177,Dan,Gurney,1967,Eagle-Weslake,-0.51935786,-0.2422117
+172,Dan,Gurney,1961,Porsche,-0.51935786,-0.06269931
+173,Dan,Gurney,1962,Porsche,-0.51935786,-0.039236702
+179,Dan,Gurney,1970,McLaren-Ford,-0.51935786,-0.0029842837
+171,Dan,Gurney,1959,Ferrari,-0.51935786,0.008525834
+176,Dan,Gurney,1965,Brabham-Climax,-0.51935786,0.08952766
+178,Dan,Gurney,1968,Eagle-Weslake,-0.51935786,0.1541728
+174,Dan,Gurney,1963,Brabham,-0.51935786,0.4312801
+948,Nico,Rosberg,2014,Mercedes,-0.46470305,-1.0205126
+949,Nico,Rosberg,2015,Mercedes,-0.46470305,-0.79886436
+950,Nico,Rosberg,2016,Mercedes,-0.46470305,-0.7056354
+947,Nico,Rosberg,2013,Mercedes,-0.46470305,-0.08844342
+943,Nico,Rosberg,2009,Williams,-0.46470305,0.24461861
+944,Nico,Rosberg,2010,Mercedes,-0.46470305,0.2921233
+942,Nico,Rosberg,2008,Williams,-0.46470305,0.30047107
+946,Nico,Rosberg,2012,Mercedes,-0.46470305,0.32219088
+941,Nico,Rosberg,2007,Williams,-0.46470305,0.46373925
+940,Nico,Rosberg,2006,Williams,-0.46470305,0.4731817
+945,Nico,Rosberg,2011,Mercedes,-0.46470305,0.50145465
+121,Carlos,Reutemann,1974,Brabham,-0.4565343,-0.26390183
+127,Carlos,Reutemann,1980,Williams,-0.4565343,-0.24291676
+122,Carlos,Reutemann,1975,Brabham,-0.4565343,-0.23549439
+128,Carlos,Reutemann,1981,Williams,-0.4565343,-0.1909917
+123,Carlos,Reutemann,1976,Ferrari,-0.4565343,-0.106082045
+125,Carlos,Reutemann,1978,Ferrari,-0.4565343,-0.0015725872
+124,Carlos,Reutemann,1977,Ferrari,-0.4565343,0.020091789
+129,Carlos,Reutemann,1982,Williams,-0.4565343,0.13130519
+120,Carlos,Reutemann,1973,Brabham,-0.4565343,0.15441635
+126,Carlos,Reutemann,1979,Team Lotus,-0.4565343,0.27268347
+119,Carlos,Reutemann,1972,Brabham,-0.4565343,0.32731205
+736,Kimi,Räikkönen,2007,Ferrari,-0.45321202,-0.8109601
+737,Kimi,Räikkönen,2008,Ferrari,-0.45321202,-0.7751373
+734,Kimi,Räikkönen,2005,McLaren,-0.45321202,-0.5517001
+740,Kimi,Räikkönen,2013,Lotus F1,-0.45321202,-0.4355868
+739,Kimi,Räikkönen,2012,Lotus F1,-0.45321202,-0.340253
+745,Kimi,Räikkönen,2018,Ferrari,-0.45321202,-0.26338014
+732,Kimi,Räikkönen,2003,McLaren,-0.45321202,-0.23553948
+735,Kimi,Räikkönen,2006,McLaren,-0.45321202,-0.17465092
+744,Kimi,Räikkönen,2017,Ferrari,-0.45321202,-0.17420171
+743,Kimi,Räikkönen,2016,Ferrari,-0.45321202,-0.13766551
+733,Kimi,Räikkönen,2004,McLaren,-0.45321202,-0.13132776
+742,Kimi,Räikkönen,2015,Ferrari,-0.45321202,-0.12205099
+731,Kimi,Räikkönen,2002,McLaren,-0.45321202,-0.01029672
+738,Kimi,Räikkönen,2009,Ferrari,-0.45321202,0.077375345
+741,Kimi,Räikkönen,2014,Ferrari,-0.45321202,0.45603842
+746,Kimi,Räikkönen,2019,Alfa Romeo,-0.45321202,0.4663137
+730,Kimi,Räikkönen,2001,Sauber,-0.45321202,0.52451736
+1263,Troy,Ruttman,1952,Kuzma,-0.45199016,-0.14613034
+1264,Troy,Ruttman,1954,Kurtis Kraft,-0.45199016,-0.10020306
+588,Jim,Rathmann,1960,Watson,-0.4329949,-0.48821193
+585,Jim,Rathmann,1957,Epperly,-0.4329949,-0.4652828
+586,Jim,Rathmann,1958,Epperly,-0.4329949,-0.3647708
+587,Jim,Rathmann,1959,Watson,-0.4329949,-0.3343041
+584,Jim,Rathmann,1953,Kurtis Kraft,-0.4329949,-0.17903051
+583,Jim,Rathmann,1952,Kurtis Kraft,-0.4329949,-0.13910511
+84,Bill,Vukovich,1953,Kurtis Kraft,-0.4319073,-0.17903051
+85,Bill,Vukovich,1954,Kurtis Kraft,-0.4319073,-0.10020306
+28,Alan,Jones,1979,Williams,-0.40847713,-0.26674432
+29,Alan,Jones,1980,Williams,-0.40847713,-0.24291676
+30,Alan,Jones,1981,Williams,-0.40847713,-0.1909917
+24,Alan,Jones,1975,Embassy Hill,-0.40847713,-0.0360103
+27,Alan,Jones,1978,Williams,-0.40847713,0.1423704
+25,Alan,Jones,1976,Surtees,-0.40847713,0.16255842
+26,Alan,Jones,1977,Shadow,-0.40847713,0.24692057
+846,Max,Verstappen,2018,Red Bull,-0.40056753,-0.43372142
+847,Max,Verstappen,2019,Red Bull,-0.40056753,-0.34034708
+845,Max,Verstappen,2017,Red Bull,-0.40056753,-0.26868942
+843,Max,Verstappen,2015,Toro Rosso,-0.40056753,0.33125973
+844,Max,Verstappen,2016,Toro Rosso,-0.40056753,0.39439937
+1150,Ronnie,Peterson,1978,Team Lotus,-0.39857426,-0.3844075
+1145,Ronnie,Peterson,1973,Team Lotus,-0.39857426,-0.3809076
+1146,Ronnie,Peterson,1974,Team Lotus,-0.39857426,-0.312403
+1143,Ronnie,Peterson,1971,March-Ford,-0.39857426,0.05090759
+1144,Ronnie,Peterson,1972,March,-0.39857426,0.1749812
+1148,Ronnie,Peterson,1976,March,-0.39857426,0.20983477
+1149,Ronnie,Peterson,1977,Tyrrell,-0.39857426,0.22072253
+1147,Ronnie,Peterson,1975,Team Lotus,-0.39857426,0.38545415
+805,Mario,Andretti,1982,Ferrari,-0.37896803,-0.50980306
+801,Mario,Andretti,1978,Team Lotus,-0.37896803,-0.3844075
+796,Mario,Andretti,1971,Ferrari,-0.37896803,-0.24661095
+800,Mario,Andretti,1977,Team Lotus,-0.37896803,-0.23847105
+799,Mario,Andretti,1976,Team Lotus,-0.37896803,-0.039299242
+798,Mario,Andretti,1975,Parnelli,-0.37896803,0.0761813
+797,Mario,Andretti,1972,Ferrari,-0.37896803,0.116394185
+803,Mario,Andretti,1980,Team Lotus,-0.37896803,0.17143632
+804,Mario,Andretti,1981,Alfa Romeo,-0.37896803,0.19771732
+802,Mario,Andretti,1979,Team Lotus,-0.37896803,0.27268347
+752,Lee,Wallard,1951,Kurtis Kraft,-0.36672205,-0.34975213
+633,Jody,Scheckter,1979,Ferrari,-0.3654011,-0.5596041
+631,Jody,Scheckter,1977,Wolf,-0.3654011,-0.404705
+630,Jody,Scheckter,1976,Tyrrell,-0.3654011,-0.110249534
+632,Jody,Scheckter,1978,Wolf,-0.3654011,0.0034383307
+629,Jody,Scheckter,1975,Tyrrell,-0.3654011,0.056364555
+628,Jody,Scheckter,1974,Tyrrell,-0.3654011,0.120325744
+593,Jimmy,Bryan,1958,Epperly,-0.34905505,-0.3647708
+591,Jimmy,Bryan,1954,Kuzma,-0.34905505,-0.1476821
+590,Jimmy,Bryan,1952,Kurtis Kraft,-0.34905505,-0.13910511
+592,Jimmy,Bryan,1957,Kuzma,-0.34905505,0.027077392
+1251,Tony,Bettenhausen,1958,Epperly,-0.34259772,-0.3647708
+1252,Tony,Bettenhausen,1959,Epperly,-0.34259772,-0.36208534
+1250,Tony,Bettenhausen,1955,Kurtis Kraft,-0.34259772,-0.16524643
+1255,Tony,Brooks,1958,Vanwall,-0.33462876,-0.56982434
+1254,Tony,Brooks,1957,Vanwall,-0.33462876,-0.17468062
+1256,Tony,Brooks,1959,Ferrari,-0.33462876,0.008525834
+1257,Tony,Brooks,1961,BRM,-0.33462876,0.3581884
+1177,Sam,Hanks,1957,Epperly,-0.33380488,-0.4652828
+1174,Sam,Hanks,1953,Kurtis Kraft,-0.33380488,-0.17903051
+1173,Sam,Hanks,1952,Kurtis Kraft,-0.33380488,-0.13910511
+1175,Sam,Hanks,1954,Kurtis Kraft,-0.33380488,-0.10020306
+1176,Sam,Hanks,1956,Kurtis Kraft,-0.33380488,-0.013629154
+884,Mika,Häkkinen,2000,McLaren,-0.32934085,-0.61365813
+882,Mika,Häkkinen,1998,McLaren,-0.32934085,-0.5901002
+883,Mika,Häkkinen,1999,McLaren,-0.32934085,-0.5135695
+885,Mika,Häkkinen,2001,McLaren,-0.32934085,-0.321747
+881,Mika,Häkkinen,1997,McLaren,-0.32934085,-0.09821446
+879,Mika,Häkkinen,1995,McLaren,-0.32934085,-0.095007956
+877,Mika,Häkkinen,1993,McLaren,-0.32934085,0.044885203
+876,Mika,Häkkinen,1992,Team Lotus,-0.32934085,0.24607827
+880,Mika,Häkkinen,1996,McLaren,-0.32934085,0.24640548
+878,Mika,Häkkinen,1994,McLaren,-0.32934085,0.36618572
+87,Bob,Sweikert,1955,Kurtis Kraft,-0.32228452,-0.16524643
+88,Bob,Sweikert,1956,Kuzma,-0.32228452,0.014758575
+701,Juan,Pablo Montoya,2005,McLaren,-0.3217576,-0.5517001
+697,Juan,Pablo Montoya,2001,Williams,-0.3217576,-0.42654544
+699,Juan,Pablo Montoya,2003,Williams,-0.3217576,-0.2289647
+702,Juan,Pablo Montoya,2006,McLaren,-0.3217576,-0.17465092
+698,Juan,Pablo Montoya,2002,Williams,-0.3217576,-0.046543874
+700,Juan,Pablo Montoya,2004,Williams,-0.3217576,0.13073207
+1022,Paul,Russo,1953,Kurtis Kraft,-0.31968924,-0.17903051
+1024,Paul,Russo,1955,Kurtis Kraft,-0.31968924,-0.16524643
+1023,Paul,Russo,1954,Kurtis Kraft,-0.31968924,-0.10020306
+1025,Paul,Russo,1957,Kurtis Kraft,-0.31968924,0.0506674
+1026,Paul,Russo,1959,Kurtis Kraft,-0.31968924,0.15748306
+897,Mike,Hawthorn,1953,Ferrari,-0.31446165,-0.048015893
+900,Mike,Hawthorn,1958,Ferrari,-0.31446165,-0.030945564
+898,Mike,Hawthorn,1954,Ferrari,-0.31446165,-0.0038711156
+899,Mike,Hawthorn,1957,Ferrari,-0.31446165,-0.00049004715
+564,Jenson,Button,2009,Brawn,-0.299711,-0.7366544
+565,Jenson,Button,2010,McLaren,-0.299711,-0.5020387
+567,Jenson,Button,2012,McLaren,-0.299711,-0.38233313
+566,Jenson,Button,2011,McLaren,-0.299711,-0.25651735
+559,Jenson,Button,2004,BAR,-0.299711,-0.14399277
+555,Jenson,Button,2000,Williams,-0.299711,-0.011664418
+560,Jenson,Button,2005,BAR,-0.299711,0.016718531
+561,Jenson,Button,2006,Honda,-0.299711,0.0520442
+556,Jenson,Button,2001,Benetton,-0.299711,0.089615256
+569,Jenson,Button,2014,McLaren,-0.299711,0.1487341
+568,Jenson,Button,2013,McLaren,-0.299711,0.16432558
+558,Jenson,Button,2003,BAR,-0.299711,0.37621382
+562,Jenson,Button,2007,Honda,-0.299711,0.39802152
+570,Jenson,Button,2015,McLaren,-0.299711,0.43085712
+557,Jenson,Button,2002,Renault,-0.299711,0.49262384
+563,Jenson,Button,2008,Honda,-0.299711,0.517256
+571,Jenson,Button,2016,McLaren,-0.299711,0.76160145
+677,Johnny,Thomson,1960,Lesovsky,-0.29121995,-0.13756482
+676,Johnny,Thomson,1959,Lesovsky,-0.29121995,-0.032792747
+675,Johnny,Thomson,1955,Kuzma,-0.29121995,0.05972984
+436,Jack,Brabham,1960,Cooper-Climax,-0.26953503,-0.33929873
+440,Jack,Brabham,1964,Brabham-Climax,-0.26953503,-0.2565937
+434,Jack,Brabham,1958,Cooper,-0.26953503,-0.15891004
+446,Jack,Brabham,1970,Brabham,-0.26953503,-0.12845196
+443,Jack,Brabham,1967,Brabham-Repco,-0.26953503,-0.09737327
+435,Jack,Brabham,1959,Cooper-Climax,-0.26953503,-0.0968986
+442,Jack,Brabham,1966,Brabham-Repco,-0.26953503,-0.044590756
+444,Jack,Brabham,1968,Brabham-Repco,-0.26953503,-0.019557167
+445,Jack,Brabham,1969,Brabham-Ford,-0.26953503,0.00743621
+441,Jack,Brabham,1965,Brabham-Climax,-0.26953503,0.08952766
+438,Jack,Brabham,1962,Brabham,-0.26953503,0.12758727
+437,Jack,Brabham,1961,Cooper-Climax,-0.26953503,0.31396878
+439,Jack,Brabham,1963,Brabham,-0.26953503,0.4312801
+385,Graham,Hill,1968,Lotus-Ford,-0.26838672,-0.37849942
+379,Graham,Hill,1962,BRM,-0.26838672,-0.3527449
+380,Graham,Hill,1963,BRM,-0.26838672,-0.13222253
+390,Graham,Hill,1974,Lola,-0.26838672,-0.06392099
+384,Graham,Hill,1967,Lotus-Ford,-0.26838672,-0.04743874
+382,Graham,Hill,1965,BRM,-0.26838672,-0.012829073
+386,Graham,Hill,1969,Lotus-Ford,-0.26838672,-0.00843075
+381,Graham,Hill,1964,BRM,-0.26838672,-0.0064035314
+387,Graham,Hill,1971,Brabham,-0.26838672,0.024919728
+383,Graham,Hill,1966,BRM,-0.26838672,0.029712439
+377,Graham,Hill,1960,BRM,-0.26838672,0.06547536
+389,Graham,Hill,1973,Shadow,-0.26838672,0.13947347
+388,Graham,Hill,1972,Brabham,-0.26838672,0.32731205
+378,Graham,Hill,1961,BRM,-0.26838672,0.3581884
+145,Chris,Amon,1972,Matra,-0.2666881,-0.059613816
+142,Chris,Amon,1969,Ferrari,-0.2666881,0.05665108
+140,Chris,Amon,1967,Ferrari,-0.2666881,0.09272244
+144,Chris,Amon,1971,Matra,-0.2666881,0.09494607
+141,Chris,Amon,1968,Ferrari,-0.2666881,0.14201835
+143,Chris,Amon,1970,March,-0.2666881,0.3015385
+186,Daniel,Ricciardo,2018,Red Bull,-0.26188898,-0.43372142
+184,Daniel,Ricciardo,2016,Red Bull,-0.26188898,-0.34098488
+185,Daniel,Ricciardo,2017,Red Bull,-0.26188898,-0.26868942
+183,Daniel,Ricciardo,2015,Red Bull,-0.26188898,-0.15040594
+182,Daniel,Ricciardo,2014,Red Bull,-0.26188898,-0.13259563
+187,Daniel,Ricciardo,2019,Renault,-0.26188898,0.269144
+181,Daniel,Ricciardo,2013,Toro Rosso,-0.26188898,0.3038438
+180,Daniel,Ricciardo,2012,Toro Rosso,-0.26188898,0.5461078
+774,Ludovico,Scarfiotti,1966,Ferrari,-0.2613466,-0.0004592325
+167,Damon,Hill,1996,Williams,-0.24238406,-0.893306
+165,Damon,Hill,1994,Williams,-0.24238406,-0.5318146
+164,Damon,Hill,1993,Williams,-0.24238406,-0.29789698
+170,Damon,Hill,1999,Jordan,-0.24238406,-0.1978309
+166,Damon,Hill,1995,Williams,-0.24238406,-0.06964312
+169,Damon,Hill,1998,Jordan,-0.24238406,-0.012889662
+168,Damon,Hill,1997,Arrows,-0.24238406,0.26104763
+240,Duane,Carter,1953,Kurtis Kraft,-0.24144539,-0.17903051
+239,Duane,Carter,1952,Lesovsky,-0.24144539,-0.16622654
+241,Duane,Carter,1954,Kurtis Kraft,-0.24144539,-0.10020306
+242,Duane,Carter,1959,Kurtis Kraft,-0.24144539,0.15748306
+243,Duane,Carter,1960,Kuzma,-0.24144539,0.39100415
+1123,Roberto,Moreno,1990,Benetton,-0.24125229,0.049348466
+1124,Roberto,Moreno,1991,Benetton,-0.24125229,0.12307964
+627,Jochen,Rindt,1970,Team Lotus,-0.23994721,-0.3110456
+623,Jochen,Rindt,1966,Cooper-Maserati,-0.23994721,-0.2683276
+625,Jochen,Rindt,1968,Brabham-Repco,-0.23994721,-0.019557167
+626,Jochen,Rindt,1969,Lotus-Ford,-0.23994721,-0.00843075
+622,Jochen,Rindt,1965,Cooper-Climax,-0.23994721,0.014304113
+624,Jochen,Rindt,1967,Cooper-Maserati,-0.23994721,0.12112554
+115,Carlos,Pace,1974,Brabham,-0.23946536,-0.26390183
+116,Carlos,Pace,1975,Brabham,-0.23946536,-0.23549439
+118,Carlos,Pace,1977,Brabham,-0.23946536,-0.15553285
+117,Carlos,Pace,1976,Brabham-Alfa Romeo,-0.23946536,-0.120585926
+114,Carlos,Pace,1973,Surtees,-0.23946536,0.051402494
+137,Charles,Leclerc,2019,Ferrari,-0.22417015,-0.2598369
+136,Charles,Leclerc,2018,Sauber,-0.22417015,0.4518737
+1291,Wolfgang,von Trips,1961,Ferrari,-0.21803516,-0.71048117
+1289,Wolfgang,von Trips,1958,Ferrari,-0.21803516,-0.030945564
+1290,Wolfgang,von Trips,1960,Ferrari,-0.21803516,0.01981135
+901,Mike,Nazaruk,1951,Kurtis Kraft,-0.21297681,-0.34975213
+902,Mike,Nazaruk,1954,Kurtis Kraft,-0.21297681,-0.10020306
+639,John,Surtees,1962,Lola,-0.20338395,-0.2775326
+644,John,Surtees,1967,Honda,-0.20338395,-0.098938696
+641,John,Surtees,1964,Ferrari,-0.20338395,-0.075136356
+640,John,Surtees,1963,Ferrari,-0.20338395,-0.033805735
+643,John,Surtees,1966,Ferrari,-0.20338395,-0.0004592325
+637,John,Surtees,1960,Team Lotus,-0.20338395,0.042577058
+642,John,Surtees,1965,Ferrari,-0.20338395,0.0819446
+646,John,Surtees,1971,Surtees,-0.20338395,0.12788285
+645,John,Surtees,1968,Honda,-0.20338395,0.22691908
+638,John,Surtees,1961,Cooper-Climax,-0.20338395,0.31396878
+327,François,Cevert,1971,Tyrrell,-0.20243905,-0.5715505
+329,François,Cevert,1973,Tyrrell,-0.20243905,-0.2974073
+328,François,Cevert,1972,Tyrrell,-0.20243905,-0.2951003
+326,François,Cevert,1970,March,-0.20243905,0.3015385
+1020,Paul,Goldsmith,1959,Epperly,-0.19777547,-0.36208534
+1021,Paul,Goldsmith,1960,Epperly,-0.19777547,0.043256015
+469,Jacky,Ickx,1970,Ferrari,-0.19638945,-0.5339318
+473,Jacky,Ickx,1974,Team Lotus,-0.19638945,-0.312403
+470,Jacky,Ickx,1971,Ferrari,-0.19638945,-0.24661095
+472,Jacky,Ickx,1973,McLaren,-0.19638945,-0.16120835
+468,Jacky,Ickx,1969,Brabham-Ford,-0.19638945,0.00743621
+471,Jacky,Ickx,1972,Ferrari,-0.19638945,0.116394185
+467,Jacky,Ickx,1968,Ferrari,-0.19638945,0.14201835
+475,Jacky,Ickx,1976,Ensign,-0.19638945,0.25631192
+474,Jacky,Ickx,1975,Team Lotus,-0.19638945,0.38545415
+1272,Valtteri,Bottas,2019,Mercedes,-0.19473892,-0.6821665
+1270,Valtteri,Bottas,2017,Mercedes,-0.19473892,-0.6365984
+1271,Valtteri,Bottas,2018,Mercedes,-0.19473892,-0.5233169
+1267,Valtteri,Bottas,2014,Williams,-0.19473892,-0.26165637
+1268,Valtteri,Bottas,2015,Williams,-0.19473892,0.147978
+1269,Valtteri,Bottas,2016,Williams,-0.19473892,0.3982098
+1266,Valtteri,Bottas,2013,Williams,-0.19473892,0.5330746
+199,David,Coulthard,2000,McLaren,-0.18682638,-0.61365813
+197,David,Coulthard,1998,McLaren,-0.18682638,-0.5901002
+193,David,Coulthard,1994,Williams,-0.18682638,-0.5318146
+198,David,Coulthard,1999,McLaren,-0.18682638,-0.5135695
+200,David,Coulthard,2001,McLaren,-0.18682638,-0.321747
+202,David,Coulthard,2003,McLaren,-0.18682638,-0.23553948
+203,David,Coulthard,2004,McLaren,-0.18682638,-0.13132776
+196,David,Coulthard,1997,McLaren,-0.18682638,-0.09821446
+194,David,Coulthard,1995,Williams,-0.18682638,-0.06964312
+201,David,Coulthard,2002,McLaren,-0.18682638,-0.01029672
+204,David,Coulthard,2005,Red Bull,-0.18682638,0.0624223
+195,David,Coulthard,1996,McLaren,-0.18682638,0.24640548
+205,David,Coulthard,2006,Red Bull,-0.18682638,0.34651712
+206,David,Coulthard,2007,Red Bull,-0.18682638,0.3829923
+207,David,Coulthard,2008,Red Bull,-0.18682638,0.38442445
+1118,Robert,Kubica,2008,BMW Sauber,-0.18400146,-0.48536623
+1120,Robert,Kubica,2010,Renault,-0.18400146,-0.07726145
+1119,Robert,Kubica,2009,BMW Sauber,-0.18400146,0.024734221
+1117,Robert,Kubica,2007,BMW Sauber,-0.18400146,0.098504856
+1121,Robert,Kubica,2019,Williams,-0.18400146,0.183495
+1116,Robert,Kubica,2006,BMW Sauber,-0.18400146,0.4137992
+237,Don,Freeland,1958,Phillips,-0.18068253,-0.17867199
+235,Don,Freeland,1954,Phillips,-0.18068253,-0.16697782
+236,Don,Freeland,1956,Phillips,-0.18068253,-0.067419514
+665,Johnny,Boyd,1959,Epperly,-0.16984792,-0.36208534
+663,Johnny,Boyd,1957,Kurtis Kraft,-0.16984792,0.0506674
+664,Johnny,Boyd,1958,Kurtis Kraft,-0.16984792,0.17140338
+335,George,Amick,1958,Epperly,-0.16402142,-0.3647708
+1011,Patrick,Depailler,1979,Ligier,-0.15941013,-0.22769852
+1008,Patrick,Depailler,1976,Tyrrell,-0.15941013,-0.110249534
+1010,Patrick,Depailler,1978,Tyrrell,-0.15941013,-0.028239202
+1007,Patrick,Depailler,1975,Tyrrell,-0.15941013,0.056364555
+1006,Patrick,Depailler,1974,Tyrrell,-0.15941013,0.120325744
+1009,Patrick,Depailler,1977,Tyrrell,-0.15941013,0.22072253
+836,Maurice,Trintignant,1960,Cooper-Climax,-0.15541552,-0.33929873
+834,Maurice,Trintignant,1958,Cooper,-0.15541552,-0.15891004
+835,Maurice,Trintignant,1959,Cooper-Climax,-0.15541552,-0.0968986
+832,Maurice,Trintignant,1954,Ferrari,-0.15541552,-0.0038711156
+833,Maurice,Trintignant,1955,Ferrari,-0.15541552,0.017064529
+275,Emerson,Fittipaldi,1972,Team Lotus,-0.15357777,-0.63955134
+278,Emerson,Fittipaldi,1975,McLaren,-0.15357777,-0.5823536
+276,Emerson,Fittipaldi,1973,Team Lotus,-0.15357777,-0.3809076
+273,Emerson,Fittipaldi,1970,Team Lotus,-0.15357777,-0.3110456
+277,Emerson,Fittipaldi,1974,McLaren,-0.15357777,-0.23114733
+281,Emerson,Fittipaldi,1978,Fittipaldi,-0.15357777,0.011901278
+274,Emerson,Fittipaldi,1971,Lotus-Ford,-0.15357777,0.01719613
+282,Emerson,Fittipaldi,1980,Fittipaldi,-0.15357777,0.122759074
+279,Emerson,Fittipaldi,1976,Fittipaldi,-0.15357777,0.18712494
+280,Emerson,Fittipaldi,1977,Fittipaldi,-0.15357777,0.4238014
+914,Nelson,Piquet,1987,Williams,-0.15344605,-0.37230936
+908,Nelson,Piquet,1981,Brabham,-0.15344605,-0.28154737
+910,Nelson,Piquet,1983,Brabham,-0.15344605,-0.26476955
+909,Nelson,Piquet,1982,Brabham,-0.15344605,-0.2613139
+911,Nelson,Piquet,1984,Brabham,-0.15344605,-0.24471912
+912,Nelson,Piquet,1985,Brabham,-0.15344605,-0.17733078
+913,Nelson,Piquet,1986,Williams,-0.15344605,-0.1595269
+907,Nelson,Piquet,1980,Brabham,-0.15344605,-0.114333555
+917,Nelson,Piquet,1990,Benetton,-0.15344605,0.049348466
+906,Nelson,Piquet,1978,McLaren,-0.15344605,0.118836254
+918,Nelson,Piquet,1991,Benetton,-0.15344605,0.12307964
+915,Nelson,Piquet,1988,Team Lotus,-0.15344605,0.32159683
+916,Nelson,Piquet,1989,Team Lotus,-0.15344605,0.53131706
+1048,Peter,Collins,1956,Ferrari,-0.14812344,-0.17940538
+1050,Peter,Collins,1958,Ferrari,-0.14812344,-0.030945564
+1049,Peter,Collins,1957,Ferrari,-0.14812344,-0.00049004715
+1127,Rodger,Ward,1960,Watson,-0.14648466,-0.48821193
+1126,Rodger,Ward,1959,Watson,-0.14648466,-0.3343041
+1125,Rodger,Ward,1956,Kurtis Kraft,-0.14648466,-0.013629154
+432,Ivan,Capelli,1990,Leyton House,-0.14495903,-0.020181844
+431,Ivan,Capelli,1988,March,-0.14495903,0.19065785
+433,Ivan,Capelli,1991,Leyton House,-0.14495903,0.35881191
+423,Howden,Ganley,1971,BRM,-0.14337896,-0.21831223
+424,Howden,Ganley,1972,BRM,-0.14337896,0.13920382
+1242,Tim,Schenken,1971,Brabham,-0.1298177,0.024919728
+1243,Tim,Schenken,1972,Surtees,-0.1298177,0.07561362
+1064,Piero,Taruffi,1955,Mercedes,-0.12859984,-0.31878224
+1063,Piero,Taruffi,1952,Ferrari,-0.12859984,-0.1208008
+1062,Piero,Taruffi,1951,Ferrari,-0.12859984,0.11073803
+330,Fred,Agabashian,1953,Kurtis Kraft,-0.12843195,-0.17903051
+331,Fred,Agabashian,1954,Kurtis Kraft,-0.12843195,-0.10020306
+685,José Froilán,González,1952,Maserati,-0.12725504,-0.01955094
+686,José Froilán,González,1953,Maserati,-0.12725504,-0.010831035
+687,José Froilán,González,1954,Ferrari,-0.12725504,-0.0038711156
+688,José Froilán,González,1955,Ferrari,-0.12725504,0.017064529
+684,José Froilán,González,1951,Ferrari,-0.12725504,0.11073803
+481,Jacques,Laffite,1980,Ligier,-0.12207466,-0.32884395
+480,Jacques,Laffite,1979,Ligier,-0.12207466,-0.22769852
+476,Jacques,Laffite,1975,Williams,-0.12207466,-0.19676326
+482,Jacques,Laffite,1981,Ligier,-0.12207466,-0.10195911
+477,Jacques,Laffite,1976,Ligier,-0.12207466,-0.08556978
+483,Jacques,Laffite,1983,Williams,-0.12207466,0.021625418
+484,Jacques,Laffite,1985,Ligier,-0.12207466,0.03075306
+478,Jacques,Laffite,1977,Ligier,-0.12207466,0.08365041
+479,Jacques,Laffite,1978,Ligier,-0.12207466,0.23330042
+485,Jacques,Laffite,1986,Ligier,-0.12207466,0.25395936
+62,Antônio,Pizzonia,2005,Williams,-0.116394676,-0.008829119
+61,Antônio,Pizzonia,2004,Williams,-0.116394676,0.13073207
+291,Eugenio,Castellotti,1956,Ferrari,-0.11531954,-0.17940538
+290,Eugenio,Castellotti,1955,Ferrari,-0.11531954,0.017064529
+822,Mark,Webber,2013,Red Bull,-0.113511525,-0.9279927
+818,Mark,Webber,2009,Red Bull,-0.113511525,-0.7763174
+820,Mark,Webber,2011,Red Bull,-0.113511525,-0.6850007
+821,Mark,Webber,2012,Red Bull,-0.113511525,-0.61813504
+819,Mark,Webber,2010,Red Bull,-0.113511525,-0.533874
+814,Mark,Webber,2005,Williams,-0.113511525,-0.008829119
+813,Mark,Webber,2004,Jaguar,-0.113511525,0.2302567
+816,Mark,Webber,2007,Red Bull,-0.113511525,0.3829923
+817,Mark,Webber,2008,Red Bull,-0.113511525,0.38442445
+815,Mark,Webber,2006,Williams,-0.113511525,0.4731817
+812,Mark,Webber,2003,Jaguar,-0.113511525,0.5043187
+896,Mike,Hailwood,1974,McLaren,-0.11346159,-0.23114733
+895,Mike,Hailwood,1973,Surtees,-0.11346159,0.051402494
+894,Mike,Hailwood,1972,Surtees,-0.11346159,0.07561362
+893,Mike,Hailwood,1971,Surtees,-0.11346159,0.12788285
+723,Keke,Rosberg,1985,Williams,-0.0986975,-0.05526089
+722,Keke,Rosberg,1984,Williams,-0.0986975,-0.021654649
+721,Keke,Rosberg,1983,Williams,-0.0986975,0.021625418
+719,Keke,Rosberg,1980,Fittipaldi,-0.0986975,0.122759074
+720,Keke,Rosberg,1982,Williams,-0.0986975,0.13130519
+724,Keke,Rosberg,1986,McLaren,-0.0986975,0.26709777
+1091,Ricardo,Rodríguez,1962,Ferrari,-0.0977926,0.21379413
+447,Jack,McGrath,1951,Kurtis Kraft,-0.09686115,-0.34975213
+449,Jack,McGrath,1953,Kurtis Kraft,-0.09686115,-0.17903051
+448,Jack,McGrath,1952,Kurtis Kraft,-0.09686115,-0.13910511
+450,Jack,McGrath,1954,Kurtis Kraft,-0.09686115,-0.10020306
+1258,Tony,Maggs,1962,Cooper-Climax,-0.095823616,0.008640836
+1259,Tony,Maggs,1963,Cooper-Climax,-0.095823616,0.17777725
+1249,Tom,Pryce,1976,Shadow,-0.09572873,-0.086234
+1247,Tom,Pryce,1974,Shadow,-0.09572873,-0.018433606
+1248,Tom,Pryce,1975,Shadow-Ford,-0.09572873,0.007399055
+1288,Wilson,Fittipaldi,1973,Brabham,-0.08745339,0.15441635
+1287,Wilson,Fittipaldi,1972,Brabham,-0.08745339,0.32731205
+430,Innes,Ireland,1961,Lotus-Climax,-0.08345668,-0.054153487
+429,Innes,Ireland,1960,Team Lotus,-0.08345668,0.042577058
+343,Gerhard,Berger,1990,McLaren,-0.08143806,-0.33411533
+350,Gerhard,Berger,1997,Benetton,-0.08143806,-0.28876442
+344,Gerhard,Berger,1991,McLaren,-0.08143806,-0.28297505
+342,Gerhard,Berger,1989,Ferrari,-0.08143806,-0.28198043
+339,Gerhard,Berger,1986,Benetton,-0.08143806,-0.13142927
+348,Gerhard,Berger,1995,Ferrari,-0.08143806,-0.121252604
+347,Gerhard,Berger,1994,Ferrari,-0.08143806,-0.11847239
+349,Gerhard,Berger,1996,Benetton,-0.08143806,-0.076883465
+341,Gerhard,Berger,1988,Ferrari,-0.08143806,0.07806983
+345,Gerhard,Berger,1992,McLaren,-0.08143806,0.09759892
+340,Gerhard,Berger,1987,Ferrari,-0.08143806,0.103442356
+346,Gerhard,Berger,1993,Ferrari,-0.08143806,0.3947494
+338,George,Russell,2019,Williams,-0.06811156,0.183495
+919,Nelson,Piquet Jr.,2008,Renault,-0.06677247,0.06861128
+920,Nelson,Piquet Jr.,2009,Renault,-0.06677247,0.4091143
+544,Jean-Pierre,Jabouille,1980,Renault,-0.060235087,-0.5232277
+543,Jean-Pierre,Jabouille,1979,Renault,-0.060235087,-0.22767997
+542,Jean-Pierre,Jabouille,1978,Renault,-0.060235087,-0.08501753
+541,Jean-Pierre,Jabouille,1975,Tyrrell,-0.060235087,0.056364555
+264,Edgar,Barth,1958,Porsche,-0.05521958,-0.04798406
+1073,Ralf,Schumacher,2001,Williams,-0.055126633,-0.42654544
+1075,Ralf,Schumacher,2003,Williams,-0.055126633,-0.2289647
+1071,Ralf,Schumacher,1999,Williams,-0.055126633,-0.19158207
+1074,Ralf,Schumacher,2002,Williams,-0.055126633,-0.046543874
+1069,Ralf,Schumacher,1997,Jordan,-0.055126633,-0.035171274
+1070,Ralf,Schumacher,1998,Jordan,-0.055126633,-0.012889662
+1072,Ralf,Schumacher,2000,Williams,-0.055126633,-0.011664418
+1077,Ralf,Schumacher,2005,Toyota,-0.055126633,0.041909635
+1076,Ralf,Schumacher,2004,Williams,-0.055126633,0.13073207
+1078,Ralf,Schumacher,2006,Toyota,-0.055126633,0.17139882
+1079,Ralf,Schumacher,2007,Toyota,-0.055126633,0.26451272
+35,Alessandro,Nannini,1988,Benetton,-0.05047241,0.04250035
+37,Alessandro,Nannini,1990,Benetton,-0.05047241,0.049348466
+36,Alessandro,Nannini,1989,Benetton,-0.05047241,0.08490678
+772,Louis,Rosier,1950,Talbot-Lago,-0.046009216,0.03862056
+238,Dorino,Serafini,1950,Ferrari,-0.043584377,-0.054955214
+411,Heinz-Harald,Frentzen,1997,Williams,-0.042942416,-0.77782536
+413,Heinz-Harald,Frentzen,1999,Jordan,-0.042942416,-0.1978309
+409,Heinz-Harald,Frentzen,1995,Sauber,-0.042942416,-0.07443016
+416,Heinz-Harald,Frentzen,2002,Arrows,-0.042942416,0.16910414
+417,Heinz-Harald,Frentzen,2003,Sauber,-0.042942416,0.17911276
+408,Heinz-Harald,Frentzen,1994,Sauber,-0.042942416,0.18850401
+414,Heinz-Harald,Frentzen,2000,Jordan,-0.042942416,0.21868737
+412,Heinz-Harald,Frentzen,1998,Williams,-0.042942416,0.22278367
+415,Heinz-Harald,Frentzen,2001,Jordan,-0.042942416,0.2744737
+410,Heinz-Harald,Frentzen,1996,Sauber,-0.042942416,0.4709058
+1058,Phil,Hill,1961,Ferrari,-0.04196931,-0.71048117
+1055,Phil,Hill,1958,Ferrari,-0.04196931,-0.030945564
+1056,Phil,Hill,1959,Ferrari,-0.04196931,0.008525834
+1057,Phil,Hill,1960,Ferrari,-0.04196931,0.01981135
+1059,Phil,Hill,1962,Ferrari,-0.04196931,0.21379413
+1222,Stoffel,Vandoorne,2018,McLaren,-0.03959195,0.28191832
+1221,Stoffel,Vandoorne,2017,McLaren,-0.03959195,0.56243664
+113,Carlos,Menditeguy,1960,Cooper-Maserati,-0.037766457,0.22361505
+163,Cristiano,da Matta,2003,Toyota,-0.037681952,0.15857029
+246,Eddie,Cheever,1983,Renault,-0.03739927,-0.18269973
+248,Eddie,Cheever,1988,Arrows,-0.03739927,-0.048560545
+245,Eddie,Cheever,1982,Ligier,-0.03739927,0.002474372
+244,Eddie,Cheever,1981,Tyrrell,-0.03739927,0.1473555
+247,Eddie,Cheever,1987,Arrows,-0.03739927,0.14792475
+249,Eddie,Cheever,1989,Arrows,-0.03739927,0.1603883
+785,Manny,Ayulo,1951,Kurtis Kraft,-0.034246758,-0.34975213
+297,Felipe,Massa,2007,Ferrari,-0.032886483,-0.8109601
+298,Felipe,Massa,2008,Ferrari,-0.032886483,-0.7751373
+296,Felipe,Massa,2006,Ferrari,-0.032886483,-0.5684506
+302,Felipe,Massa,2012,Ferrari,-0.032886483,-0.41650778
+300,Felipe,Massa,2010,Ferrari,-0.032886483,-0.33934775
+304,Felipe,Massa,2014,Williams,-0.032886483,-0.26165637
+303,Felipe,Massa,2013,Ferrari,-0.032886483,-0.21754616
+301,Felipe,Massa,2011,Ferrari,-0.032886483,-0.116784126
+299,Felipe,Massa,2009,Ferrari,-0.032886483,0.077375345
+305,Felipe,Massa,2015,Williams,-0.032886483,0.147978
+307,Felipe,Massa,2017,Williams,-0.032886483,0.2612399
+294,Felipe,Massa,2004,Sauber,-0.032886483,0.33460745
+293,Felipe,Massa,2002,Sauber,-0.032886483,0.3514868
+295,Felipe,Massa,2005,Sauber,-0.032886483,0.36004034
+306,Felipe,Massa,2016,Williams,-0.032886483,0.3982098
+260,Eddie,Johnson,1953,Kurtis Kraft,-0.03232083,-0.17903051
+263,Eddie,Johnson,1960,Trevis,-0.03232083,-0.06364521
+262,Eddie,Johnson,1959,Kurtis Kraft,-0.03232083,0.15748306
+261,Eddie,Johnson,1958,Kurtis Kraft,-0.03232083,0.17140338
+234,Don,Branson,1960,Phillips,-0.03068995,-0.09186321
+151,Clay,Regazzoni,1970,Ferrari,-0.02887489,-0.5339318
+159,Clay,Regazzoni,1979,Williams,-0.02887489,-0.26674432
+152,Clay,Regazzoni,1971,Ferrari,-0.02887489,-0.24661095
+155,Clay,Regazzoni,1974,Ferrari,-0.02887489,-0.17921181
+156,Clay,Regazzoni,1975,Ferrari,-0.02887489,-0.15350322
+157,Clay,Regazzoni,1976,Ferrari,-0.02887489,-0.106082045
+153,Clay,Regazzoni,1972,Ferrari,-0.02887489,0.116394185
+158,Clay,Regazzoni,1977,Ensign,-0.02887489,0.30607983
+154,Clay,Regazzoni,1973,BRM,-0.02887489,0.42009813
+1135,Romain,Grosjean,2013,Lotus F1,-0.028797183,-0.4355868
+1134,Romain,Grosjean,2012,Lotus F1,-0.028797183,-0.340253
+1141,Romain,Grosjean,2019,Haas F1 Team,-0.028797183,0.22112837
+1136,Romain,Grosjean,2014,Lotus F1,-0.028797183,0.30559814
+1137,Romain,Grosjean,2015,Lotus F1,-0.028797183,0.3085576
+1139,Romain,Grosjean,2017,Haas F1 Team,-0.028797183,0.34679043
+1140,Romain,Grosjean,2018,Haas F1 Team,-0.028797183,0.39440522
+1133,Romain,Grosjean,2009,Renault,-0.028797183,0.4091143
+1138,Romain,Grosjean,2016,Haas F1 Team,-0.028797183,0.42479268
+776,Luigi,Fagioli,1951,Alfa Romeo,-0.028180238,-0.19972236
+775,Luigi,Fagioli,1950,Alfa Romeo,-0.028180238,-0.17663632
+927,Nick,Heidfeld,2008,BMW Sauber,-0.026916632,-0.48536623
+930,Nick,Heidfeld,2011,Renault,-0.026916632,-0.06634864
+924,Nick,Heidfeld,2005,Williams,-0.026916632,-0.008829119
+928,Nick,Heidfeld,2009,BMW Sauber,-0.026916632,0.024734221
+926,Nick,Heidfeld,2007,BMW Sauber,-0.026916632,0.098504856
+929,Nick,Heidfeld,2010,Sauber,-0.026916632,0.1265634
+923,Nick,Heidfeld,2003,Sauber,-0.026916632,0.17911276
+922,Nick,Heidfeld,2002,Sauber,-0.026916632,0.3514868
+925,Nick,Heidfeld,2006,BMW Sauber,-0.026916632,0.4137992
+921,Nick,Heidfeld,2001,Sauber,-0.026916632,0.52451736
+651,John,Watson,1978,Brabham,-0.025698692,-0.31606337
+647,John,Watson,1974,Brabham,-0.025698692,-0.26390183
+656,John,Watson,1983,McLaren,-0.025698692,-0.22945885
+650,John,Watson,1977,Brabham,-0.025698692,-0.15553285
+654,John,Watson,1981,McLaren,-0.025698692,-0.08364154
+649,John,Watson,1976,Penske,-0.025698692,-0.06135163
+655,John,Watson,1982,McLaren,-0.025698692,0.0087045515
+648,John,Watson,1975,Surtees,-0.025698692,0.21177913
+652,John,Watson,1979,McLaren,-0.025698692,0.44152218
+653,John,Watson,1980,McLaren,-0.025698692,0.45753002
+1038,Pedro,Rodríguez,1971,BRM,-0.02544765,-0.21831223
+1036,Pedro,Rodríguez,1968,BRM,-0.02544765,0.007220166
+1037,Pedro,Rodríguez,1970,BRM,-0.02544765,0.019003594
+1035,Pedro,Rodríguez,1967,Cooper-Maserati,-0.02544765,0.12112554
+1286,Willy,Mairesse,1962,Ferrari,-0.023375113,0.21379413
+486,Jacques,Villeneuve,1996,Williams,-0.023113081,-0.893306
+487,Jacques,Villeneuve,1997,Williams,-0.023113081,-0.77782536
+490,Jacques,Villeneuve,2000,BAR,-0.023113081,0.15729378
+489,Jacques,Villeneuve,1999,BAR,-0.023113081,0.2227494
+488,Jacques,Villeneuve,1998,Williams,-0.023113081,0.22278367
+491,Jacques,Villeneuve,2001,BAR,-0.023113081,0.3192169
+492,Jacques,Villeneuve,2002,BAR,-0.023113081,0.31928623
+494,Jacques,Villeneuve,2005,Sauber,-0.023113081,0.36004034
+493,Jacques,Villeneuve,2003,BAR,-0.023113081,0.37621382
+495,Jacques,Villeneuve,2006,BMW Sauber,-0.023113081,0.4137992
+1051,Peter,Gethin,1971,BRM,-0.022424862,-0.21831223
+1052,Peter,Gethin,1972,BRM,-0.022424862,0.13920382
+98,Bruce,McLaren,1960,Cooper-Climax,-0.021848604,-0.33929873
+103,Bruce,McLaren,1968,McLaren-Ford,-0.021848604,-0.203696
+96,Bruce,McLaren,1958,Cooper,-0.021848604,-0.15891004
+104,Bruce,McLaren,1969,McLaren-Ford,-0.021848604,-0.12573202
+97,Bruce,McLaren,1959,Cooper-Climax,-0.021848604,-0.0968986
+100,Bruce,McLaren,1962,Cooper-Climax,-0.021848604,0.008640836
+102,Bruce,McLaren,1964,Cooper-Climax,-0.021848604,0.08005139
+101,Bruce,McLaren,1963,Cooper-Climax,-0.021848604,0.17777725
+99,Bruce,McLaren,1961,Cooper-Climax,-0.021848604,0.31396878
+1253,Tony,Brise,1975,Embassy Hill,-0.02175738,-0.0360103
+1285,Walt,Faulkner,1955,Kurtis Kraft,-0.02123185,-0.16524643
+373,Gilles,Villeneuve,1979,Ferrari,-0.020773884,-0.5596041
+376,Gilles,Villeneuve,1982,Ferrari,-0.020773884,-0.50980306
+372,Gilles,Villeneuve,1978,Ferrari,-0.020773884,-0.0015725872
+375,Gilles,Villeneuve,1981,Ferrari,-0.020773884,0.08912813
+374,Gilles,Villeneuve,1980,Ferrari,-0.020773884,0.26283017
+1208,Stefan,Johansson,1985,Ferrari,-0.018880935,-0.23073219
+1209,Stefan,Johansson,1986,Ferrari,-0.018880935,-0.042704
+1211,Stefan,Johansson,1989,Onyx,-0.018880935,0.018838715
+1210,Stefan,Johansson,1987,McLaren,-0.018880935,0.14550866
+215,Denny,Hulme,1972,McLaren,-0.017762132,-0.2640345
+217,Denny,Hulme,1974,McLaren,-0.017762132,-0.23114733
+211,Denny,Hulme,1968,McLaren-Ford,-0.017762132,-0.203696
+216,Denny,Hulme,1973,McLaren,-0.017762132,-0.16120835
+212,Denny,Hulme,1969,McLaren-Ford,-0.017762132,-0.12573202
+210,Denny,Hulme,1967,Brabham-Repco,-0.017762132,-0.09737327
+209,Denny,Hulme,1966,Brabham-Repco,-0.017762132,-0.044590756
+213,Denny,Hulme,1970,McLaren-Ford,-0.017762132,-0.0029842837
+208,Denny,Hulme,1965,Brabham-Climax,-0.017762132,0.08952766
+214,Denny,Hulme,1971,McLaren,-0.017762132,0.48451182
+572,Jerry,Hoyt,1954,Kurtis Kraft,-0.015446205,-0.10020306
+111,Cal,Niday,1954,Stevens,-0.009034774,0.051637366
+978,Nino,Farina,1951,Alfa Romeo,-0.008335541,-0.19972236
+977,Nino,Farina,1950,Alfa Romeo,-0.008335541,-0.17663632
+979,Nino,Farina,1952,Ferrari,-0.008335541,-0.1208008
+980,Nino,Farina,1953,Ferrari,-0.008335541,-0.048015893
+981,Nino,Farina,1954,Ferrari,-0.008335541,-0.0038711156
+982,Nino,Farina,1955,Ferrari,-0.008335541,0.017064529
+1207,Stefan,Bellof,1985,Tyrrell,-0.006302769,-0.008595106
+1053,Peter,Revson,1972,McLaren,-0.004145306,-0.2640345
+1054,Peter,Revson,1973,McLaren,-0.004145306,-0.16120835
+272,Emanuele,Pirro,1991,Dallara,-0.0014670639,-0.0524665
+1085,René,Arnoux,1980,Renault,0.0023209117,-0.5232277
+1088,René,Arnoux,1983,Ferrari,0.0023209117,-0.3913617
+1084,René,Arnoux,1979,Renault,0.0023209117,-0.22767997
+1087,René,Arnoux,1982,Renault,0.0023209117,-0.19935043
+1086,René,Arnoux,1981,Renault,0.0023209117,-0.058978435
+1089,René,Arnoux,1984,Ferrari,0.0023209117,0.13297229
+1090,René,Arnoux,1986,Ligier,0.0023209117,0.25395936
+86,Bob,Christie,1960,Kurtis Kraft,0.0029848241,0.100760505
+336,George,Connor,1952,Kurtis Kraft,0.004929333,-0.13910511
+59,Anthony,Foyt,1959,Kuzma,0.008463439,0.039642498
+823,Marshall,Teague,1957,Kurtis Kraft,0.008574837,0.0506674
+162,Cliff,Griffith,1952,Kurtis Kraft,0.008641709,-0.13910511
+669,Johnny,Herbert,1995,Benetton,0.0088991355,-0.35022008
+672,Johnny,Herbert,1999,Stewart,0.0088991355,-0.20531411
+666,Johnny,Herbert,1989,Benetton,0.0088991355,0.08490678
+668,Johnny,Herbert,1993,Team Lotus,0.0088991355,0.12641378
+671,Johnny,Herbert,1997,Sauber,0.0088991355,0.16363563
+667,Johnny,Herbert,1991,Team Lotus,0.0088991355,0.3059939
+673,Johnny,Herbert,2000,Jaguar,0.0088991355,0.39559105
+670,Johnny,Herbert,1996,Sauber,0.0088991355,0.4709058
+599,Jimmy,Reece,1952,Kurtis Kraft,0.011095901,-0.13910511
+601,Jimmy,Reece,1958,Watson,0.011095901,-0.09974295
+600,Jimmy,Reece,1956,Lesovsky,0.011095901,0.14116949
+189,Daniil,Kvyat,2015,Red Bull,0.014957944,-0.15040594
+191,Daniil,Kvyat,2017,Toro Rosso,0.014957944,-0.052475717
+192,Daniil,Kvyat,2019,Toro Rosso,0.014957944,-0.019551529
+188,Daniil,Kvyat,2014,Toro Rosso,0.014957944,0.29461437
+190,Daniil,Kvyat,2016,Toro Rosso,0.014957944,0.39439937
+7,Aguri,Suzuki,1990,Larrousse,0.016824532,0.2592062
+779,Luigi,Musso,1956,Ferrari,0.017891219,-0.17940538
+781,Luigi,Musso,1958,Ferrari,0.017891219,-0.030945564
+780,Luigi,Musso,1957,Ferrari,0.017891219,-0.00049004715
+777,Luigi,Musso,1954,Maserati,0.017891219,0.10697229
+778,Luigi,Musso,1955,Maserati,0.017891219,0.27352658
+595,Jimmy,Davies,1955,Kurtis Kraft,0.019537782,-0.16524643
+594,Jimmy,Davies,1954,Kurtis Kraft,0.019537782,-0.10020306
+64,Art,Cross,1953,Kurtis Kraft,0.020683805,-0.17903051
+63,Art,Cross,1952,Kurtis Kraft,0.020683805,-0.13910511
+65,Art,Cross,1954,Kurtis Kraft,0.020683805,-0.10020306
+1238,Thierry,Boutsen,1989,Williams,0.021482252,-0.32706267
+1235,Thierry,Boutsen,1985,Arrows,0.021482252,-0.036259025
+1237,Thierry,Boutsen,1988,Benetton,0.021482252,0.04250035
+1239,Thierry,Boutsen,1990,Williams,0.021482252,0.12827712
+1240,Thierry,Boutsen,1992,Ligier,0.021482252,0.19067481
+1236,Thierry,Boutsen,1987,Benetton,0.021482252,0.22216064
+420,Henri,Pescarolo,1973,Iso Marlboro,0.021738086,0.00069870794
+418,Henri,Pescarolo,1970,Matra,0.021738086,0.012013759
+419,Henri,Pescarolo,1971,March-Ford,0.021738086,0.05090759
+421,Henri,Pescarolo,1974,BRM,0.021738086,0.06495316
+634,Joe,James,1952,Kurtis Kraft,0.023172626,-0.13910511
+1003,Pat,Flaherty,1956,Watson,0.024099745,-0.32001457
+1002,Pat,Flaherty,1955,Kurtis Kraft,0.024099745,-0.16524643
+767,Lloyd,Ruby,1960,Watson,0.024567716,-0.48821193
+50,Andrea,de Cesaris,1981,McLaren,0.024635743,-0.08364154
+51,Andrea,de Cesaris,1983,Alfa Romeo,0.024635743,-0.020929404
+53,Andrea,de Cesaris,1991,Jordan,0.024635743,0.24282487
+52,Andrea,de Cesaris,1989,Dallara,0.024635743,0.32187572
+674,Johnny,Servoz-Gavin,1968,Matra-Ford,0.027371293,-0.27884272
+1164,Rubens,Barrichello,2004,Ferrari,0.029417066,-0.7861282
+1162,Rubens,Barrichello,2002,Ferrari,0.029417066,-0.7425019
+1169,Rubens,Barrichello,2009,Brawn,0.029417066,-0.7366544
+1160,Rubens,Barrichello,2000,Ferrari,0.029417066,-0.5154091
+1161,Rubens,Barrichello,2001,Ferrari,0.029417066,-0.48244908
+1163,Rubens,Barrichello,2003,Ferrari,0.029417066,-0.317806
+1159,Rubens,Barrichello,1999,Stewart,0.029417066,-0.20531411
+1157,Rubens,Barrichello,1997,Stewart,0.029417066,-0.09081115
+1155,Rubens,Barrichello,1995,Jordan,0.029417066,0.0069662393
+1166,Rubens,Barrichello,2006,Honda,0.029417066,0.0520442
+1158,Rubens,Barrichello,1998,Stewart,0.029417066,0.157147
+1170,Rubens,Barrichello,2010,Williams,0.029417066,0.19166048
+1153,Rubens,Barrichello,1993,Jordan,0.029417066,0.21853973
+1154,Rubens,Barrichello,1994,Jordan,0.029417066,0.22943126
+1156,Rubens,Barrichello,1996,Jordan,0.029417066,0.26000527
+1165,Rubens,Barrichello,2005,Ferrari,0.029417066,0.33427426
+1171,Rubens,Barrichello,2011,Williams,0.029417066,0.37382483
+1167,Rubens,Barrichello,2007,Honda,0.029417066,0.39802152
+1168,Rubens,Barrichello,2008,Honda,0.029417066,0.517256
+452,Jackie,Lewis,1961,Cooper-Climax,0.033376783,0.31396878
+791,Marc,Surer,1985,Brabham,0.035965577,-0.17733078
+790,Marc,Surer,1983,Arrows,0.035965577,0.059135374
+789,Marc,Surer,1981,Ensign,0.035965577,0.084781885
+892,Mike,Beuttler,1972,March,0.038250677,0.1749812
+60,Antonio,Giovinazzi,2019,Alfa Romeo,0.0388628,0.4663137
+526,Jean,Alesi,1997,Benetton,0.03950062,-0.28876442
+524,Jean,Alesi,1995,Ferrari,0.03950062,-0.121252604
+523,Jean,Alesi,1994,Ferrari,0.03950062,-0.11847239
+519,Jean,Alesi,1990,Tyrrell,0.03950062,-0.11343031
+525,Jean,Alesi,1996,Benetton,0.03950062,-0.076883465
+518,Jean,Alesi,1989,Tyrrell,0.03950062,0.045915928
+521,Jean,Alesi,1992,Ferrari,0.03950062,0.10676419
+520,Jean,Alesi,1991,Ferrari,0.03950062,0.13248889
+527,Jean,Alesi,1998,Sauber,0.03950062,0.19629775
+528,Jean,Alesi,1999,Sauber,0.03950062,0.21358387
+529,Jean,Alesi,2001,Jordan,0.03950062,0.2744737
+522,Jean,Alesi,1993,Ferrari,0.03950062,0.3947494
+635,John,Love,1967,Cooper-Climax,0.04010142,0.12710196
+395,Hans-Joachim,Stuck,1977,Brabham,0.040640928,-0.15553285
+393,Hans-Joachim,Stuck,1974,March,0.040640928,0.18325196
+396,Hans-Joachim,Stuck,1979,ATS,0.040640928,0.20670348
+394,Hans-Joachim,Stuck,1976,March,0.040640928,0.20983477
+611,Jo,Siffert,1968,Lotus-Ford,0.044847723,-0.37849942
+613,Jo,Siffert,1971,BRM,0.044847723,-0.21831223
+608,Jo,Siffert,1962,Lotus-Climax,0.044847723,-0.13354407
+612,Jo,Siffert,1969,Lotus-Ford,0.044847723,-0.00843075
+610,Jo,Siffert,1965,Brabham-BRM,0.044847723,0.03125867
+609,Jo,Siffert,1964,Brabham-BRM,0.044847723,0.09297953
+392,Gunnar,Nilsson,1977,Team Lotus,0.046462074,-0.23847105
+391,Gunnar,Nilsson,1976,Team Lotus,0.046462074,-0.039299242
+747,Lance,Stroll,2017,Williams,0.04649075,0.2612399
+749,Lance,Stroll,2019,Racing Point,0.04649075,0.29556063
+748,Lance,Stroll,2018,Williams,0.04649075,0.3184982
+870,Michele,Alboreto,1985,Ferrari,0.0475317,-0.23073219
+868,Michele,Alboreto,1983,Tyrrell,0.0475317,-0.18221451
+871,Michele,Alboreto,1986,Ferrari,0.0475317,-0.042704
+874,Michele,Alboreto,1989,Tyrrell,0.0475317,0.045915928
+873,Michele,Alboreto,1988,Ferrari,0.0475317,0.07806983
+872,Michele,Alboreto,1987,Ferrari,0.0475317,0.103442356
+869,Michele,Alboreto,1984,Ferrari,0.0475317,0.13297229
+867,Michele,Alboreto,1982,Tyrrell,0.0475317,0.14347392
+875,Michele,Alboreto,1991,Footwork,0.0475317,0.1533838
+31,Alan,Rees,1967,Brabham-Ford,0.04776373,0.08969531
+1198,Sergio,Pérez,2012,Sauber,0.04813094,-0.08697883
+1201,Sergio,Pérez,2015,Force India,0.04813094,-0.056349546
+1202,Sergio,Pérez,2016,Force India,0.04813094,0.09098549
+1200,Sergio,Pérez,2014,Force India,0.04813094,0.09443534
+1197,Sergio,Pérez,2011,Sauber,0.04813094,0.11860779
+1199,Sergio,Pérez,2013,McLaren,0.04813094,0.16432558
+1204,Sergio,Pérez,2018,Force India,0.04813094,0.17197996
+1205,Sergio,Pérez,2019,Racing Point,0.04813094,0.29556063
+1203,Sergio,Pérez,2017,Force India,0.04813094,0.4043721
+658,Johnnie,Parsons,1952,Kurtis Kraft,0.048310563,-0.13910511
+659,Johnnie,Parsons,1954,Kurtis Kraft,0.048310563,-0.10020306
+660,Johnnie,Parsons,1956,Kurtis Kraft,0.048310563,-0.013629154
+661,Johnnie,Parsons,1958,Kurtis Kraft,0.048310563,0.17140338
+657,Johnnie,Parsons,1950,Kurtis Kraft,0.048310563,0.18080293
+94,Brendon,Hartley,2018,Toro Rosso,0.053003833,0.21784227
+334,Gene,Hartley,1959,Kuzma,0.05525589,0.039642498
+333,Gene,Hartley,1957,Lesovsky,0.05525589,0.1429968
+1061,Pierluigi,Martini,1991,Minardi,0.056694087,0.18881449
+1122,Robert,Manzon,1952,Gordini,0.05912369,0.17515725
+1262,Trevor,Taylor,1962,Lotus-Climax,0.060420655,-0.13354407
+49,Allan,McNish,2002,Toyota,0.06129243,0.3526185
+1293,Éric,Bernard,1994,Ligier,0.061830416,-0.13866703
+1292,Éric,Bernard,1990,Larrousse,0.061830416,0.2592062
+93,Bobby,Ball,1951,Schroeder,0.06349581,0.11325078
+1151,Roy,Salvadori,1958,Cooper,0.06497661,-0.15891004
+1152,Roy,Salvadori,1961,Cooper-Climax,0.06497661,0.31396878
+228,Dick,Rathmann,1956,Kurtis Kraft,0.06573466,-0.013629154
+716,Karl,Wendlinger,1994,Sauber,0.06702681,0.18850401
+903,Mike,Parkes,1966,Ferrari,0.06990666,-0.0004592325
+1195,Sergey,Sirotkin,2018,Williams,0.07131285,0.3184982
+1034,Pedro,Lamy,1995,Minardi,0.075356156,0.41643378
+287,Esteban,Ocon,2016,Manor Marussia,0.07634961,0.10325667
+289,Esteban,Ocon,2018,Force India,0.07634961,0.17197996
+288,Esteban,Ocon,2017,Force India,0.07634961,0.4043721
+425,Hubert,Hahne,1968,Lola,0.07764563,0.18056947
+1004,Pat,O'Connor,1955,Kurtis Kraft,0.0802797,-0.16524643
+1005,Pat,O'Connor,1957,Kurtis Kraft,0.0802797,0.0506674
+362,Giancarlo,Fisichella,2005,Renault,0.081388324,-0.5720567
+363,Giancarlo,Fisichella,2006,Renault,0.081388324,-0.4731335
+357,Giancarlo,Fisichella,2000,Benetton,0.081388324,-0.12700516
+354,Giancarlo,Fisichella,1997,Jordan,0.081388324,-0.035171274
+360,Giancarlo,Fisichella,2003,Jordan,0.081388324,-0.03445007
+356,Giancarlo,Fisichella,1999,Benetton,0.081388324,0.03334717
+366,Giancarlo,Fisichella,2009,Ferrari,0.081388324,0.077375345
+358,Giancarlo,Fisichella,2001,Benetton,0.081388324,0.089615256
+355,Giancarlo,Fisichella,1998,Benetton,0.081388324,0.095279455
+364,Giancarlo,Fisichella,2007,Renault,0.081388324,0.12405792
+359,Giancarlo,Fisichella,2002,Jordan,0.081388324,0.30402803
+361,Giancarlo,Fisichella,2004,Sauber,0.081388324,0.33460745
+365,Giancarlo,Fisichella,2008,Force India,0.081388324,0.41088912
+42,Alexander,Rossi,2015,Manor Marussia,0.08284569,0.40898255
+218,Derek,Bell,1974,Surtees,0.08378609,0.17231736
+1142,Ron,Flockhart,1959,BRM,0.08573113,-0.04135137
+90,Bob,Veith,1957,Phillips,0.08725949,-0.07668453
+92,Bob,Veith,1960,Meskowski,0.08725949,-0.05889779
+91,Bob,Veith,1959,Moore,0.08725949,-0.019454703
+89,Bob,Veith,1956,Kurtis Kraft,0.08725949,-0.013629154
+679,Jolyon,Palmer,2017,Renault,0.09185922,0.17416875
+678,Jolyon,Palmer,2016,Renault,0.09185922,0.34727553
+135,Cesare,Perdisa,1956,Maserati,0.09253073,0.07551641
+233,Didier,Pironi,1982,Ferrari,0.09329032,-0.50980306
+231,Didier,Pironi,1980,Ligier,0.09329032,-0.32884395
+230,Didier,Pironi,1979,Tyrrell,0.09329032,-0.04825917
+229,Didier,Pironi,1978,Tyrrell,0.09329032,-0.028239202
+232,Didier,Pironi,1981,Ferrari,0.09329032,0.08912813
+1047,Peter,Arundell,1964,Lotus-Climax,0.095649585,-0.08875721
+753,Lella,Lombardi,1975,March,0.09722769,0.0028845756
+407,Heikki,Kovalainen,2013,Lotus F1,0.09751524,-0.4355868
+403,Heikki,Kovalainen,2008,McLaren,0.09751524,-0.3752496
+404,Heikki,Kovalainen,2009,McLaren,0.09751524,-0.22048645
+402,Heikki,Kovalainen,2007,Renault,0.09751524,0.12405792
+405,Heikki,Kovalainen,2011,Lotus,0.09751524,0.34375247
+406,Heikki,Kovalainen,2012,Caterham,0.09751524,0.3706584
+371,Gijs,van Lennep,1975,Ensign,0.100885846,-0.023844246
+751,Larry,Crockett,1954,Kurtis Kraft,0.10552213,-0.10020306
+1231,Takuma,Sato,2004,BAR,0.10558774,-0.14399277
+1233,Takuma,Sato,2007,Super Aguri,0.10558774,-0.06400734
+1232,Takuma,Sato,2005,BAR,0.10558774,0.016718531
+1229,Takuma,Sato,2002,Jordan,0.10558774,0.30402803
+1230,Takuma,Sato,2003,BAR,0.10558774,0.37621382
+146,Christian,Fittipaldi,1994,Footwork,0.11051833,-0.08564463
+516,Jarno,Trulli,2009,Toyota,0.11079761,-0.22250725
+515,Jarno,Trulli,2008,Toyota,0.11079761,-0.08555536
+512,Jarno,Trulli,2005,Toyota,0.11079761,0.041909635
+506,Jarno,Trulli,1999,Prost,0.11079761,0.13940379
+513,Jarno,Trulli,2006,Toyota,0.11079761,0.17139882
+511,Jarno,Trulli,2004,Renault,0.11079761,0.21359192
+507,Jarno,Trulli,2000,Jordan,0.11079761,0.21868737
+510,Jarno,Trulli,2003,Renault,0.11079761,0.24595754
+505,Jarno,Trulli,1997,Prost,0.11079761,0.24846
+514,Jarno,Trulli,2007,Toyota,0.11079761,0.26451272
+508,Jarno,Trulli,2001,Jordan,0.11079761,0.2744737
+517,Jarno,Trulli,2011,Lotus,0.11079761,0.34375247
+509,Jarno,Trulli,2002,Renault,0.11079761,0.49262384
+703,Jud,Larson,1958,Watson,0.11231086,-0.09974295
+1067,Piers,Courage,1968,BRM,0.11399243,0.007220166
+1068,Piers,Courage,1969,Brabham-Ford,0.11399243,0.00743621
+39,Alessandro,Zanardi,1999,Williams,0.114394896,-0.19158207
+38,Alessandro,Zanardi,1991,Jordan,0.114394896,0.24282487
+1265,Ukyo,Katayama,1996,Tyrrell,0.11587917,0.36766723
+268,Elio,de Angelis,1982,Team Lotus,0.11649696,-0.074867904
+265,Elio,de Angelis,1979,Shadow,0.11649696,-0.06920909
+267,Elio,de Angelis,1981,Team Lotus,0.11649696,-0.05245302
+266,Elio,de Angelis,1980,Team Lotus,0.11649696,0.17143632
+271,Elio,de Angelis,1985,Team Lotus,0.11649696,0.17857799
+269,Elio,de Angelis,1983,Team Lotus,0.11649696,0.27950445
+270,Elio,de Angelis,1984,Team Lotus,0.11649696,0.36969492
+110,Bud,Tingelstad,1960,Trevis,0.116624884,-0.06364521
+596,Jimmy,Daywalt,1953,Kurtis Kraft,0.119916886,-0.17903051
+597,Jimmy,Daywalt,1955,Kurtis Kraft,0.119916886,-0.16524643
+598,Jimmy,Daywalt,1959,Kurtis Kraft,0.119916886,0.15748306
+80,Bill,Cheesbourg,1958,Kurtis Kraft,0.12092064,0.17140338
+283,Ernie,McCoy,1953,Stevens,0.12654452,0.11835063
+352,Giancarlo,Baghetti,1961,Ferrari,0.12738658,-0.71048117
+353,Giancarlo,Baghetti,1962,Ferrari,0.12738658,0.21379413
+1060,Philippe,Streiff,1985,Ligier,0.12744059,0.03075306
+1066,Pierre,Gasly,2019,Toro Rosso,0.12856905,-0.019551529
+1065,Pierre,Gasly,2018,Toro Rosso,0.12856905,0.21784227
+1080,Red,Amick,1960,Epperly,0.1339275,0.043256015
+1181,Scott,Speed,2006,Toro Rosso,0.13486591,0.2563963
+1260,Tony,Marsh,1958,Cooper,0.13752592,-0.15891004
+827,Martin,Brundle,1995,Ligier,0.13756703,0.041174814
+824,Martin,Brundle,1992,Benetton,0.13756703,0.097054854
+825,Martin,Brundle,1993,Ligier,0.13756703,0.12373853
+828,Martin,Brundle,1996,Jordan,0.13756703,0.26000527
+826,Martin,Brundle,1994,McLaren,0.13756703,0.36618572
+889,Mika,Salo,1999,Ferrari,0.13963501,-0.5358789
+886,Mika,Salo,1995,Tyrrell,0.13963501,0.045469835
+888,Mika,Salo,1998,Arrows,0.13963501,0.1684047
+890,Mika,Salo,2000,Sauber,0.13963501,0.20947582
+891,Mika,Salo,2002,Toyota,0.13963501,0.3526185
+887,Mika,Salo,1996,Tyrrell,0.13963501,0.36766723
+134,Carlos,Sainz,2019,McLaren,0.13990943,0.052923754
+133,Carlos,Sainz,2018,Renault,0.13990943,0.089401096
+132,Carlos,Sainz,2017,Renault,0.13990943,0.17416875
+130,Carlos,Sainz,2015,Toro Rosso,0.13990943,0.33125973
+131,Carlos,Sainz,2016,Toro Rosso,0.13990943,0.39439937
+426,Ian,Burgess,1958,Cooper,0.14227937,-0.15891004
+427,Ian,Burgess,1962,Cooper-Climax,0.14227937,0.008640836
+535,Jean-Pierre,Beltoise,1969,Matra-Ford,0.14262836,-0.14334005
+536,Jean-Pierre,Beltoise,1970,Matra,0.14262836,0.012013759
+534,Jean-Pierre,Beltoise,1968,Matra,0.14262836,0.06334356
+540,Jean-Pierre,Beltoise,1974,BRM,0.14262836,0.06495316
+537,Jean-Pierre,Beltoise,1971,Matra,0.14262836,0.09494607
+538,Jean-Pierre,Beltoise,1972,BRM,0.14262836,0.13920382
+539,Jean-Pierre,Beltoise,1973,BRM,0.14262836,0.42009813
+985,Olivier,Gendebien,1961,Ferrari,0.14323048,-0.71048117
+984,Olivier,Gendebien,1960,Cooper-Climax,0.14323048,-0.33929873
+983,Olivier,Gendebien,1959,Ferrari,0.14323048,0.008525834
+337,George,Follmer,1973,Shadow,0.1444452,0.13947347
+998,Pastor,Maldonado,2012,Williams,0.1448757,-0.004089064
+1000,Pastor,Maldonado,2014,Lotus F1,0.1448757,0.30559814
+1001,Pastor,Maldonado,2015,Lotus F1,0.1448757,0.3085576
+997,Pastor,Maldonado,2011,Williams,0.1448757,0.37382483
+999,Pastor,Maldonado,2013,Williams,0.1448757,0.5330746
+1180,Satoru,Nakajima,1990,Tyrrell,0.14589939,-0.11343031
+1178,Satoru,Nakajima,1987,Team Lotus,0.14589939,0.012199455
+1179,Satoru,Nakajima,1989,Team Lotus,0.14589939,0.53131706
+83,Bill,Schindler,1952,Stevens,0.14935906,0.106833555
+1228,Sébastien,Buemi,2011,Toro Rosso,0.14962798,0.18227343
+1226,Sébastien,Buemi,2009,Toro Rosso,0.14962798,0.23894572
+1227,Sébastien,Buemi,2010,Toro Rosso,0.14962798,0.47379908
+750,Lando,Norris,2019,McLaren,0.15002553,0.052923754
+428,Ignazio,Giunti,1970,Ferrari,0.15054837,-0.5339318
+811,Mark,Donohue,1975,Penske,0.15174167,0.30112273
+810,Mark,Donohue,1971,McLaren,0.15174167,0.48451182
+986,Olivier,Panis,1994,Ligier,0.1563243,-0.13866703
+987,Olivier,Panis,1995,Ligier,0.1563243,0.041174814
+988,Olivier,Panis,1996,Ligier,0.1563243,0.10095394
+990,Olivier,Panis,1999,Prost,0.1563243,0.13940379
+993,Olivier,Panis,2003,Toyota,0.1563243,0.15857029
+989,Olivier,Panis,1997,Prost,0.1563243,0.24846
+994,Olivier,Panis,2004,Toyota,0.1563243,0.25362864
+991,Olivier,Panis,2001,BAR,0.1563243,0.3192169
+992,Olivier,Panis,2002,BAR,0.1563243,0.31928623
+504,Jan,Magnussen,1997,Stewart,0.1564893,-0.09081115
+837,Mauro,Baldi,1983,Alfa Romeo,0.15833452,-0.020929404
+161,Cliff,Allison,1960,Ferrari,0.16000845,0.01981135
+160,Cliff,Allison,1958,Team Lotus,0.16000845,0.07050915
+3,Adrian,Sutil,2010,Force India,0.16051462,-0.030589843
+5,Adrian,Sutil,2013,Force India,0.16051462,0.0060884557
+0,Adrian,Sutil,2007,Spyker,0.16051462,0.0481755
+6,Adrian,Sutil,2014,Sauber,0.16051462,0.17082228
+2,Adrian,Sutil,2009,Force India,0.16051462,0.19892511
+1,Adrian,Sutil,2008,Force India,0.16051462,0.41088912
+4,Adrian,Sutil,2011,Force India,0.16051462,0.4423303
+309,Felipe,Nasr,2016,Sauber,0.16066237,-0.014159462
+308,Felipe,Nasr,2015,Sauber,0.16066237,0.32980344
+1241,Tiago,Monteiro,2005,Jordan,0.16262525,0.3242076
+40,Alex,Caffi,1989,Dallara,0.16273193,0.32187572
+1245,Timo,Glock,2009,Toyota,0.16475765,-0.22250725
+1244,Timo,Glock,2008,Toyota,0.16475765,-0.08555536
+1246,Timo,Glock,2012,Marussia,0.16475765,0.4332456
+1213,Stefano,Modena,1991,Tyrrell,0.16510059,-0.06709748
+1212,Stefano,Modena,1990,Brabham,0.16510059,0.061552767
+662,Johnnie,Tolan,1958,Kuzma,0.16552198,0.15781614
+1019,Paul,Frère,1956,Ferrari,0.1660324,-0.17940538
+1018,Paul,Frère,1955,Ferrari,0.1660324,0.017064529
+554,Jean-Éric,Vergne,2014,Toro Rosso,0.16753472,0.29461437
+553,Jean-Éric,Vergne,2013,Toro Rosso,0.16753472,0.3038438
+552,Jean-Éric,Vergne,2012,Toro Rosso,0.16753472,0.5461078
+56,Andy,Linden,1955,Kurtis Kraft,0.16906315,-0.16524643
+54,Andy,Linden,1951,Sherman,0.16906315,-0.1042966
+55,Andy,Linden,1954,Kurtis Kraft,0.16906315,-0.10020306
+57,Andy,Linden,1957,Kurtis Kraft,0.16906315,0.0506674
+1105,Riccardo,Patrese,1991,Williams,0.17065537,-0.63909835
+1106,Riccardo,Patrese,1992,Williams,0.17065537,-0.543044
+1103,Riccardo,Patrese,1989,Williams,0.17065537,-0.32706267
+1100,Riccardo,Patrese,1983,Brabham,0.17065537,-0.26476955
+1099,Riccardo,Patrese,1982,Brabham,0.17065537,-0.2613139
+1098,Riccardo,Patrese,1981,Arrows,0.17065537,-0.18783326
+1102,Riccardo,Patrese,1988,Williams,0.17065537,0.068464644
+1101,Riccardo,Patrese,1987,Brabham,0.17065537,0.068576075
+1097,Riccardo,Patrese,1980,Arrows,0.17065537,0.10078535
+1095,Riccardo,Patrese,1978,Arrows,0.17065537,0.11299985
+1104,Riccardo,Patrese,1990,Williams,0.17065537,0.12827712
+1107,Riccardo,Patrese,1993,Benetton,0.17065537,0.19338377
+1096,Riccardo,Patrese,1979,Arrows,0.17065537,0.26140025
+8,Al,Herman,1955,Kurtis Kraft,0.1708153,-0.16524643
+9,Al,Herman,1959,Dunn,0.1708153,0.008925431
+935,Nico,Hülkenberg,2015,Force India,0.1721605,-0.056349546
+932,Nico,Hülkenberg,2012,Force India,0.1721605,-0.047175147
+933,Nico,Hülkenberg,2013,Sauber,0.1721605,-0.021513015
+938,Nico,Hülkenberg,2018,Renault,0.1721605,0.089401096
+936,Nico,Hülkenberg,2016,Force India,0.1721605,0.09098549
+934,Nico,Hülkenberg,2014,Force India,0.1721605,0.09443534
+937,Nico,Hülkenberg,2017,Renault,0.1721605,0.17416875
+931,Nico,Hülkenberg,2010,Williams,0.1721605,0.19166048
+939,Nico,Hülkenberg,2019,Renault,0.1721605,0.269144
+81,Bill,Homeier,1955,Kurtis Kraft,0.17276819,-0.16524643
+82,Bill,Homeier,1960,Kuzma,0.17276819,0.39100415
+351,Gerhard,Mitter,1963,Porsche,0.17502387,0.2966824
+256,Eddie,Irvine,1999,Ferrari,0.17735848,-0.5358789
+254,Eddie,Irvine,1997,Ferrari,0.17735848,-0.37462708
+255,Eddie,Irvine,1998,Ferrari,0.17735848,-0.35258123
+253,Eddie,Irvine,1996,Ferrari,0.17735848,-0.23993753
+252,Eddie,Irvine,1995,Jordan,0.17735848,0.0069662393
+259,Eddie,Irvine,2002,Jaguar,0.17735848,0.073521934
+250,Eddie,Irvine,1993,Jordan,0.17735848,0.21853973
+251,Eddie,Irvine,1994,Jordan,0.17735848,0.22943126
+258,Eddie,Irvine,2001,Jaguar,0.17735848,0.23220047
+257,Eddie,Irvine,2000,Jaguar,0.17735848,0.39559105
+10,Al,Keller,1958,Kurtis Kraft,0.17941315,0.17140338
+951,Nicola,Larini,1994,Ferrari,0.1816456,-0.11847239
+952,Nicola,Larini,1997,Sauber,0.1816456,0.16363563
+995,Pascal,Wehrlein,2016,Manor Marussia,0.18428735,0.10325667
+996,Pascal,Wehrlein,2017,Sauber,0.18428735,0.28760538
+1234,Teo,Fabi,1984,Brabham,0.18739903,-0.24471912
+831,Masten,Gregory,1959,Cooper-Climax,0.18856841,-0.0968986
+830,Masten,Gregory,1957,Maserati,0.18856841,-0.039709345
+332,Gastón,Mazzacane,2000,Minardi,0.18966326,0.43276203
+1028,Paul,di Resta,2012,Force India,0.1907295,-0.047175147
+1029,Paul,di Resta,2013,Force India,0.1907295,0.0060884557
+1027,Paul,di Resta,2011,Force India,0.1907295,0.4423303
+1111,Richie,Ginther,1961,Ferrari,0.1912041,-0.71048117
+1112,Richie,Ginther,1962,BRM,0.1912041,-0.3527449
+1115,Richie,Ginther,1965,Honda,0.1912041,-0.23553243
+1113,Richie,Ginther,1963,BRM,0.1912041,-0.13222253
+1114,Richie,Ginther,1964,BRM,0.1912041,-0.0064035314
+1110,Richie,Ginther,1960,Ferrari,0.1912041,0.01981135
+1282,Vittorio,Brambilla,1975,March,0.19603571,0.0028845756
+1284,Vittorio,Brambilla,1977,Surtees,0.19603571,0.07352241
+1281,Vittorio,Brambilla,1974,March,0.19603571,0.18325196
+1283,Vittorio,Brambilla,1976,March,0.19603571,0.20983477
+292,Felice,Bonetto,1953,Maserati,0.19773434,-0.010831035
+112,Carel Godin,de Beaufort,1962,Porsche,0.1984227,-0.039236702
+725,Kevin,Magnussen,2014,McLaren,0.20040508,0.1487341
+729,Kevin,Magnussen,2019,Haas F1 Team,0.20040508,0.22112837
+727,Kevin,Magnussen,2017,Haas F1 Team,0.20040508,0.34679043
+726,Kevin,Magnussen,2016,Renault,0.20040508,0.34727553
+728,Kevin,Magnussen,2018,Haas F1 Team,0.20040508,0.39440522
+400,Hector,Rebaque,1978,Team Lotus,0.20238338,-0.3844075
+401,Hector,Rebaque,1981,Brabham,0.20238338,-0.28154737
+95,Brian,Redman,1972,McLaren,0.20336397,-0.2640345
+1196,Sergio,Mantovani,1954,Maserati,0.20772532,0.10697229
+1294,Érik,Comas,1992,Ligier,0.21130544,0.19067481
+1295,Érik,Comas,1994,Larrousse,0.21130544,0.2000864
+1014,Patrick,Tambay,1982,Ferrari,0.2165651,-0.50980306
+1015,Patrick,Tambay,1983,Ferrari,0.2165651,-0.3913617
+1016,Patrick,Tambay,1984,Renault,0.2165651,-0.09523864
+1013,Patrick,Tambay,1978,McLaren,0.2165651,0.118836254
+1017,Patrick,Tambay,1985,Renault,0.2165651,0.19258966
+1012,Patrick,Tambay,1977,Ensign,0.2165651,0.30607983
+589,Jim,Rigsby,1952,Watson,0.21729201,0.030666545
+905,Mike,Spence,1965,Lotus-Climax,0.21868211,-0.18096796
+904,Mike,Spence,1964,Lotus-Climax,0.21868211,-0.08875721
+58,Anthony,Davidson,2007,Super Aguri,0.21983948,-0.06400734
+79,Bertrand,Gachot,1991,Jordan,0.22265123,0.24282487
+1261,Toranosuke,Takagi,1999,Arrows,0.22471406,0.23303601
+422,Henry,Banks,1951,Moore,0.22817104,-0.08947034
+219,Derek,Daly,1978,Ensign,0.23101212,0.03930661
+221,Derek,Daly,1982,Williams,0.23101212,0.13130519
+220,Derek,Daly,1980,Tyrrell,0.23101212,0.16908398
+829,Martin,Donnelly,1990,Team Lotus,0.23155428,0.15063503
+454,Jackie,Oliver,1968,Lotus-Ford,0.23159257,-0.37849942
+453,Jackie,Oliver,1967,Lotus-Ford,0.23159257,-0.04743874
+456,Jackie,Oliver,1973,Shadow,0.23159257,0.13947347
+457,Jackie,Oliver,1977,Shadow,0.23159257,0.24692057
+455,Jackie,Oliver,1971,McLaren,0.23159257,0.48451182
+636,John,Miles,1970,Team Lotus,0.23346168,-0.3110456
+1081,Reg,Parnell,1950,Alfa Romeo,0.23798203,-0.17663632
+1224,Sébastien,Bourdais,2008,Toro Rosso,0.2395848,0.17908575
+1225,Sébastien,Bourdais,2009,Toro Rosso,0.2395848,0.23894572
+108,Bruno,Senna,2011,Renault,0.24148875,-0.06634864
+109,Bruno,Senna,2012,Williams,0.24148875,-0.004089064
+148,Christian,Klien,2005,Red Bull,0.24163063,0.0624223
+147,Christian,Klien,2004,Jaguar,0.24163063,0.2302567
+149,Christian,Klien,2006,Red Bull,0.24163063,0.34651712
+809,Mark,Blundell,1995,McLaren,0.24613804,-0.095007956
+807,Mark,Blundell,1993,Ligier,0.24613804,0.12373853
+808,Mark,Blundell,1994,Tyrrell,0.24613804,0.13640492
+806,Mark,Blundell,1991,Brabham,0.24613804,0.15007205
+138,Charles,Pic,2012,Marussia,0.24866183,0.4332456
+139,Charles,Pic,2013,Caterham,0.24866183,0.44998503
+709,Kamui,Kobayashi,2009,Toyota,0.2529543,-0.22250725
+712,Kamui,Kobayashi,2012,Sauber,0.2529543,-0.08697883
+711,Kamui,Kobayashi,2011,Sauber,0.2529543,0.11860779
+710,Kamui,Kobayashi,2010,Sauber,0.2529543,0.1265634
+713,Kamui,Kobayashi,2014,Caterham,0.2529543,0.31805086
+604,Jo,Bonnier,1961,Porsche,0.2543021,-0.06269931
+603,Jo,Bonnier,1959,BRM,0.2543021,-0.04135137
+605,Jo,Bonnier,1962,Porsche,0.2543021,-0.039236702
+606,Jo,Bonnier,1965,Brabham-Climax,0.2543021,0.08952766
+607,Jo,Bonnier,1967,Cooper-Maserati,0.2543021,0.12112554
+602,Jo,Bonnier,1958,BRM,0.2543021,0.1366692
+368,Gianni,Morbidelli,1994,Footwork,0.25588483,-0.08564463
+367,Gianni,Morbidelli,1991,Ferrari,0.25588483,0.13248889
+369,Gianni,Morbidelli,1997,Sauber,0.25588483,0.16363563
+397,Harald,Ertl,1975,Hesketh,0.25711876,-0.072063394
+773,Luca,Badoer,2009,Ferrari,0.25933564,0.077375345
+67,Arturo,Merzario,1974,Iso Marlboro,0.25946346,0.09487153
+68,Arturo,Merzario,1976,March,0.25946346,0.20983477
+66,Arturo,Merzario,1973,Ferrari,0.25946346,0.2816671
+1223,Stuart,Lewis-Evans,1958,Vanwall,0.26319808,-0.56982434
+718,Kazuki,Nakajima,2009,Williams,0.26337615,0.24461861
+717,Kazuki,Nakajima,2008,Williams,0.26337615,0.30047107
+705,Jules,Bianchi,2014,Marussia,0.2640397,0.13850747
+704,Jules,Bianchi,2013,Marussia,0.2640397,0.37035847
+1109,Richard,Attwood,1969,Lotus-Ford,0.26729733,-0.00843075
+1108,Richard,Attwood,1968,BRM,0.26729733,0.007220166
+1031,Pedro,Diniz,1998,Arrows,0.2720496,0.1684047
+1033,Pedro,Diniz,2000,Sauber,0.2720496,0.20947582
+1032,Pedro,Diniz,1999,Sauber,0.2720496,0.21358387
+1030,Pedro,Diniz,1997,Arrows,0.2720496,0.26104763
+839,Maurício,Gugelmin,1989,March,0.27389088,-0.099339105
+840,Maurício,Gugelmin,1990,Leyton House,0.27389088,-0.020181844
+838,Maurício,Gugelmin,1988,March,0.27389088,0.19065785
+150,Chuck,Arnold,1959,Kurtis Kraft,0.27890798,0.15748306
+105,Bruno,Giacomelli,1980,Alfa Romeo,0.28118435,-0.07508455
+106,Bruno,Giacomelli,1981,Alfa Romeo,0.28118435,0.19771732
+107,Bruno,Giacomelli,1983,Toleman,0.28118435,0.2054134
+616,Jochen,Mass,1975,McLaren,0.28924903,-0.5823536
+618,Jochen,Mass,1977,McLaren,0.28924903,-0.42940655
+615,Jochen,Mass,1974,McLaren,0.28924903,-0.23114733
+617,Jochen,Mass,1976,McLaren,0.28924903,-0.23111007
+619,Jochen,Mass,1978,ATS,0.28924903,-0.018734615
+614,Jochen,Mass,1973,Surtees,0.28924903,0.051402494
+621,Jochen,Mass,1980,Arrows,0.28924903,0.10078535
+620,Jochen,Mass,1979,Arrows,0.28924903,0.26140025
+451,Jack,Turner,1957,Kurtis Kraft,0.29114708,0.0506674
+497,Jaime,Alguersuari,2011,Toro Rosso,0.2956493,0.18227343
+496,Jaime,Alguersuari,2010,Toro Rosso,0.2956493,0.47379908
+708,Jérôme,d'Ambrosio,2012,Lotus F1,0.29786345,-0.340253
+1082,Reine,Wisell,1970,Team Lotus,0.29858825,-0.3110456
+1083,Reine,Wisell,1971,Lotus-Ford,0.29858825,0.01719613
+223,Derek,Warwick,1984,Renault,0.2989992,-0.09523864
+225,Derek,Warwick,1988,Arrows,0.2989992,-0.048560545
+227,Derek,Warwick,1990,Team Lotus,0.2989992,0.15063503
+226,Derek,Warwick,1989,Arrows,0.2989992,0.1603883
+224,Derek,Warwick,1985,Renault,0.2989992,0.19258966
+222,Derek,Warwick,1983,Toleman,0.2989992,0.2054134
+715,Karl,Kling,1955,Mercedes,0.3025872,-0.31878224
+714,Karl,Kling,1954,Mercedes,0.3025872,-0.24618079
+769,Lorenzo,Bandini,1964,Ferrari,0.3040824,-0.075136356
+771,Lorenzo,Bandini,1966,Ferrari,0.3040824,-0.0004592325
+770,Lorenzo,Bandini,1965,Ferrari,0.3040824,0.0819446
+768,Lorenzo,Bandini,1962,Ferrari,0.3040824,0.21379413
+1273,Vitaly,Petrov,2010,Renault,0.30450755,-0.07726145
+1274,Vitaly,Petrov,2011,Renault,0.30450755,-0.06634864
+1275,Vitaly,Petrov,2012,Caterham,0.30450755,0.3706584
+41,Alexander,Albon,2019,Toro Rosso,0.30921996,-0.019551529
+398,Harry,Schell,1957,Maserati,0.30925345,-0.039709345
+399,Harry,Schell,1958,BRM,0.30925345,0.1366692
+370,Giedo,van der Garde,2013,Caterham,0.3123392,0.44998503
+551,Jean-Pierre,Jarier,1981,Ligier,0.32372835,-0.10195911
+547,Jean-Pierre,Jarier,1976,Shadow,0.32372835,-0.086234
+549,Jean-Pierre,Jarier,1979,Tyrrell,0.32372835,-0.04825917
+545,Jean-Pierre,Jarier,1974,Shadow,0.32372835,-0.018433606
+546,Jean-Pierre,Jarier,1975,Shadow-Ford,0.32372835,0.007399055
+548,Jean-Pierre,Jarier,1977,Penske,0.32372835,0.04464433
+550,Jean-Pierre,Jarier,1980,Tyrrell,0.32372835,0.16908398
+284,Esteban,Gutiérrez,2013,Sauber,0.32480738,-0.021513015
+285,Esteban,Gutiérrez,2014,Sauber,0.32480738,0.17082228
+286,Esteban,Gutiérrez,2016,Haas F1 Team,0.32480738,0.42479268
+1172,Rudi,Fischer,1952,Ferrari,0.32538432,-0.1208008
+794,Marcus,Ericsson,2017,Sauber,0.3332029,0.28760538
+792,Marcus,Ericsson,2014,Caterham,0.3332029,0.31805086
+793,Marcus,Ericsson,2015,Sauber,0.3332029,0.32980344
+795,Marcus,Ericsson,2018,Sauber,0.3332029,0.4518737
+47,Alexander,Wurz,2005,McLaren,0.33518186,-0.5517001
+43,Alexander,Wurz,1997,Benetton,0.33518186,-0.28876442
+46,Alexander,Wurz,2000,Benetton,0.33518186,-0.12700516
+45,Alexander,Wurz,1999,Benetton,0.33518186,0.03334717
+44,Alexander,Wurz,1998,Benetton,0.33518186,0.095279455
+48,Alexander,Wurz,2007,Williams,0.33518186,0.46373925
+783,Luigi,Villoresi,1952,Ferrari,0.34612367,-0.1208008
+784,Luigi,Villoresi,1953,Ferrari,0.34612367,-0.048015893
+782,Luigi,Villoresi,1951,Ferrari,0.34612367,0.11073803
+1206,Shinji,Nakano,1997,Prost,0.3546164,0.24846
+1093,Ricardo,Zonta,2000,BAR,0.35601893,0.15729378
+1092,Ricardo,Zonta,1999,BAR,0.35601893,0.2227494
+1094,Ricardo,Zonta,2004,Toyota,0.35601893,0.25362864
+582,Jim,McWithey,1959,Kurtis Kraft,0.36101896,0.15748306
+706,Jyrki,Järvilehto,1991,Dallara,0.36298245,-0.0524665
+707,Jyrki,Järvilehto,1992,Dallara,0.36298245,0.11695558
+680,Jos,Verstappen,1994,Benetton,0.36815682,-0.3565965
+682,Jos,Verstappen,2000,Arrows,0.36815682,-0.20686847
+681,Jos,Verstappen,1996,Footwork,0.36815682,-0.008329534
+683,Jos,Verstappen,2001,Arrows,0.36815682,0.2633765
+842,Max,Chilton,2014,Marussia,0.42505476,0.13850747
+841,Max,Chilton,2013,Marussia,0.42505476,0.37035847
+532,Jean,Behra,1957,Maserati,0.43059742,-0.039709345
+531,Jean,Behra,1956,Maserati,0.43059742,0.07551641
+533,Jean,Behra,1958,BRM,0.43059742,0.1366692
+530,Jean,Behra,1955,Maserati,0.43059742,0.27352658
+1128,Rolf,Stommelen,1970,Brabham,0.46395212,-0.12845196
+1132,Rolf,Stommelen,1976,Brabham-Alfa Romeo,0.46395212,-0.120585926
+1131,Rolf,Stommelen,1975,Embassy Hill,0.46395212,-0.0360103
+1129,Rolf,Stommelen,1971,Surtees,0.46395212,0.12788285
+1130,Rolf,Stommelen,1973,Brabham,0.46395212,0.15441635
+1042,Pedro,de la Rosa,2005,McLaren,0.4660203,-0.5517001
+1040,Pedro,de la Rosa,2000,Arrows,0.4660203,-0.20686847
+1043,Pedro,de la Rosa,2006,McLaren,0.4660203,-0.17465092
+1046,Pedro,de la Rosa,2012,HRT,0.4660203,0.060815953
+1045,Pedro,de la Rosa,2011,Sauber,0.4660203,0.11860779
+1044,Pedro,de la Rosa,2010,Sauber,0.4660203,0.1265634
+1041,Pedro,de la Rosa,2001,Jaguar,0.4660203,0.23220047
+1039,Pedro,de la Rosa,1999,Arrows,0.4660203,0.23303601
+1280,Vitantonio,Liuzzi,2010,Force India,0.46737567,-0.030589843
+1276,Vitantonio,Liuzzi,2005,Red Bull,0.46737567,0.0624223
+1278,Vitantonio,Liuzzi,2007,Toro Rosso,0.46737567,0.19373971
+1279,Vitantonio,Liuzzi,2009,Force India,0.46737567,0.19892511
+1277,Vitantonio,Liuzzi,2006,Toro Rosso,0.46737567,0.2563963
+787,Marc,Gené,2003,Williams,0.4763525,-0.2289647
+788,Marc,Gené,2004,Williams,0.4763525,0.13073207
+786,Marc,Gené,1999,Minardi,0.4763525,0.16666672
