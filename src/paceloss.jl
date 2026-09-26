@@ -36,19 +36,28 @@ end
     paceloss_loginterval(lo, hi, σ, π, λ)
 
 `log P(lo < x < hi)` for the residual under pace noise + mixture loss, `lo < hi`.
+
+Computed as the mixture of the two components' interval probabilities,
+`(1-π)·D + π·P_EMG`, with `D = Φ(hi/σ) - Φ(lo/σ)` and `P_EMG = D + (G(lo) - G(hi))`.
+- Right of G's peak, G(lo) > G(hi): both terms of P_EMG are positive, so it is
+  summed in log space. This is where lapped cars usually sit.
+- Left of the peak, G(lo) ≤ G(hi): P_EMG = D - |G(lo) - G(hi)|. In the far left
+  tail both are nearly equal and the difference cancels catastrophically
+  (rounding once made it negative, which crashed the step-size search). There
+  P_EMG is set to 0 when the cancellation leaves nothing. That is accurate: a
+  positive loss shifts mass right, so in the far left P_EMG ≪ D and the
+  interval probability is dominated by (1-π)·D.
 """
 function paceloss_loginterval(lo, hi, σ, π, λ)
     logD = logdiffΦ(lo / σ, hi / σ)
     lGlo, lGhi = paceloss_logG(lo, σ, λ), paceloss_logG(hi, σ, λ)
     if lGlo > lGhi
-        # E = G(lo) - G(hi) > 0: P = D + πE, both terms positive
-        logE = lGlo + log1mexp(lGhi - lGlo)
-        return logaddexp(logD, log(π) + logE)
+        logPemg = logaddexp(logD, lGlo + log1mexp(lGhi - lGlo))
     else
-        # E ≤ 0 happens only left of G's peak, where D is not small; P = D - π|E| > 0
-        logπabsE = log(π) + lGhi + log1mexp(lGlo - lGhi)
-        return logD + log1mexp(logπabsE - logD)
+        r = lGhi + log1mexp(lGlo - lGhi) - logD          # log(|G(lo) - G(hi)| / D)
+        logPemg = r < 0 ? logD + log1mexp(r) : oftype(logD, -Inf)
     end
+    return logaddexp(log1p(-π) + logD, log(π) + logPemg)
 end
 
 """

@@ -6,7 +6,7 @@
 
 using CSV, DataFrames, Statistics
 
-rd(mode, kind) = CSV.read("output/gap_$(mode)_$(kind)_effects.csv", DataFrame)
+rd(mode, kind) = CSV.read("output/gap_$(mode)_t4_$(kind)_effects.csv", DataFrame)
 spearman(x, y) = cor(invperm(sortperm(x)), invperm(sortperm(y)))
 
 for kind in ("competitor", "machine")

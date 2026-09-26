@@ -150,7 +150,8 @@ end
             @test simpson(pdf, -10σ, 60λ, 200_000) ≈ 1 rtol = 1e-6
             # interval probabilities against numerical integration of the density:
             # central, straddling 0, right tail (lapped-car territory), far tail
-            for (lo, hi) in ((-0.2, 0.1), (-1.0, 1.0), (1.5, 3.4), (8.0, 10.0), (30.0, 32.0))
+            for (lo, hi) in ((-0.2, 0.1), (-1.0, 1.0), (1.5, 3.4), (8.0, 10.0), (30.0, 32.0),
+                             (-2.5 * σ, -1.5 * σ), (-6σ, -5σ))      # left tail too
                 ref = log(simpson(pdf, lo, hi, 20_000))
                 @test Diomedes.paceloss_loginterval(lo, hi, σ, π, λ) ≈ ref rtol = 1e-6
             end
@@ -160,6 +161,13 @@ end
         l2 = Diomedes.paceloss_loginterval(600.0, 605.0, 0.3, 0.2, 2.0)
         @test isfinite(l1) && isfinite(l2) && l2 < l1
         @test l1 ≈ log(0.2) - 300 / 2.0 + 0.3^2 / (2 * 2.0^2) + log1p(-exp(-5 / 2.0)) rtol = 1e-8
+        # far left tail (where the EMG part cancels): finite, never a DomainError, and
+        # close to the Gaussian component alone
+        for (lo, hi) in ((-30.0, -29.0), (-12.0, -11.9), (-100.0, -99.0), (-9.0, -3.0))
+            v = Diomedes.paceloss_loginterval(lo, hi, 0.3, 0.2, 2.0)
+            @test isfinite(v)
+            @test v ≈ log(0.8) + Diomedes.logdiffΦ(lo / 0.3, hi / 0.3) atol = 0.05
+        end
     end
 
     @testset "gap_effects log density and gradient" begin
@@ -281,6 +289,31 @@ end
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
     end
 
+    @testset "pointwise log-likelihoods sum to the fused likelihood" begin
+        rng = Xoshiro(41)
+        g = prepare_gaps(fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019))
+        nc, nm, nr = length(g.competitors), length(g.machines), length(g.races)
+        sc, cov = Diomedes.season_counts(g), LossCovariates(g)
+        base = (; σ_comp = 0.7, σ_mach = 1.1, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
+                γ = randn(rng, nr))
+        θt = (; base..., σ_y = 0.6)
+        rows = Diomedes.gap_rows(θt, g)
+        @test length(rows) == length(g.y) + length(g.lo)
+        @test sum(rows) ≈ Diomedes.gap_loglik(θt.γ, θt.z_comp, θt.σ_comp, θt.z_mach, θt.σ_mach, θt.σ_y,
+                                              g, sc, StudentTNoise(4))
+        for (dur, era) in ((false, false), (true, true))
+            θ = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur = 0.3, τ_era = 0.2,
+                 z_era = randn(rng, cov.n_decades))
+            logλ = fill(θ.a_λ, nr)
+            dur && (logλ .+= θ.β_dur .* cov.log_duration)
+            era && (logλ .+= θ.τ_era .* (θ.z_era .- mean(θ.z_era))[cov.decade])
+            πr = fill(1 / (1 + exp(-θ.a_π)), nr)
+            @test sum(Diomedes.paceloss_rows(θ, g; loss_duration = dur, loss_era = era)) ≈
+                  Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach, θ.σ, πr,
+                                           exp.(logλ), g, sc)
+        end
+    end
+
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
         rng = Xoshiro(31)
         n_comp, n_season, cars_per_season, n_race_per_season = 24, 3, 6, 8
@@ -325,6 +358,13 @@ end
         @test cor([est["d$i"] for i in 1:n_comp], comp_eff .- mean(comp_eff)) > 0.8
         conv = convergence_summary(chain)
         @test conv.max_rhat < 1.1 && conv.min_ess > 20
+        # pointwise log-likelihoods from the chain: shape, and draw (1, 1) sums to the fused likelihood
+        ll = pointwise_loglik(chain, g, :pl)
+        @test size(ll) == (300, 2, length(g.y) + length(g.lo))
+        θ = Diomedes.draw(chain, (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, :a_π, :a_λ), 1, 1)
+        @test sum(ll[1, 1, :]) ≈ Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach,
+            θ.σ, fill(1 / (1 + exp(-θ.a_π)), length(g.races)), fill(exp(θ.a_λ), length(g.races)),
+            g, Diomedes.season_counts(g))
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "gap_effects recovers simulated effects with censoring" begin
