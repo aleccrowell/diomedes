@@ -1,6 +1,7 @@
 # Check the Julia pipeline against the legacy Python one.
 #
-#   julia --project -t 4 scripts/legacy_parity.jl [ergast_csv_dir]
+#   julia --project scripts/legacy_parity.jl [ergast_csv_dir]
+#   DIOMEDES_ENSEMBLE=threads julia --project -t 4 scripts/legacy_parity.jl   # threaded chains
 #
 # 1. Data parity: `prepare(ErgastCSV(dir))` must give exactly the rows and
 #    z-scores in the legacy `processed.csv`.
@@ -10,6 +11,7 @@
 #    iterations per chain.
 
 using Diomedes, CSV, DataFrames, Statistics
+using Turing: MCMCSerial, MCMCThreads
 
 dir = get(ARGS, 1, joinpath(@__DIR__, "..", "data"))
 legacy = CSV.read(joinpath(dir, "processed.csv"), DataFrame)
@@ -34,8 +36,10 @@ maxdiff = maximum(abs.(j.z .- j.z_score))
 @assert length(d.competitors) == length(unique(legacy.dd))
 println("data parity OK: $(nrow(j)) rows, max |Δz| = $maxdiff"); flush(stdout)
 
-chain = fit_effects(d; σ_y = 1.0, n_samples = 1000, n_chains = max(1, Threads.nthreads()),
-                    progress = false, progress_log = stdout)
+ensemble = get(ENV, "DIOMEDES_ENSEMBLE", "serial") == "threads" ? MCMCThreads() : MCMCSerial()
+t_fit = @elapsed chain = fit_effects(d; σ_y = 1.0, n_samples = 1000, n_chains = 4, ensemble,
+                                     progress = false, progress_log = stdout)
+println("fit: 4 chains, $(nameof(typeof(ensemble))), $(round(t_fit / 60; digits = 2)) min")
 for k in (:σ_comp, :σ_mach)
     println("$k: posterior mean $(round(mean(chain[k]); digits = 3)), sd $(round(std(chain[k]); digits = 3))")
 end

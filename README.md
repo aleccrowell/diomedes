@@ -39,7 +39,8 @@ julia> using Diomedes
 
 julia> res = fetch_results(JolpicaF1(), 2010:2024)      # or WRCTiming(), ErgastCSV("dir")
 julia> d = prepare(res)                                  # ModelData
-julia> chain = fit_effects(d; σ_y = nothing)             # NUTS; σ_y=1.0 matches the legacy model
+julia> chain = fit_effects(d; n_chains = 4)              # NUTS; σ_y = nothing to learn the noise scale
+julia> convergence_summary(chain)                        # worst R-hat / ESS
 julia> eff = effects_table(chain, d)
 julia> first(eff.competitors, 10)
 ```
@@ -47,6 +48,10 @@ julia> first(eff.competitors, 10)
 Responses are cached under `data/cache/` (override with `DIOMEDES_CACHE`), so
 repeat runs make no requests. Jolpica allows 500 unauthenticated requests per
 hour; a full 1950-present history needs about 300.
+
+A full 4-chain fit on all F1 data (6,400 results) takes under 2 minutes on a
+Raspberry Pi 5. Chains run one after another by default: on that machine,
+threaded chains were slower in total (see `fit_effects`).
 
 ### Adding a series
 

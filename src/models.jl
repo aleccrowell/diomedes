@@ -6,11 +6,45 @@ const HalfNormal1 = truncated(Normal(0, 1); lower = 0)
 sum_to_zero(z::AbstractVector) = z .- mean(z)
 
 """
-    crossed_effects(y, competitor, machine, n_comp, n_mach, σ_y, intercept)
+    PairStats(d::ModelData)
+
+Sufficient statistics of the Gaussian likelihood, grouped by (competitor,
+machine-season) pair: count `n`, sum of y `s`, plus the total `syy = Σy²` and
+number of observations `N`. Every observation in a pair has the same mean μ_p,
+so
+
+    Σᵢ (yᵢ - μᵢ)² = syy - 2 Σₚ sₚ μₚ + Σₚ nₚ μₚ²
+
+exactly. The likelihood then costs O(pairs) instead of O(observations) and has
+a much smaller memory footprint: 1311 pairs vs 6400 rows for F1, and far fewer
+pairs than rows for rallying, where a pair repeats on every stage.
+"""
+struct PairStats
+    comp::Vector{Int}
+    mach::Vector{Int}
+    n::Vector{Float64}
+    s::Vector{Float64}
+    syy::Float64
+    N::Int
+end
+
+function PairStats(d::ModelData)
+    acc = Dict{Tuple{Int,Int},Tuple{Int,Float64}}()
+    for (c, m, y) in zip(d.competitor, d.machine, d.y)
+        n, s = get(acc, (c, m), (0, 0.0))
+        acc[(c, m)] = (n + 1, s + y)
+    end
+    keys_ = sort!(collect(keys(acc)))
+    return PairStats(first.(keys_), last.(keys_), [Float64(acc[k][1]) for k in keys_],
+                     [acc[k][2] for k in keys_], sum(abs2, d.y), length(d.y))
+end
+
+"""
+    crossed_effects(d::ModelData; σ_y = 1.0, intercept = false)
 
 Standardised stage time = [intercept +] competitor effect + machine-season effect + noise.
 
-This is the Turing version of the legacy TFP model, with four changes:
+This is the Turing version of the legacy TFP model, with these changes:
 - it is fully Bayesian. The legacy model estimated the intercept and the
   effect scales by gradient steps inside MCMC (Monte Carlo EM); here they get
   weakly informative priors and are sampled along with everything else.
@@ -29,11 +63,40 @@ This is the Turing version of the legacy TFP model, with four changes:
   unchanged. That direction is set only by the priors (mean driver and mean car
   effect correlated at -0.99 across draws) and mixes slowly. Subtracting the
   mean takes it out of the likelihood: `mean(z_comp)` then just samples its N(0, 1/n) prior.
+- the likelihood is evaluated from per-pair sufficient statistics (`PairStats`),
+  which gives an identical posterior to the per-observation form
+  (`crossed_effects_obs`, kept as the reference) with much less memory traffic.
+  On a Raspberry Pi 5, gradients over the per-observation form were memory
+  bound: 4 parallel chains each ran ~4x slower than one chain alone.
 
 Pass `σ_y = 1.0` to fix the noise scale as the legacy model did, or `nothing`
 to estimate it.
 """
-@model function crossed_effects(y, competitor, machine, n_comp, n_mach, σ_y_fixed, intercept)
+crossed_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false) =
+    crossed_effects_pairs(PairStats(d), length(d.competitors), length(d.machines), σ_y, intercept)
+
+@model function crossed_effects_pairs(ps::PairStats, n_comp, n_mach, σ_y_fixed, intercept)
+    if intercept
+        α ~ Normal(0, 1)
+    else
+        α = 0.0
+    end
+    σ_comp ~ HalfNormal1
+    σ_mach ~ HalfNormal1
+    z_comp ~ filldist(Normal(), n_comp)
+    z_mach ~ filldist(Normal(), n_mach)
+    if σ_y_fixed === nothing
+        σ_y ~ HalfNormal1
+    else
+        σ_y = σ_y_fixed
+    end
+    μ = α .+ σ_comp .* sum_to_zero(z_comp)[ps.comp] .+ σ_mach .* z_mach[ps.mach]
+    sse = ps.syy - 2 * dot(ps.s, μ) + dot(ps.n, μ .^ 2)
+    @addlogprob! -ps.N * (log(σ_y) + log(2π) / 2) - sse / (2 * σ_y^2)
+end
+
+"Per-observation form of `crossed_effects`; same posterior, used as the reference in tests."
+@model function crossed_effects_obs(y, competitor, machine, n_comp, n_mach, σ_y_fixed, intercept)
     if intercept
         α ~ Normal(0, 1)
     else
@@ -52,6 +115,10 @@ to estimate it.
     y ~ MvNormal(μ, σ_y^2 * I)
 end
 
+crossed_effects_obs(d::ModelData; σ_y = 1.0, intercept::Bool = false) =
+    crossed_effects_obs(d.y, d.competitor, d.machine, length(d.competitors), length(d.machines),
+                        σ_y, intercept)
+
 """
     default_sampler()
 
@@ -61,16 +128,18 @@ control flow, so a compiled ReverseDiff tape is safe.
 """
 default_sampler() = NUTS(0.8; adtype = AutoReverseDiff(; compile = true))
 
-crossed_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false) =
-    crossed_effects(d.y, d.competitor, d.machine, length(d.competitors), length(d.machines),
-                    σ_y, intercept)
-
 """
     fit_effects(d::ModelData; σ_y=1.0, intercept=false, n_samples=1000, n_chains=1,
-                sampler=default_sampler(), rng=Random.default_rng(), kwargs...) -> Chains
+                ensemble=MCMCSerial(), sampler=default_sampler(), rng=Random.default_rng(), kwargs...) -> Chains
 
 Sample the posterior of `crossed_effects`. Chains run in parallel threads when
-`n_chains > 1` (start Julia with `-t N`).
+`n_chains > 1` according to `ensemble`.
+
+`ensemble` defaults to `MCMCSerial()`: on a Raspberry Pi 5, 4 chains under
+`MCMCThreads()` achieved less total throughput than running them one after
+another (per-gradient time rose from 0.23 to 1.5 ms per thread), and separate
+processes only reached ~1.5x. Pass `ensemble = MCMCThreads()` (with `julia -t N`)
+on hardware where threads scale.
 
 `init = :near_prior_centre` (default) starts each chain near the prior centre
 (see `near_prior_centre`); `init = :uniform` uses Turing's default, which
@@ -82,7 +151,7 @@ Pass an `IO` as `progress_log` to get flushed progress lines with an ETA every
 file. Other `kwargs` are passed to `sample`.
 """
 function fit_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false,
-                     n_samples::Int = 1000, n_chains::Int = 1,
+                     n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                      sampler = default_sampler(), rng = Random.default_rng(),
                      init::Symbol = :near_prior_centre,
                      progress::Bool = true, progress_log::Union{Nothing,IO} = nothing,
@@ -100,7 +169,7 @@ function fit_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false,
     end
     return n_chains == 1 ?
         sample(rng, model, sampler, n_samples; progress, kwargs...) :
-        sample(rng, model, sampler, MCMCThreads(), n_samples, n_chains; progress, kwargs...)
+        sample(rng, model, sampler, ensemble, n_samples, n_chains; progress, kwargs...)
 end
 
 """
