@@ -4,6 +4,7 @@ using JSON3
 using Random
 using Statistics
 using Test
+using Turing: logjoint
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
 
@@ -62,6 +63,25 @@ end
         @test issorted(d.competitors)
         @test d.competitors[d.competitor] == d.rows.competitor_id
         @test all(endswith("_2019"), d.machines)
+    end
+
+    @testset "pair-statistics likelihood matches per-observation likelihood" begin
+        rng = Xoshiro(3)
+        n_comp, n_mach, n = 12, 7, 300
+        comp, mach = rand(rng, 1:n_comp, n), rand(rng, 1:n_mach, n)
+        y = randn(rng, n)
+        rows = DataFrame(competitor_id = string.(comp), competitor_name = string.(comp))
+        d = Diomedes.ModelData(y, comp, mach, string.(1:n_comp), string.(1:n_mach), rows)
+        ps = Diomedes.PairStats(d)
+        @test sum(ps.n) == n && length(ps.n) < n
+        for σ_y in (1.0, nothing), intercept in (false, true), _ in 1:3
+            θ = (; σ_comp = rand(rng) + 0.1, σ_mach = rand(rng) + 0.1,
+                 z_comp = randn(rng, n_comp), z_mach = randn(rng, n_mach))
+            σ_y === nothing && (θ = (; θ..., σ_y = rand(rng) + 0.2))
+            intercept && (θ = (; θ..., α = randn(rng)))
+            @test logjoint(crossed_effects(d; σ_y, intercept), θ) ≈
+                  logjoint(Diomedes.crossed_effects_obs(d; σ_y, intercept), θ)
+        end
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "crossed_effects recovers simulated effects" begin
