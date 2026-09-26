@@ -8,6 +8,7 @@ using Turing: logjoint
 using Distributions: Normal, cdf, ccdf, logpdf
 using ADTypes: AutoForwardDiff, AutoReverseDiff
 import Turing
+import Distributions
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
 
@@ -127,6 +128,17 @@ end
                        (-31.0, -30.0), (0.0, 1e-3))
             @test Diomedes.logdiffΦ(a, b) ≈ refdiff(a, b) rtol = 1e-8
         end
+        # Student-t interval probabilities against the plain CDF difference in BigFloat
+        for ν in (3.0, 4.0, 8.0), (a, b) in ((-1.0, 1.0), (2.0, 3.0), (-9.0, -8.0), (20.0, 21.0), (0.0, 1e-3))
+            d = Distributions.TDist(ν)
+            ref = setprecision(BigFloat, 256) do
+                Float64(log(big(Distributions.ccdf(d, a)) - big(Distributions.ccdf(d, b))))
+            end
+            @test Diomedes.logdiffcdf_std(StudentTNoise(ν), a, b) ≈ ref rtol = 1e-6
+        end
+        for ν in (3.0, 4.0, 8.0), x in (-3.0, 0.0, 0.7, 12.0)
+            @test Diomedes.logpdf_std(StudentTNoise(ν), x) ≈ Distributions.logpdf(Distributions.TDist(ν), x)
+        end
     end
 
     @testset "gap_effects log density and gradient" begin
@@ -143,11 +155,17 @@ end
         lp = logpdf(H, θ.σ_comp) + logpdf(H, θ.σ_mach) + logpdf(H, θ.σ_y) +
              sum(logpdf.(Normal(), θ.z_comp)) + sum(logpdf.(Normal(), θ.z_mach)) +
              sum(logpdf.(Normal(0, 5), θ.γ))
+        # race intercepts are relative to the field mean of a[comp] + b[mach] over the race's rows
+        races = vcat(g.t_race, g.c_race)
+        cs = vcat(a[g.t_comp] .+ b[g.t_mach], a[g.c_comp] .+ b[g.c_mach])
+        cbar = [mean(cs[races .== r]) for r in 1:nr]
         for i in eachindex(g.y)
-            lp += logpdf(Normal(θ.γ[g.t_race[i]] + a[g.t_comp[i]] + b[g.t_mach[i]], θ.σ_y), g.y[i])
+            r = g.t_race[i]
+            lp += logpdf(Normal(θ.γ[r] + a[g.t_comp[i]] + b[g.t_mach[i]] - cbar[r], θ.σ_y), g.y[i])
         end
         for i in eachindex(g.lo)
-            μ = θ.γ[g.c_race[i]] + a[g.c_comp[i]] + b[g.c_mach[i]]
+            r = g.c_race[i]
+            μ = θ.γ[r] + a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[r]
             lp += refdiff((g.lo[i] - μ) / θ.σ_y, (g.hi[i] - μ) / θ.σ_y)
         end
         model = gap_effects(g)
@@ -162,6 +180,24 @@ end
             # LogDensityFunction evaluates in constrained space here: σ's (first 3) must be positive
             x = [0.3 .+ rand(rng, 3); 0.5 .* randn(rng, LDP.dimension(rd) - 3)]
             @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+        end
+        # Student-t: the rule against central finite differences of the primal
+        # (ForwardDiff cannot differentiate the t CDF)
+        sc = Diomedes.season_counts(g)
+        for ν in (3.0, 4.0, 8.0)
+            noise = StudentTNoise(ν)
+            p0 = (randn(rng, nr), randn(rng, nc), 0.7, randn(rng, nm), 1.1, 0.9)
+            f(p) = Diomedes.gap_loglik(p..., g, sc, noise)
+            v, pb = Diomedes.ChainRulesCore.rrule(Diomedes.gap_loglik, p0..., g, sc, noise)
+            @test v ≈ f(p0)
+            grads = pb(1.0)[2:7]
+            for k in 1:6, j in (p0[k] isa Real ? (1:1) : (1:min(3, length(p0[k]))))
+                h = 1e-6
+                bump(δ) = ntuple(i -> i != k ? p0[i] : p0[i] isa Real ? p0[i] + δ :
+                                     (x = copy(p0[i]); x[j] += δ; x), 6)
+                fdiff = (f(bump(h)) - f(bump(-h))) / 2h
+                @test grads[k][j] ≈ fdiff rtol = 1e-5 atol = 1e-6
+            end
         end
         # a compiled tape would replay stale gradients from the custom rule, so it is refused
         @test_throws ArgumentError fit_gaps(g; sampler = Diomedes.default_sampler(), n_samples = 10)

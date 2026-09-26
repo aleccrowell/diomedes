@@ -44,10 +44,11 @@ end
 Build `GapData` from a results table. Per stage, the winner is the fastest
 timed row, and the race distance `L` is the winner's lap count. Timed rows get
 their % gap to the winner. With `include_lapped`, classified rows without a
-time that completed 2 ≤ l < L laps become intervals (see file header).
-Everything else is dropped.
+time that completed 2 ≤ l < L laps become intervals (see file header); with
+`max_laps_down = k`, only those at most k laps down. Everything else is dropped.
 """
 function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
+                      max_laps_down::Union{Nothing,Int} = nothing,
                       machine_key = r -> string(r.machine_id, "_", r.season))
     df = DataFrame(results)
     df.kind = fill(:drop, nrow(df))
@@ -67,7 +68,8 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
         (include_lapped && !ismissing(L)) || continue
         for i in eachindex(g.kind)
             l = g.laps[i]
-            if ismissing(g.time_ms[i]) && g.classified[i] && !ismissing(l) && 2 <= l < L
+            if ismissing(g.time_ms[i]) && g.classified[i] && !ismissing(l) && 2 <= l < L &&
+               (max_laps_down === nothing || L - l <= max_laps_down)
                 g.kind[i] = :lapped
                 g.lo[i] = 100 * log(L / l)
                 g.hi[i] = 100 * log(L / (l - 1))
@@ -130,13 +132,16 @@ function sum_to_zero_by(z::AbstractVector, group::Vector{Int}, counts::Vector{In
 end
 
 """
-    gap_effects(g::GapData)
+    gap_effects(g::GapData; noise = NormalNoise())
 
 % gap to winner = race intercept + competitor effect + machine-season effect + noise,
 with lapped finishers as interval-censored observations.
 
 - Race intercepts `γ` (wide N(0, 5²) prior, in % units) absorb each race's
   reference point, so a dominant winner does not shift the whole field.
+  `γ[race]` is the expected gap of that race's *average* entrant: row means
+  are `γ[race] + c - mean(c over the race)` with `c = a[comp] + b[mach]` (see
+  `gap_loglik`).
 - Competitor effects sum to zero (relative to the average competitor).
 - Machine-season effects sum to zero **within each season**: with race
   intercepts, shifting every car in a season and every race in that season in
@@ -144,19 +149,20 @@ with lapped finishers as interval-censored observations.
   differences are identified. Competitors link seasons, so their effects stay
   comparable across careers.
 - `σ_y` is learned. Scale priors are half-normal(2) in % units.
+- `noise`: `NormalNoise()` or `StudentTNoise(ν)`; `σ_y` is the noise scale.
 """
-@model function gap_effects(g::GapData, season_counts::Vector{Int})
+@model function gap_effects(g::GapData, season_counts::Vector{Int}, noise::Noise)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ_y ~ truncated(Normal(0, 2); lower = 0)
     z_comp ~ filldist(Normal(), length(g.competitors))
     z_mach ~ filldist(Normal(), length(g.machines))
     γ ~ filldist(Normal(0, 5), length(g.races))
-    @addlogprob! gap_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ_y, g, season_counts)
+    @addlogprob! gap_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ_y, g, season_counts, noise)
 end
 
 season_counts(g::GapData) = [count(==(k), g.mach_season) for k in 1:maximum(g.mach_season)]
-gap_effects(g::GapData) = gap_effects(g, season_counts(g))
+gap_effects(g::GapData; noise::Noise = NormalNoise()) = gap_effects(g, season_counts(g), noise)
 
 """
     gap_sampler()
@@ -168,14 +174,15 @@ replay stale gradients from that rule.
 gap_sampler() = NUTS(0.8; adtype = AutoReverseDiff(; compile = false))
 
 """
-    fit_gaps(g::GapData; n_samples=1000, n_chains=1, ensemble=MCMCSerial(),
+    fit_gaps(g::GapData; noise=NormalNoise(), n_samples=1000, n_chains=1, ensemble=MCMCSerial(),
              sampler=gap_sampler(), rng=Random.default_rng(), kwargs...) -> Chains
 
 Sample `gap_effects`. Chains start with race intercepts at each race's mean
 timed gap and everything else near the prior centre (jittered per chain).
 Progress and ensemble options as in `fit_effects`.
 """
-function fit_gaps(g::GapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
+function fit_gaps(g::GapData; noise::Noise = NormalNoise(), n_samples::Int = 1000, n_chains::Int = 1,
+                  ensemble = MCMCSerial(),
                   sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                   progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
@@ -193,7 +200,7 @@ function fit_gaps(g::GapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                              z_mach = 0.1 .* randn(rng, length(g.machines)),
                              γ = race_mean .+ 0.1 .* randn(rng, length(race_mean))))
              for _ in 1:n_chains]
-    return run_nuts(gap_effects(g), inits; n_samples, n_chains, ensemble, sampler, rng,
+    return run_nuts(gap_effects(g; noise), inits; n_samples, n_chains, ensemble, sampler, rng,
                     progress, progress_log, log_every, kwargs...)
 end
 

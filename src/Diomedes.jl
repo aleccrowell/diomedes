@@ -29,9 +29,9 @@ using LogExpFunctions: log1mexp
 using Random
 using ReverseDiff
 using SHA
-using SpecialFunctions: erf, erfcx
+using SpecialFunctions: erf, erfcx, loggamma
 using Statistics
-using StatsFuns: normlogcdf, normlogpdf
+using StatsFuns: normlogcdf, normlogpdf, tdistcdf, tdistlogccdf
 using Turing
 
 include("schema.jl")
@@ -42,6 +42,7 @@ include("sources/jolpica.jl")
 include("sources/wrc.jl")
 include("prepare.jl")
 include("models.jl")
+include("noise.jl")
 include("gap_model.jl")
 include("likelihoods.jl")
 
@@ -50,6 +51,6 @@ export DataSource, fetch_results, ErgastCSV, JolpicaF1, WRCTiming
 export ModelData, prepare, standardise_times!
 export crossed_effects, fit_effects, effects_table, progress_logger,
        convergence_summary
-export GapData, prepare_gaps, gap_effects, fit_gaps, gap_effects_table
+export GapData, prepare_gaps, gap_effects, fit_gaps, gap_effects_table, NormalNoise, StudentTNoise
 
 end
