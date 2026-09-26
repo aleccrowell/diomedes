@@ -82,14 +82,13 @@ end
         @test 0.35 < mean(chain[:σ_y]) < 0.65
         conv = convergence_summary(chain)
         @test conv.max_rhat < 1.1
-        # Known issue: adding c to every competitor effect and subtracting it from
-        # every machine effect leaves predictions unchanged, so that direction is
-        # identified only by the priors (mean driver vs mean car effect correlate
-        # at -0.99 across draws) and mixes slowly; worst ESS here is ~30 of 600.
-        @test_broken conv.min_ess > 50
+        # Before competitor effects were constrained to sum to zero, the driver/car shared-shift
+        # direction mixed slowly (worst ESS ~30 of 600 here).
+        @test conv.min_ess > 50
         eff = effects_table(chain, d)
         est = eff.competitors.mean[sortperm(parse.(Int, eff.competitors.label))]
         @test cor(est, comp_eff) > 0.85
+        @test abs(mean(eff.competitors.mean)) < 1e-8   # sum-to-zero
     end
 
     opt_in("DIOMEDES_NETWORK_TESTS") && @testset "network: WRCTiming" begin

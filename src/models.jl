@@ -2,12 +2,15 @@
 
 const HalfNormal1 = truncated(Normal(0, 1); lower = 0)
 
+"Subtract the mean so the entries sum to zero. Used for the competitor effects; see `crossed_effects`."
+sum_to_zero(z::AbstractVector) = z .- mean(z)
+
 """
     crossed_effects(y, competitor, machine, n_comp, n_mach, σ_y, intercept)
 
 Standardised stage time = [intercept +] competitor effect + machine-season effect + noise.
 
-This is the Turing version of the legacy TFP model, with three changes:
+This is the Turing version of the legacy TFP model, with four changes:
 - it is fully Bayesian. The legacy model estimated the intercept and the
   effect scales by gradient steps inside MCMC (Monte Carlo EM); here they get
   weakly informative priors and are sampled along with everything else.
@@ -19,6 +22,13 @@ This is the Turing version of the legacy TFP model, with three changes:
   steps per iteration on the full F1 data (92 vs 15), and the intercept
   wandered (0.30 ± 0.04) while predictions stayed the same. Pass
   `intercept = true` to include it anyway.
+- competitor effects sum to zero (`σ_comp * (z .- mean(z))`), so they read as
+  "relative to the average competitor in the data" and the machine-season
+  effects carry the overall level. Without this, adding c to every competitor
+  effect and subtracting it from every machine effect leaves predictions
+  unchanged. That direction is set only by the priors (mean driver and mean car
+  effect correlated at -0.99 across draws) and mixes slowly. Subtracting the
+  mean takes it out of the likelihood: `mean(z_comp)` then just samples its N(0, 1/n) prior.
 
 Pass `σ_y = 1.0` to fix the noise scale as the legacy model did, or `nothing`
 to estimate it.
@@ -38,7 +48,7 @@ to estimate it.
     else
         σ_y = σ_y_fixed
     end
-    μ = α .+ σ_comp .* z_comp[competitor] .+ σ_mach .* z_mach[machine]
+    μ = α .+ σ_comp .* sum_to_zero(z_comp)[competitor] .+ σ_mach .* z_mach[machine]
     y ~ MvNormal(μ, σ_y^2 * I)
 end
 
@@ -144,7 +154,7 @@ function effects_table(chain, d::ModelData)
     # entries are scalars or, for vector parameters, vectors. Flatten to
     # (draws × levels); `vec` orders draws the same way for every parameter.
     draws(sym) = stack(vec(chain[sym]); dims = 1)
-    comp = draws(:z_comp) .* vec(chain[:σ_comp])
+    comp = mapslices(sum_to_zero, draws(:z_comp); dims = 2) .* vec(chain[:σ_comp])
     mach = draws(:z_mach) .* vec(chain[:σ_mach])
 
     names = Dict(zip(d.rows.competitor_id, d.rows.competitor_name))
