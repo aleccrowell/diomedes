@@ -4,8 +4,10 @@
 #
 # 1. Data parity: `prepare(ErgastCSV(dir))` must give exactly the rows and
 #    z-scores in the legacy `processed.csv`.
-# 2. Fits the faithful port (σ_y fixed at 1, as in the legacy model) on the
-#    same data and writes effect tables to `output/`.
+# 2. Fits the faithful port (σ_y fixed at 1, as in the legacy model; no
+#    intercept, see `crossed_effects`) on the same data and writes effect
+#    tables to `output/`. Progress lines with an ETA are printed every 100
+#    iterations per chain.
 
 using Diomedes, CSV, DataFrames, Statistics
 
@@ -32,8 +34,14 @@ maxdiff = maximum(abs.(j.z .- j.z_score))
 @assert length(d.competitors) == length(unique(legacy.dd))
 println("data parity OK: $(nrow(j)) rows, max |Δz| = $maxdiff"); flush(stdout)
 
-chain = fit_effects(d; σ_y = 1.0, n_samples = 1000, n_chains = max(1, Threads.nthreads()))
-display(chain[[:α, :σ_comp, :σ_mach]])
+chain = fit_effects(d; σ_y = 1.0, n_samples = 1000, n_chains = max(1, Threads.nthreads()),
+                    progress = false, progress_log = stdout)
+for k in (:σ_comp, :σ_mach)
+    println("$k: posterior mean $(round(mean(chain[k]); digits = 3)), sd $(round(std(chain[k]); digits = 3))")
+end
+println("divergences: ", count(identity, chain[:numerical_error]),
+        ", mean tree depth: ", round(mean(chain[:tree_depth]); digits = 2))
+println("convergence: ", convergence_summary(chain))
 eff = effects_table(chain, d)
 mkpath("output")
 CSV.write("output/legacy_competitor_effects.csv", eff.competitors)

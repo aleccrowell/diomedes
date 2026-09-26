@@ -75,8 +75,18 @@ end
         rows = DataFrame(competitor_id = string.(comp), competitor_name = string.(comp))
         d = Diomedes.ModelData(y, comp, mach, string.(1:n_comp), string.(1:n_mach), rows)
 
-        chain = fit_effects(d; σ_y = nothing, n_samples = 300, rng, progress = false)
+        log = IOBuffer()
+        chain = fit_effects(d; σ_y = nothing, n_samples = 300, n_chains = 2, rng,
+                            progress = false, progress_log = log, log_every = 150)
+        @test occursin("iter 150/450", String(take!(log)))   # 300 kept + 150 adaptation
         @test 0.35 < mean(chain[:σ_y]) < 0.65
+        conv = convergence_summary(chain)
+        @test conv.max_rhat < 1.1
+        # Known issue: adding c to every competitor effect and subtracting it from
+        # every machine effect leaves predictions unchanged, so that direction is
+        # identified only by the priors (mean driver vs mean car effect correlate
+        # at -0.99 across draws) and mixes slowly; worst ESS here is ~30 of 600.
+        @test_broken conv.min_ess > 50
         eff = effects_table(chain, d)
         est = eff.competitors.mean[sortperm(parse.(Int, eff.competitors.label))]
         @test cor(est, comp_eff) > 0.85
