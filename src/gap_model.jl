@@ -132,7 +132,7 @@ function sum_to_zero_by(z::AbstractVector, group::Vector{Int}, counts::Vector{In
 end
 
 """
-    gap_effects(g::GapData; noise = NormalNoise())
+    gap_effects(g::GapData; noise = StudentTNoise(4))
 
 % gap to winner = race intercept + competitor effect + machine-season effect + noise,
 with lapped finishers as interval-censored observations.
@@ -149,7 +149,10 @@ with lapped finishers as interval-censored observations.
   differences are identified. Competitors link seasons, so their effects stay
   comparable across careers.
 - `σ_y` is learned. Scale priors are half-normal(2) in % units.
-- `noise`: `NormalNoise()` or `StudentTNoise(ν)`; `σ_y` is the noise scale.
+- `noise`: `StudentTNoise(4)` (default) or `NormalNoise()`; `σ_y` is the noise scale.
+  Heavy tails matter here: with Gaussian noise, incident-hit results (a spin,
+  a slow stop, a few laps down) inflated σ_y from 0.48% (timed rows only) to
+  3.7% once lapped cars were included; Student-t(4) brings it to ~1.0%.
 """
 @model function gap_effects(g::GapData, season_counts::Vector{Int}, noise::Noise)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
@@ -162,7 +165,7 @@ with lapped finishers as interval-censored observations.
 end
 
 season_counts(g::GapData) = [count(==(k), g.mach_season) for k in 1:maximum(g.mach_season)]
-gap_effects(g::GapData; noise::Noise = NormalNoise()) = gap_effects(g, season_counts(g), noise)
+gap_effects(g::GapData; noise::Noise = StudentTNoise(4)) = gap_effects(g, season_counts(g), noise)
 
 """
     gap_sampler()
@@ -174,14 +177,14 @@ replay stale gradients from that rule.
 gap_sampler() = NUTS(0.8; adtype = AutoReverseDiff(; compile = false))
 
 """
-    fit_gaps(g::GapData; noise=NormalNoise(), n_samples=1000, n_chains=1, ensemble=MCMCSerial(),
+    fit_gaps(g::GapData; noise=StudentTNoise(4), n_samples=1000, n_chains=1, ensemble=MCMCSerial(),
              sampler=gap_sampler(), rng=Random.default_rng(), kwargs...) -> Chains
 
 Sample `gap_effects`. Chains start with race intercepts at each race's mean
 timed gap and everything else near the prior centre (jittered per chain).
 Progress and ensemble options as in `fit_effects`.
 """
-function fit_gaps(g::GapData; noise::Noise = NormalNoise(), n_samples::Int = 1000, n_chains::Int = 1,
+function fit_gaps(g::GapData; noise::Noise = StudentTNoise(4), n_samples::Int = 1000, n_chains::Int = 1,
                   ensemble = MCMCSerial(),
                   sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                   progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)

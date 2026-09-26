@@ -168,7 +168,7 @@ end
             μ = θ.γ[r] + a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[r]
             lp += refdiff((g.lo[i] - μ) / θ.σ_y, (g.hi[i] - μ) / θ.σ_y)
         end
-        model = gap_effects(g)
+        model = gap_effects(g; noise = NormalNoise())   # reference below is Gaussian
         @test logjoint(model, θ) ≈ lp
         # The sampler's gradient (uncompiled ReverseDiff through the hand-written rule
         # for gap_loglik) matches ForwardDiff through the plain primal, at several points.
@@ -222,16 +222,17 @@ end
                              position = missing, status = "", classified = true))
             end
         end
-        # turn gaps into times on a 60-lap race; cars > ~1 lap behind become lapped
+        # gaps are in % of race time; on a 60-lap race one lap is ~1.7%, so the
+        # slower part of each field ends up lapped
         L, lap = 60, 90_000.0
         rows.time_ms = Vector{Union{Missing,Float64}}(undef, nrow(rows))
         rows.laps = Vector{Union{Missing,Int}}(undef, nrow(rows))
         for grp in groupby(rows, [:event_id])
-            T = L * lap .* exp.(grp.gap ./ 100 .* 40)       # amplify so some cars get lapped
+            T = L * lap .* exp.(grp.gap ./ 100)
             Tw = minimum(T)
             for i in eachindex(T)
-                l = min(L, floor(Int, L * Tw / T[i]) + (T[i] == Tw ? 0 : 1))
-                l = T[i] <= Tw * L / (L - 1) ? L : floor(Int, L * Tw / T[i]) + 1
+                # laps completed when the winner finishes: largest l with (l - 1)·T/L < T_w
+                l = T[i] < Tw * L / (L - 1) ? L : floor(Int, L * Tw / T[i]) + 1
                 grp.laps[i] = l
                 grp.time_ms[i] = l == L ? T[i] : missing
             end
