@@ -173,7 +173,8 @@ function run_nuts(model, inits; n_samples, n_chains, ensemble, sampler, rng, pro
     end
     if progress_log !== nothing
         kwargs = (; kwargs..., callback = progress_logger(progress_log; every = log_every,
-                                                          total = total_iterations(sampler, n_samples)))
+                                                          total = total_iterations(sampler, n_samples),
+                                                          n_chains = ensemble isa MCMCSerial ? n_chains : 1))
     end
     return n_chains == 1 ?
         sample(rng, model, sampler, n_samples; progress, kwargs...) :
@@ -206,30 +207,56 @@ function total_iterations(sampler, n_samples)
 end
 
 """
-    progress_logger(io=stdout; every=100, total=nothing)
+    progress_logger(io=stdout; every=100, total=nothing, n_chains=1)
 
-An AbstractMCMC `callback` that prints the iteration, elapsed time and (given
-`total` iterations per chain) an ETA every `every` iterations, flushing `io` so
-progress is visible when output goes to a file.
+An AbstractMCMC `callback` that prints progress every `every` iterations,
+flushing `io` so it is visible when output goes to a file. Given `total`
+iterations per chain it adds ETAs.
 
-The ETA uses the rate over the last `every` iterations, not the average since
-the start: early adaptation is much slower than later sampling, so an average
-overstates the remaining time several-fold. Threaded chains report separately,
-labelled by thread id (approximate, since tasks can migrate between threads).
+- The chain ETA uses the rate over the last `every` iterations, not the average
+  since the start: early adaptation is much slower than later sampling, so an
+  average overstates the remaining time several-fold.
+- With `n_chains > 1` run one after another (`MCMCSerial`), each line says
+  which chain it is ("chain 2/4"; a new chain is detected when the iteration
+  count resets). Once a chain has finished, it also gives a total ETA from the
+  mean duration of finished chains, since every chain repeats the same
+  slow-then-fast pattern.
+- Threaded chains report separately, labelled by thread id (approximate, since
+  tasks can migrate between threads).
 """
-function progress_logger(io::IO = stdout; every::Int = 100, total = nothing)
+function progress_logger(io::IO = stdout; every::Int = 100, total = nothing, n_chains::Int = 1)
     t0 = time()
-    last = Dict{Int,Float64}()
+    last = Dict{Int,Float64}()        # time of the last report, per thread
+    last_iter = Dict{Int,Int}()       # last iteration seen, per thread
+    chain = Dict{Int,Int}()           # current chain number, per thread (serial runs)
+    chain_start = Dict{Int,Float64}()
+    finished = Float64[]              # durations of finished chains
     lk = ReentrantLock()
     return function (rng, model, sampler, transition, state, iteration; kwargs...)
-        iteration % every == 0 || return
         lock(lk) do
             now, tid = time(), Threads.threadid()
+            if iteration < get(last_iter, tid, 0)          # iteration count reset: new chain
+                push!(finished, now - get(chain_start, tid, t0))
+                chain[tid] = get(chain, tid, 1) + 1
+                chain_start[tid] = now
+                last[tid] = now
+            end
+            last_iter[tid] = iteration
+            iteration % every == 0 || return
             recent = now - get(last, tid, t0)
             last[tid] = now
-            eta = total === nothing ? "" :
-                string(", ETA ", round((total - iteration) * recent / every / 60; digits = 1), " min")
-            println(io, "  thread $tid: iter $iteration", total === nothing ? "" : "/$total",
+            k = get(chain, tid, 1)
+            label = n_chains > 1 ? "chain $k/$n_chains" : "thread $tid"
+            eta = ""
+            if total !== nothing
+                chain_eta = (total - iteration) * recent / every
+                eta = string(", chain ETA ", round(chain_eta / 60; digits = 1), " min")
+                if n_chains > 1 && !isempty(finished)
+                    total_eta = chain_eta + (n_chains - k) * mean(finished)
+                    eta *= string(", total ETA ", round(total_eta / 60; digits = 1), " min")
+                end
+            end
+            println(io, "  $label: iter $iteration", total === nothing ? "" : "/$total",
                     ", $(round((now - t0) / 60; digits = 1)) min elapsed", eta)
             flush(io)
         end
