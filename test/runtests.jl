@@ -263,8 +263,10 @@ end
         chain = fit_effects(d; σ_y = nothing, n_samples = 300, n_chains = 2, rng,
                             progress = false, progress_log = log, log_every = 150)
         logged = String(take!(log))
-        @test occursin("chain 1/2: iter 150/450", logged)      # 300 kept + 150 adaptation
-        @test occursin(r"chain 2/2: iter 150/450.*total ETA", logged)
+        # warm-up (150 = 300 ÷ 2 adaptation iterations) is logged, then trimmed from the chain
+        @test occursin("chain 1/2: iter 150/450 (warm-up)", logged)
+        @test occursin(r"chain 2/2: iter 450/450, .*total ETA", logged)
+        @test Turing.FlexiChains.niters(chain) == 300
         @test 0.35 < mean(chain[:σ_y]) < 0.65
         conv = convergence_summary(chain)
         @test conv.max_rhat < 1.1

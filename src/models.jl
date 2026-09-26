@@ -166,19 +166,36 @@ end
 
 # Shared NUTS driver: initial values (one per chain, or `nothing` for Turing's
 # default), optional progress log, serial or parallel chains.
+#
+# AbstractMCMC does not call the callback during discarded warm-up iterations,
+# and Turing discards all adaptation iterations by default. A progress log would
+# then only start after warm-up, which is often most of the run. So when
+# logging, warm-up draws are kept (every iteration reaches the callback) and
+# trimmed from the returned chain, which is therefore the same as without
+# logging. Callers passing their own `discard_*` options are left alone.
 function run_nuts(model, inits; n_samples, n_chains, ensemble, sampler, rng, progress,
                   progress_log, log_every, kwargs...)
     if inits !== nothing
         kwargs = (; kwargs..., initial_params = n_chains == 1 ? only(inits) : inits)
     end
+    n_warmup = warmup_iterations(sampler, n_samples)
+    trim = progress_log !== nothing && n_warmup > 0 &&
+           !haskey(kwargs, :discard_initial) && !haskey(kwargs, :discard_adapt)
+    N = n_samples
+    if trim
+        N = n_samples + n_warmup
+        kwargs = (; kwargs..., nadapts = n_warmup, discard_adapt = false, discard_initial = 0)
+    end
     if progress_log !== nothing
         kwargs = (; kwargs..., callback = progress_logger(progress_log; every = log_every,
-                                                          total = total_iterations(sampler, n_samples),
+                                                          total = n_samples + n_warmup,
+                                                          n_warmup = trim ? n_warmup : 0,
                                                           n_chains = ensemble isa MCMCSerial ? n_chains : 1))
     end
-    return n_chains == 1 ?
-        sample(rng, model, sampler, n_samples; progress, kwargs...) :
-        sample(rng, model, sampler, ensemble, n_samples, n_chains; progress, kwargs...)
+    chain = n_chains == 1 ?
+        sample(rng, model, sampler, N; progress, kwargs...) :
+        sample(rng, model, sampler, ensemble, N, n_chains; progress, kwargs...)
+    return trim ? chain[iter = (n_warmup + 1):N] : chain
 end
 
 """
@@ -198,16 +215,16 @@ function near_prior_centre(rng, d::ModelData; σ_y = 1.0, intercept::Bool = fals
     return InitFromParams(p)
 end
 
-# Iterations per chain including adaptation, mirroring Turing's defaults
-# (NUTS(δ) adapts for min(1000, N ÷ 2) iterations, run on top of the N kept).
-function total_iterations(sampler, n_samples)
-    hasproperty(sampler, :n_adapts) || return n_samples
+# Adaptation (warm-up) iterations per chain, mirroring Turing's defaults:
+# NUTS(δ) adapts for min(1000, N ÷ 2) iterations, run on top of the N kept.
+function warmup_iterations(sampler, n_samples)
+    hasproperty(sampler, :n_adapts) || return 0
     n = sampler.n_adapts
-    return n_samples + (n == -1 ? min(1000, n_samples ÷ 2) : n)
+    return n == -1 ? min(1000, n_samples ÷ 2) : n
 end
 
 """
-    progress_logger(io=stdout; every=100, total=nothing, n_chains=1)
+    progress_logger(io=stdout; every=100, total=nothing, n_warmup=0, n_chains=1)
 
 An AbstractMCMC `callback` that prints progress every `every` iterations,
 flushing `io` so it is visible when output goes to a file. Given `total`
@@ -223,8 +240,12 @@ iterations per chain it adds ETAs.
   slow-then-fast pattern.
 - Threaded chains report separately, labelled by thread id (approximate, since
   tasks can migrate between threads).
+- Iterations up to `n_warmup` are marked "(warm-up)". The callback only sees
+  warm-up iterations if they are not discarded; `fit_effects` / `fit_gaps`
+  arrange that when logging.
 """
-function progress_logger(io::IO = stdout; every::Int = 100, total = nothing, n_chains::Int = 1)
+function progress_logger(io::IO = stdout; every::Int = 100, total = nothing, n_warmup::Int = 0,
+                         n_chains::Int = 1)
     t0 = time()
     last = Dict{Int,Float64}()        # time of the last report, per thread
     last_iter = Dict{Int,Int}()       # last iteration seen, per thread
@@ -256,7 +277,8 @@ function progress_logger(io::IO = stdout; every::Int = 100, total = nothing, n_c
                     eta *= string(", total ETA ", round(total_eta / 60; digits = 1), " min")
                 end
             end
-            println(io, "  $label: iter $iteration", total === nothing ? "" : "/$total",
+            phase = iteration <= n_warmup ? " (warm-up)" : ""
+            println(io, "  $label: iter $iteration", total === nothing ? "" : "/$total", phase,
                     ", $(round((now - t0) / 60; digits = 1)) min elapsed", eta)
             flush(io)
         end
