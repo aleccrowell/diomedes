@@ -26,6 +26,8 @@ struct GapData
     c_mach::Vector{Int}
     c_race::Vector{Int}
     mach_season::Vector{Int}      # season index of each machine level
+    race_season::Vector{Int}      # calendar year of each race
+    race_minutes::Vector{Float64} # winner's race time in minutes (race duration)
     competitors::Vector{String}
     machines::Vector{String}
     races::Vector{String}
@@ -52,6 +54,7 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
                       machine_key = r -> string(r.machine_id, "_", r.season))
     df = DataFrame(results)
     df.kind = fill(:drop, nrow(df))
+    df.winner_ms = Vector{Union{Missing,Float64}}(missing, nrow(df))
     df.y = Vector{Union{Missing,Float64}}(missing, nrow(df))
     df.lo = Vector{Union{Missing,Float64}}(missing, nrow(df))
     df.hi = Vector{Union{Missing,Float64}}(missing, nrow(df))
@@ -60,6 +63,7 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
         isempty(timed) && continue
         w = timed[argmin(g.time_ms[timed])]
         T_w = g.time_ms[w]
+        g.winner_ms .= T_w
         for i in timed
             g.kind[i] = :timed
             g.y[i] = 100 * log(g.time_ms[i] / T_w)
@@ -93,6 +97,14 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
         mach_season[mi[r.machine_key]] = si[r.season]
     end
 
+    race_season = zeros(Int, length(races))
+    race_minutes = zeros(length(races))
+    for r in eachrow(df)
+        k = ri[r.race_key]
+        race_season[k] = r.season
+        race_minutes[k] = r.winner_ms / 60_000
+    end
+
     t = df[df.kind .== :timed, :]
     c = df[df.kind .== :lapped, :]
     idx(d, col, map) = [map[k] for k in d[!, col]]
@@ -100,7 +112,7 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
                    idx(t, :race_key, ri),
                    Float64.(c.lo), Float64.(c.hi), idx(c, :competitor_id, ci),
                    idx(c, :machine_key, mi), idx(c, :race_key, ri),
-                   mach_season, comps, machs, races, df)
+                   mach_season, race_season, race_minutes, comps, machs, races, df)
 end
 
 """

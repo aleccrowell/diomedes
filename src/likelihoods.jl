@@ -62,65 +62,77 @@ function group_means(z, group, counts)
     return m ./ counts
 end
 
-function ChainRulesCore.rrule(::typeof(gap_loglik), γ, z_comp, σ_comp, z_mach, σ_mach, σ_y, g,
-                              season_counts, noise::Noise = NormalNoise())
+# Shared forward/backward passes for the fused gap-model rules (Float64 only).
+#
+# Forward: centred effects a, b and per-row means μ = γ[race] + c - c̄[race]
+# with c = a[comp] + b[mach]. Backward: given dℓ/dμ per row, return gradients
+# for γ, z_comp, σ_comp, z_mach, σ_mach. Race centring and both effect
+# centrings are self-adjoint, so each backward step mirrors its forward step.
+function gap_row_means(γ, z_comp, σ_comp, z_mach, σ_mach, g, season_counts)
     zc = z_comp .- mean(z_comp)
     zm = z_mach .- group_means(z_mach, g.mach_season, season_counts)[g.mach_season]
-    a = σ_comp .* zc
-    b = σ_mach .* zm
-    nt, nc, nr = length(g.y), length(g.lo), length(γ)
-    # field means of c = a[comp] + b[mach] per race
+    a, b = σ_comp .* zc, σ_mach .* zm
+    nr = length(γ)
     csum, n = zeros(nr), zeros(Int, nr)
-    for i in 1:nt
+    for i in eachindex(g.t_race)
         r = g.t_race[i]; csum[r] += a[g.t_comp[i]] + b[g.t_mach[i]]; n[r] += 1
     end
-    for i in 1:nc
+    for i in eachindex(g.c_race)
         r = g.c_race[i]; csum[r] += a[g.c_comp[i]] + b[g.c_mach[i]]; n[r] += 1
     end
     cbar = csum ./ max.(n, 1)
-    # likelihood and dℓ/dμ per row; dγ is the race sum of dμ
-    dμt, dμc = zeros(nt), zeros(nc)
-    dγ = zeros(nr)
+    μt = [γ[g.t_race[i]] + a[g.t_comp[i]] + b[g.t_mach[i]] - cbar[g.t_race[i]] for i in eachindex(g.t_race)]
+    μc = [γ[g.c_race[i]] + a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[g.c_race[i]] for i in eachindex(g.c_race)]
+    return (; zc, zm, n, μt, μc)
+end
+
+function gap_effects_pullback(dμt, dμc, st, σ_comp, σ_mach, g, season_counts)
+    dγ = zeros(length(st.n))
+    for i in eachindex(dμt); dγ[g.t_race[i]] += dμt[i]; end
+    for i in eachindex(dμc); dγ[g.c_race[i]] += dμc[i]; end
+    # through cᵢ - c̄[race]: dc = dμ - dγ[race]/n[race]
+    da, db = zeros(length(st.zc)), zeros(length(st.zm))
+    for i in eachindex(dμt)
+        r = g.t_race[i]; dc = dμt[i] - dγ[r] / st.n[r]
+        da[g.t_comp[i]] += dc; db[g.t_mach[i]] += dc
+    end
+    for i in eachindex(dμc)
+        r = g.c_race[i]; dc = dμc[i] - dγ[r] / st.n[r]
+        da[g.c_comp[i]] += dc; db[g.c_mach[i]] += dc
+    end
+    # through a = σ_comp·(z - mean z) and b = σ_mach·(z - season mean z)
+    dσ_comp = sum(da .* st.zc)
+    dz_comp = σ_comp .* (da .- mean(da))
+    dσ_mach = sum(db .* st.zm)
+    dz_mach = σ_mach .* (db .- group_means(db, g.mach_season, season_counts)[g.mach_season])
+    return (; dγ, dz_comp, dσ_comp, dz_mach, dσ_mach)
+end
+
+function ChainRulesCore.rrule(::typeof(gap_loglik), γ, z_comp, σ_comp, z_mach, σ_mach, σ_y, g,
+                              season_counts, noise::Noise = NormalNoise())
+    st = gap_row_means(γ, z_comp, σ_comp, z_mach, σ_mach, g, season_counts)
+    dμt, dμc = zeros(length(st.μt)), zeros(length(st.μc))
     val, dσy = 0.0, 0.0
-    for i in 1:nt
-        r = g.t_race[i]
-        ρ = (g.y[i] - γ[r] - a[g.t_comp[i]] - b[g.t_mach[i]] + cbar[r]) / σ_y
+    for i in eachindex(st.μt)
+        ρ = (g.y[i] - st.μt[i]) / σ_y
         val += logpdf_std(noise, ρ)
         s = score_std(noise, ρ)          # dℓ/dρ; ρ falls as μ rises: dℓ/dμ = -s/σ_y
         dμt[i] = -s / σ_y
-        dγ[r] += dμt[i]
         dσy += (-s * ρ - 1) / σ_y
     end
-    val -= nt * log(σ_y)
-    for i in 1:nc
-        r = g.c_race[i]
-        μ = γ[r] + a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[r]
-        lo, hi = (g.lo[i] - μ) / σ_y, (g.hi[i] - μ) / σ_y
+    val -= length(st.μt) * log(σ_y)
+    for i in eachindex(st.μc)
+        lo, hi = (g.lo[i] - st.μc[i]) / σ_y, (g.hi[i] - st.μc[i]) / σ_y
         ℓ = logdiffcdf_std(noise, lo, hi)
         val += ℓ
         # f(x)/D in log space: D = F(hi) - F(lo) = exp(ℓ) can underflow
         pa, pb = exp(logpdf_std(noise, lo) - ℓ), exp(logpdf_std(noise, hi) - ℓ)
         dμc[i] = (pa - pb) / σ_y
-        dγ[r] += dμc[i]
         dσy += (lo * pa - hi * pb) / σ_y
     end
-    # through cᵢ - c̄[race] (race centring is self-adjoint): dc = dμ - dγ[race]/n[race]
-    da, db = zeros(length(a)), zeros(length(b))
-    for i in 1:nt
-        r = g.t_race[i]; dc = dμt[i] - dγ[r] / n[r]
-        da[g.t_comp[i]] += dc; db[g.t_mach[i]] += dc
-    end
-    for i in 1:nc
-        r = g.c_race[i]; dc = dμc[i] - dγ[r] / n[r]
-        da[g.c_comp[i]] += dc; db[g.c_mach[i]] += dc
-    end
-    # through a = σ_comp·(z - mean z) and b = σ_mach·(z - group mean z); centring is self-adjoint
-    dσ_comp = sum(da .* zc)
-    dz_comp = σ_comp .* (da .- mean(da))
-    dσ_mach = sum(db .* zm)
-    dz_mach = σ_mach .* (db .- group_means(db, g.mach_season, season_counts)[g.mach_season])
-    pullback(Δ) = (NoTangent(), Δ .* dγ, Δ .* dz_comp, Δ * dσ_comp, Δ .* dz_mach, Δ * dσ_mach,
-                   Δ * dσy, NoTangent(), NoTangent(), NoTangent())
+    d = gap_effects_pullback(dμt, dμc, st, σ_comp, σ_mach, g, season_counts)
+    pullback(Δ) = (NoTangent(), Δ .* d.dγ, Δ .* d.dz_comp, Δ * d.dσ_comp, Δ .* d.dz_mach,
+                   Δ * d.dσ_mach, Δ * dσy, NoTangent(), NoTangent(), NoTangent())
     return val, pullback
 end
 

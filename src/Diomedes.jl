@@ -25,7 +25,7 @@ using Dates
 using HTTP
 using JSON3
 using LinearAlgebra
-using LogExpFunctions: log1mexp
+using LogExpFunctions: log1mexp, logaddexp, logistic
 using Random
 using ReverseDiff
 using SHA
@@ -44,6 +44,7 @@ include("prepare.jl")
 include("models.jl")
 include("noise.jl")
 include("gap_model.jl")
+include("paceloss.jl")
 include("likelihoods.jl")
 
 export RESULT_SCHEMA, empty_results, validate_results
@@ -52,5 +53,6 @@ export ModelData, prepare, standardise_times!
 export crossed_effects, fit_effects, effects_table, progress_logger,
        convergence_summary
 export GapData, prepare_gaps, gap_effects, fit_gaps, gap_effects_table, NormalNoise, StudentTNoise
+export paceloss_effects, fit_paceloss, LossCovariates
 
 end

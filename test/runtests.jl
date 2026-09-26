@@ -141,6 +141,27 @@ end
         end
     end
 
+    @testset "pace + loss noise" begin
+        # composite Simpson on [a, b] with n (even) intervals
+        simpson(f, a, b, n) = (h = (b - a) / n; h / 3 * (f(a) + f(b) +
+            4 * sum(f(a + (2k - 1) * h) for k in 1:(n ÷ 2)) + 2 * sum(f(a + 2k * h) for k in 1:(n ÷ 2 - 1))))
+        for (σ, π, λ) in ((0.3, 0.2, 2.0), (0.5, 0.05, 0.8), (0.2, 0.5, 5.0))
+            pdf(x) = exp(Diomedes.paceloss_logpdf(x, σ, π, λ))
+            @test simpson(pdf, -10σ, 60λ, 200_000) ≈ 1 rtol = 1e-6
+            # interval probabilities against numerical integration of the density:
+            # central, straddling 0, right tail (lapped-car territory), far tail
+            for (lo, hi) in ((-0.2, 0.1), (-1.0, 1.0), (1.5, 3.4), (8.0, 10.0), (30.0, 32.0))
+                ref = log(simpson(pdf, lo, hi, 20_000))
+                @test Diomedes.paceloss_loginterval(lo, hi, σ, π, λ) ≈ ref rtol = 1e-6
+            end
+        end
+        # extreme right tail: finite and ordered where the density underflows
+        l1 = Diomedes.paceloss_loginterval(300.0, 305.0, 0.3, 0.2, 2.0)
+        l2 = Diomedes.paceloss_loginterval(600.0, 605.0, 0.3, 0.2, 2.0)
+        @test isfinite(l1) && isfinite(l2) && l2 < l1
+        @test l1 ≈ log(0.2) - 300 / 2.0 + 0.3^2 / (2 * 2.0^2) + log1p(-exp(-5 / 2.0)) rtol = 1e-8
+    end
+
     @testset "gap_effects log density and gradient" begin
         rng = Xoshiro(5)
         res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
@@ -201,6 +222,109 @@ end
         end
         # a compiled tape would replay stale gradients from the custom rule, so it is refused
         @test_throws ArgumentError fit_gaps(g; sampler = Diomedes.default_sampler(), n_samples = 10)
+    end
+
+    @testset "paceloss_effects log density and gradient" begin
+        rng = Xoshiro(21)
+        g = prepare_gaps(fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019))
+        nc, nm, nr = length(g.competitors), length(g.machines), length(g.races)
+        cov = LossCovariates(g)
+        LDF = Turing.DynamicPPL.LogDensityFunction
+        LDP = Turing.DynamicPPL.LogDensityProblems
+        H(s) = Turing.truncated(Normal(0, s); lower = 0)
+        for (dur, era) in ((false, false), (true, false), (false, true), (true, true))
+            θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
+                 γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
+            dur && (θ = (; θ..., β_dur = 0.3))
+            era && (θ = (; θ..., τ_era = 0.2, z_era = randn(rng, cov.n_decades)))
+            # reference: priors from Distributions + per-row terms in plain loops
+            lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
+                 sum(logpdf.(Normal(), θ.z_comp)) + sum(logpdf.(Normal(), θ.z_mach)) +
+                 sum(logpdf.(Normal(0, 5), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
+                 logpdf(Normal(log(2), 1), θ.a_λ)
+            logλ = fill(θ.a_λ, nr)
+            dur && (lp += logpdf(Normal(0, 1), θ.β_dur); logλ .+= θ.β_dur .* cov.log_duration)
+            if era
+                lp += logpdf(H(0.5), θ.τ_era) + sum(logpdf.(Normal(), θ.z_era))
+                logλ .+= θ.τ_era .* (θ.z_era .- mean(θ.z_era))[cov.decade]
+            end
+            π = 1 / (1 + exp(-θ.a_π))
+            a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
+            b = θ.σ_mach .* (θ.z_mach .- mean(θ.z_mach))       # one season in the fixture
+            races = vcat(g.t_race, g.c_race)
+            cs = vcat(a[g.t_comp] .+ b[g.t_mach], a[g.c_comp] .+ b[g.c_mach])
+            cbar = [mean(cs[races .== r]) for r in 1:nr]
+            for i in eachindex(g.y)
+                r = g.t_race[i]
+                lp += Diomedes.paceloss_logpdf(g.y[i] - (θ.γ[r] + a[g.t_comp[i]] + b[g.t_mach[i]] - cbar[r]),
+                                               θ.σ, π, exp(logλ[r]))
+            end
+            for i in eachindex(g.lo)
+                r = g.c_race[i]; μ = θ.γ[r] + a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[r]
+                lp += Diomedes.paceloss_loginterval(g.lo[i] - μ, g.hi[i] - μ, θ.σ, π, exp(logλ[r]))
+            end
+            model = paceloss_effects(g; loss_duration = dur, loss_era = era)
+            @test logjoint(model, θ) ≈ lp
+            # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff
+            rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
+            fd = LDF(model; adtype = AutoForwardDiff())
+            npos = 3 + (era ? 1 : 0)              # σ_comp, σ_mach, σ (+ τ_era) must be positive
+            for _ in 1:3
+                x = 0.5 .* randn(rng, LDP.dimension(rd))
+                x[1:3] .= 0.3 .+ rand(rng, 3)
+                if era   # τ_era follows z_comp, z_mach, γ, a_π, a_λ (and β_dur)
+                    x[3 + nc + nm + nr + 2 + (dur ? 1 : 0) + 1] = 0.1 + rand(rng)
+                end
+                @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+            end
+        end
+        @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
+    end
+
+    opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
+        rng = Xoshiro(31)
+        n_comp, n_season, cars_per_season, n_race_per_season = 24, 3, 6, 8
+        comp_eff = 0.8 .* randn(rng, n_comp)
+        mach_eff = [1.0 .* randn(rng, cars_per_season) for _ in 1:n_season]
+        π_true, λ_true, σ_true = 0.2, 3.0, 0.3
+        rows = DataFrame()
+        for s in 1:n_season, r in 1:n_race_per_season
+            γ = 1.0 * randn(rng)
+            for (k, dr) in enumerate(randperm(rng, n_comp)[1:12])
+                car = mod1(k, cars_per_season)
+                loss = rand(rng) < π_true ? -λ_true * log(rand(rng)) : 0.0
+                gap = γ + comp_eff[dr] + mach_eff[s][car] + σ_true * randn(rng) + loss
+                push!(rows, (; series = "sim", season = 2000 + s, round = r, event_id = "$s-$r",
+                             event_name = "", stage_id = "race", competitor_id = "d$dr",
+                             competitor_name = "d$dr", codriver_id = missing,
+                             machine_id = "c$car", class = missing, gap,
+                             position = missing, status = "", classified = true))
+            end
+        end
+        L, lap = 60, 90_000.0
+        rows.time_ms = Vector{Union{Missing,Float64}}(undef, nrow(rows))
+        rows.laps = Vector{Union{Missing,Int}}(undef, nrow(rows))
+        for grp in groupby(rows, [:event_id])
+            T = L * lap .* exp.(grp.gap ./ 100)
+            Tw = minimum(T)
+            for i in eachindex(T)
+                l = T[i] < Tw * L / (L - 1) ? L : floor(Int, L * Tw / T[i]) + 1
+                grp.laps[i] = l
+                grp.time_ms[i] = l == L ? T[i] : missing
+            end
+        end
+        g = prepare_gaps(select(rows, Not(:gap)))
+        @test length(g.lo) > 0.15 * nrow(rows)
+        chain = fit_paceloss(g; n_samples = 300, n_chains = 2, rng, progress = false)
+        est_π = mean(1 ./ (1 .+ exp.(-vec(chain[:a_π]))))
+        est_λ = mean(exp.(vec(chain[:a_λ])))
+        @test 0.1 < est_π < 0.35
+        @test 1.5 < est_λ < 5.0
+        eff = gap_effects_table(chain, g)
+        est = Dict(zip(eff.competitors.label, eff.competitors.mean))
+        @test cor([est["d$i"] for i in 1:n_comp], comp_eff .- mean(comp_eff)) > 0.8
+        conv = convergence_summary(chain)
+        @test conv.max_rhat < 1.1 && conv.min_ess > 20
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "gap_effects recovers simulated effects with censoring" begin
