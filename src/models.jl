@@ -72,6 +72,11 @@ crossed_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false) =
 Sample the posterior of `crossed_effects`. Chains run in parallel threads when
 `n_chains > 1` (start Julia with `-t N`).
 
+`init = :near_prior_centre` (default) starts each chain near the prior centre
+(see `near_prior_centre`); `init = :uniform` uses Turing's default, which
+draws unconstrained values from U(-2, 2), i.e. scales anywhere from 0.14 to
+7.4.
+
 Pass an `IO` as `progress_log` to get flushed progress lines with an ETA every
 `log_every` iterations (see `progress_logger`); useful when output goes to a
 file. Other `kwargs` are passed to `sample`.
@@ -79,9 +84,16 @@ file. Other `kwargs` are passed to `sample`.
 function fit_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false,
                      n_samples::Int = 1000, n_chains::Int = 1,
                      sampler = default_sampler(), rng = Random.default_rng(),
+                     init::Symbol = :near_prior_centre,
                      progress::Bool = true, progress_log::Union{Nothing,IO} = nothing,
                      log_every::Int = 100, kwargs...)
     model = crossed_effects(d; σ_y, intercept)
+    if init === :near_prior_centre
+        inits = [near_prior_centre(rng, d; σ_y, intercept) for _ in 1:n_chains]
+        kwargs = (; kwargs..., initial_params = n_chains == 1 ? only(inits) : inits)
+    elseif init !== :uniform
+        throw(ArgumentError("init must be :near_prior_centre or :uniform"))
+    end
     if progress_log !== nothing
         kwargs = (; kwargs..., callback = progress_logger(progress_log; every = log_every,
                                                           total = total_iterations(sampler, n_samples)))
@@ -89,6 +101,23 @@ function fit_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false,
     return n_chains == 1 ?
         sample(rng, model, sampler, n_samples; progress, kwargs...) :
         sample(rng, model, sampler, MCMCThreads(), n_samples, n_chains; progress, kwargs...)
+end
+
+"""
+    near_prior_centre(rng, d; σ_y, intercept)
+
+Initial values near the prior centre, jittered per chain so that R-hat still
+compares chains started from different points: scales drawn from U(0.3, 0.7)
+and standardised effects from N(0, 0.1²).
+"""
+function near_prior_centre(rng, d::ModelData; σ_y = 1.0, intercept::Bool = false)
+    scale() = 0.3 + 0.4 * rand(rng)
+    p = (; σ_comp = scale(), σ_mach = scale(),
+         z_comp = 0.1 .* randn(rng, length(d.competitors)),
+         z_mach = 0.1 .* randn(rng, length(d.machines)))
+    σ_y === nothing && (p = (; p..., σ_y = scale()))
+    intercept && (p = (; p..., α = 0.0))
+    return InitFromParams(p)
 end
 
 # Iterations per chain including adaptation, mirroring Turing's defaults
