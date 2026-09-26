@@ -19,15 +19,19 @@ module Diomedes
 
 using ADTypes: AutoReverseDiff
 using CSV
+using ChainRulesCore: ChainRulesCore, NoTangent
 using DataFrames
 using Dates
 using HTTP
 using JSON3
 using LinearAlgebra
+using LogExpFunctions: log1mexp
 using Random
 using ReverseDiff
 using SHA
+using SpecialFunctions: erf, erfcx
 using Statistics
+using StatsFuns: normlogcdf, normlogpdf
 using Turing
 
 include("schema.jl")
@@ -38,11 +42,14 @@ include("sources/jolpica.jl")
 include("sources/wrc.jl")
 include("prepare.jl")
 include("models.jl")
+include("gap_model.jl")
+include("likelihoods.jl")
 
 export RESULT_SCHEMA, empty_results, validate_results
 export DataSource, fetch_results, ErgastCSV, JolpicaF1, WRCTiming
 export ModelData, prepare, standardise_times!
 export crossed_effects, fit_effects, effects_table, progress_logger,
        convergence_summary
+export GapData, prepare_gaps, gap_effects, fit_gaps, gap_effects_table
 
 end

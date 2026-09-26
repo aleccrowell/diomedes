@@ -22,6 +22,7 @@ const RESULT_SCHEMA = [
     :class         => Union{Missing,String},    # e.g. "Rally1", "Rally2"
     :time_ms       => Union{Missing,Float64},   # stage/race time; missing if not timed
     :position      => Union{Missing,Int},
+    :laps          => Union{Missing,Int},       # laps completed (circuit racing); missing for rally stages
     :status        => String,                   # source status text ("Finished", "+1 Lap", "DNF", ...)
     :classified    => Bool,                     # counted as a finisher by the series
 ]

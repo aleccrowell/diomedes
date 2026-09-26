@@ -156,12 +156,20 @@ function fit_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false,
                      init::Symbol = :near_prior_centre,
                      progress::Bool = true, progress_log::Union{Nothing,IO} = nothing,
                      log_every::Int = 100, kwargs...)
-    model = crossed_effects(d; σ_y, intercept)
-    if init === :near_prior_centre
-        inits = [near_prior_centre(rng, d; σ_y, intercept) for _ in 1:n_chains]
-        kwargs = (; kwargs..., initial_params = n_chains == 1 ? only(inits) : inits)
-    elseif init !== :uniform
+    init in (:near_prior_centre, :uniform) ||
         throw(ArgumentError("init must be :near_prior_centre or :uniform"))
+    inits = init === :uniform ? nothing :
+        [near_prior_centre(rng, d; σ_y, intercept) for _ in 1:n_chains]
+    return run_nuts(crossed_effects(d; σ_y, intercept), inits; n_samples, n_chains, ensemble,
+                    sampler, rng, progress, progress_log, log_every, kwargs...)
+end
+
+# Shared NUTS driver: initial values (one per chain, or `nothing` for Turing's
+# default), optional progress log, serial or parallel chains.
+function run_nuts(model, inits; n_samples, n_chains, ensemble, sampler, rng, progress,
+                  progress_log, log_every, kwargs...)
+    if inits !== nothing
+        kwargs = (; kwargs..., initial_params = n_chains == 1 ? only(inits) : inits)
     end
     if progress_log !== nothing
         kwargs = (; kwargs..., callback = progress_logger(progress_log; every = log_every,

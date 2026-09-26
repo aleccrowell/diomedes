@@ -40,6 +40,7 @@ function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
         class = Vector{Union{Missing,String}}(missing, nrow(df)),
         time_ms = Vector{Union{Missing,Float64}}(maybefloat.(df.milliseconds)),
         position = Vector{Union{Missing,Int}}(maybeint.(df.position)),
+        laps = Vector{Union{Missing,Int}}(maybeint.(df.laps)),
         status = String.(df.status),
         classified = .!ismissing.(df.position),
     )

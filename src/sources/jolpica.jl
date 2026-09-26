@@ -64,6 +64,7 @@ function jolpica_row(race, r)
         class = missing,
         time_ms = time === nothing ? missing : maybefloat(get(time, :millis, nothing)),
         position = classified ? maybeint(r.position) : missing,
+        laps = maybeint(get(r, :laps, nothing)),
         status = String(r.status),
         classified,
     )
