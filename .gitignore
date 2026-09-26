@@ -127,3 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Julia
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+/docs/build/
+
+# Data: raw API responses are cached locally, not committed.
+# Small fixtures for tests live in test/fixtures/.
+/data/
+/output/
+.DS_Store
