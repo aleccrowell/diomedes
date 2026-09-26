@@ -22,7 +22,7 @@ legacy = innerjoin(legacy, select(drivers, :driverId, :driverRef), on = :driverI
 legacy.event_id = string.(legacy.year, "-", lpad.(legacy.round, 2, '0'))
 
 seasons = unique(races.year)
-results = fetch_results(ErgastCSV(dir), seasons)
+results = fetch_results(ErgastCSV(dir; include_indy500 = true), seasons)  # legacy kept it
 d = prepare(results)
 println(d); flush(stdout)
 

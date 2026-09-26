@@ -8,11 +8,14 @@ to the present.
 Unauthenticated limits are 4 req/s burst and 500 req/hour sustained. A full
 history is roughly 300 paged requests; responses are cached, so this is a
 one-off cost. Pass `refresh=true` to re-fetch (e.g. the in-progress season).
+The Indianapolis 500 (1950–1960) is excluded unless `include_indy500 = true`
+(see `INDY500`).
 """
 Base.@kwdef struct JolpicaF1 <: DataSource
     base_url::String = "https://api.jolpi.ca/ergast/f1"
     cache_dir::String = joinpath(default_cache_dir(), "jolpica")
     refresh::Bool = false
+    include_indy500::Bool = false
     limiter::RateLimiter = RateLimiter(0.3)
 end
 
@@ -36,6 +39,7 @@ function jolpica_season(src::JolpicaF1, season::Integer)
         total = parse(Int, mr.total)
         # A race's results can be split across pages; each page repeats the race header.
         for race in mr.RaceTable.Races, r in race.Results
+            (src.include_indy500 || race.raceName != INDY500) || continue
             push!(rows, jolpica_row(race, r))
         end
         offset += JOLPICA_PAGE

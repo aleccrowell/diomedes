@@ -1,15 +1,19 @@
 """
-    ErgastCSV(dir)
+    ErgastCSV(dir; include_indy500 = false)
 
 F1 results from a local Ergast-format CSV dump (`results.csv`, `races.csv`,
 `drivers.csv`, `constructors.csv`, `status.csv`). Useful offline and for checking
 parity with the legacy Python pipeline, which used such a dump.
 
 IDs use Ergast's `driverRef`/`constructorRef` strings so they match `JolpicaF1`.
+The Indianapolis 500 (1950–1960) is excluded unless `include_indy500 = true`
+(see `INDY500`).
 """
 struct ErgastCSV <: DataSource
     dir::String
+    include_indy500::Bool
 end
+ErgastCSV(dir::AbstractString; include_indy500::Bool = false) = ErgastCSV(dir, include_indy500)
 
 function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
     rd(name) = CSV.read(joinpath(src.dir, name), DataFrame; missingstring = "\\N")
@@ -21,6 +25,7 @@ function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
 
     df = innerjoin(results, races; on = :raceId)
     filter!(:year => in(Set(seasons)), df)
+    src.include_indy500 || filter!(:name => !=(INDY500), df)
     df = innerjoin(df, drivers; on = :driverId)
     df = innerjoin(df, constructors; on = :constructorId)
     df = innerjoin(df, status; on = :statusId)

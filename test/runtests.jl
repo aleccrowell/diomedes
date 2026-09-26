@@ -66,6 +66,18 @@ end
         @test j.status == j.status_1
     end
 
+    @testset "Indy 500 excluded by default" begin
+        dir = mktempdir()
+        for f in readdir(joinpath(FIXTURES, "ergast"))
+            cp(joinpath(FIXTURES, "ergast", f), joinpath(dir, f))
+        end
+        races = read(joinpath(dir, "races.csv"), String)
+        write(joinpath(dir, "races.csv"), replace(races, "Bahrain Grand Prix" => "Indianapolis 500"))
+        @test Set(fetch_results(ErgastCSV(dir), 2019).event_id) == Set(["2019-01"])
+        @test Set(fetch_results(ErgastCSV(dir; include_indy500 = true), 2019).event_id) ==
+              Set(["2019-01", "2019-02"])
+    end
+
     @testset "prepare" begin
         res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
         d = prepare(res)
