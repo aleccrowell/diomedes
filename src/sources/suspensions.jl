@@ -2,9 +2,13 @@
 #
 # Since 2005, a red-flagged race is resumed behind the safety car and the
 # official race time includes the suspension. Canada 2011's winner's time is
-# 244.7 min, of which ~123 min was the stoppage. Until 2001, stopped races were
-# scored on aggregate times of their parts, so the stoppage is excluded, and no
-# suspended-and-resumed races occur in 2002–2004. Checked against the official
+# 244.7 min, of which ~123 min was the stoppage. Before 2005 no official time
+# includes a stoppage: 1996–2001 red flags were mostly lap-1 crashes followed by
+# a full restart, or scored on aggregate times (Belgium 2001, the last); Canada
+# 1997 and Brazil 2003 were stopped and not restarted (result from an earlier
+# lap); 2002 and 2004 had no red-flagged races (List of red-flagged Formula One
+# races, Wikipedia). Lap-time detection agrees: no stoppage appears in any
+# official time before 2007. Checked against the official
 # times: for every suspension detected from lap times (2007–2017 in the Ergast
 # data), the winner's official total minus laps × typical lap matches the
 # lap-time suspension to within ~1–2 min.
