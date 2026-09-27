@@ -308,7 +308,8 @@ end
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
         H(s) = Turing.truncated(Normal(0, s); lower = 0)
-        for dur in (false, true), era in (:none, :decade, :regime, :rw)
+        for (dur, era, kap) in [[(d, e, false) for d in (false, true) for e in (:none, :decade, :regime, :rw)];
+                                (true, :rw, true); (false, :none, true)]
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
@@ -317,6 +318,7 @@ end
                                                z_π_era = randn(rng, k), z_λ_era = randn(rng, k)))
             era === :rw && (θ = (; θ..., τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1),
                                  e_λ_rw = randn(rng, cov.n_seasons - 1)))
+            kap && (θ = (; θ..., τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1)))
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
             lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
@@ -343,6 +345,12 @@ end
                 logλ .+= path(θ.τ_λ_rw .* θ.e_λ_rw)[cov.season]
             end
             π, λ = 1 ./ (1 .+ exp.(-logitπ)), exp.(logλ)
+            κ = ones(nr)
+            if kap
+                lp += logpdf(H(0.25), θ.τ_κ) + sum(logpdf.(Distributions.TDist(3), θ.e_κ))
+                lκ = [0.0; cumsum(θ.τ_κ .* θ.e_κ)]
+                κ = exp.(lκ .- mean(lκ))[cov.season]
+            end
             a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
             zm = θ.z_mach .- [mean(θ.z_mach[g.mach_season .== g.mach_season[j]]) for j in 1:nm]
             b = θ.σ_mach .* zm                                   # centred within season
@@ -351,14 +359,14 @@ end
             cbar = [mean(cs[races .== r]) for r in 1:nr]
             for i in eachindex(g.y)
                 r = g.t_race[i]
-                lp += Diomedes.paceloss_logpdf(g.y[i] - (θ.γ[r] + a[g.t_comp[i]] + b[g.t_mach[i]] - cbar[r]),
+                lp += Diomedes.paceloss_logpdf(g.y[i] - (θ.γ[r] + κ[r] * (a[g.t_comp[i]] + b[g.t_mach[i]] - cbar[r])),
                                                θ.σ, π[r], λ[r])
             end
             for i in eachindex(g.lo)
-                r = g.c_race[i]; μ = θ.γ[r] + a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[r]
+                r = g.c_race[i]; μ = θ.γ[r] + κ[r] * (a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[r])
                 lp += Diomedes.paceloss_loginterval(g.lo[i] - μ, g.hi[i] - μ, θ.σ, π[r], λ[r])
             end
-            model = paceloss_effects(g; loss_duration = dur, era)
+            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap)
             @test logjoint(model, θ) ≈ lp
             # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
             # in constrained space: positive-valued parameters are set positive by name
@@ -375,7 +383,8 @@ end
         @test_throws ArgumentError paceloss_effects(g; era = :century)
         @test_throws ArgumentError paceloss_effects(prepare_gaps(res); era = :rw)   # one season
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
-        @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw)
+        @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false)
+        @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true)
         @test model_spec("t4").family === :t4
         @test_throws ArgumentError model_spec("pl_rw_decade")
         @test cov.regime == [searchsortedlast(REGIME_STARTS, s) for s in g.race_season]
@@ -393,13 +402,16 @@ end
         @test length(rows) == length(g.y) + length(g.lo)
         @test sum(rows) ≈ Diomedes.gap_loglik(θt.γ, θt.z_comp, θt.σ_comp, θt.z_mach, θt.σ_mach, θt.σ_y,
                                               g, sc, StudentTNoise(4))
-        for (dur, era) in ((false, :none), (true, :regime), (false, :rw), (true, :rw))
+        for (dur, era, kap) in ((false, :none, false), (true, :regime, false), (false, :rw, false),
+                                (true, :rw, false), (true, :rw, true), (false, :none, true))
             θ = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
+                 (kap ? (; τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1)) : (;))...,
                  τ_π_era = 0.3, τ_λ_era = 0.2, z_π_era = randn(rng, cov.n_regimes), z_λ_era = randn(rng, cov.n_regimes),
                  τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1))
             πr, λr = Diomedes.race_loss(θ, cov, dur, era)
+            κr = kap ? race_pace_scale(θ, cov) : nothing
             @test sum(Diomedes.paceloss_rows(θ, g; loss_duration = dur, era)) ≈
-                  Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach, θ.σ, πr, λr, g, sc)
+                  Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach, θ.σ, πr, λr, κr, g, sc)
         end
     end
 

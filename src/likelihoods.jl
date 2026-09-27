@@ -68,36 +68,44 @@ end
 # with c = a[comp] + b[mach]. Backward: given dℓ/dμ per row, return gradients
 # for γ, z_comp, σ_comp, z_mach, σ_mach. Race centring and both effect
 # centrings are self-adjoint, so each backward step mirrors its forward step.
-function gap_row_means(γ, z_comp, σ_comp, z_mach, σ_mach, g, season_counts)
+function gap_row_means(γ, z_comp, σ_comp, z_mach, σ_mach, g, season_counts; κ = nothing)
     zc = z_comp .- mean(z_comp)
     zm = z_mach .- group_means(z_mach, g.mach_season, season_counts)[g.mach_season]
     a, b = σ_comp .* zc, σ_mach .* zm
     nr = length(γ)
+    c0t = [a[g.t_comp[i]] + b[g.t_mach[i]] for i in eachindex(g.t_race)]
+    c0c = [a[g.c_comp[i]] + b[g.c_mach[i]] for i in eachindex(g.c_race)]
     csum, n = zeros(nr), zeros(Int, nr)
-    for i in eachindex(g.t_race)
-        r = g.t_race[i]; csum[r] += a[g.t_comp[i]] + b[g.t_mach[i]]; n[r] += 1
-    end
-    for i in eachindex(g.c_race)
-        r = g.c_race[i]; csum[r] += a[g.c_comp[i]] + b[g.c_mach[i]]; n[r] += 1
-    end
+    for i in eachindex(c0t); r = g.t_race[i]; csum[r] += c0t[i]; n[r] += 1; end
+    for i in eachindex(c0c); r = g.c_race[i]; csum[r] += c0c[i]; n[r] += 1; end
     cbar = csum ./ max.(n, 1)
-    μt = [γ[g.t_race[i]] + a[g.t_comp[i]] + b[g.t_mach[i]] - cbar[g.t_race[i]] for i in eachindex(g.t_race)]
-    μc = [γ[g.c_race[i]] + a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[g.c_race[i]] for i in eachindex(g.c_race)]
-    return (; zc, zm, n, μt, μc)
+    k(r) = κ === nothing ? 1.0 : κ[r]
+    μt = [γ[g.t_race[i]] + k(g.t_race[i]) * (c0t[i] - cbar[g.t_race[i]]) for i in eachindex(c0t)]
+    μc = [γ[g.c_race[i]] + k(g.c_race[i]) * (c0c[i] - cbar[g.c_race[i]]) for i in eachindex(c0c)]
+    return (; zc, zm, n, μt, μc, c0t, c0c, cbar)
 end
 
-function gap_effects_pullback(dμt, dμc, st, σ_comp, σ_mach, g, season_counts)
-    dγ = zeros(length(st.n))
+# With a per-race pace scale κ (μ = γ + κ·(c - c̄)), also returns dκ;
+# dκ[r] = Σᵢ dμᵢ (cᵢ - c̄[r]) and the gradient to c is scaled by κ[r].
+function gap_effects_pullback(dμt, dμc, st, σ_comp, σ_mach, g, season_counts; κ = nothing)
+    nr = length(st.n)
+    dγ = zeros(nr)
     for i in eachindex(dμt); dγ[g.t_race[i]] += dμt[i]; end
     for i in eachindex(dμc); dγ[g.c_race[i]] += dμc[i]; end
-    # through cᵢ - c̄[race]: dc = dμ - dγ[race]/n[race]
+    dκ = κ === nothing ? nothing : zeros(nr)
+    if κ !== nothing
+        for i in eachindex(dμt); r = g.t_race[i]; dκ[r] += dμt[i] * (st.c0t[i] - st.cbar[r]); end
+        for i in eachindex(dμc); r = g.c_race[i]; dκ[r] += dμc[i] * (st.c0c[i] - st.cbar[r]); end
+    end
+    k(r) = κ === nothing ? 1.0 : κ[r]
+    # through κ·(cᵢ - c̄[race]): dc = κ·(dμ - dγ[race]/n[race])
     da, db = zeros(length(st.zc)), zeros(length(st.zm))
     for i in eachindex(dμt)
-        r = g.t_race[i]; dc = dμt[i] - dγ[r] / st.n[r]
+        r = g.t_race[i]; dc = k(r) * (dμt[i] - dγ[r] / st.n[r])
         da[g.t_comp[i]] += dc; db[g.t_mach[i]] += dc
     end
     for i in eachindex(dμc)
-        r = g.c_race[i]; dc = dμc[i] - dγ[r] / st.n[r]
+        r = g.c_race[i]; dc = k(r) * (dμc[i] - dγ[r] / st.n[r])
         da[g.c_comp[i]] += dc; db[g.c_mach[i]] += dc
     end
     # through a = σ_comp·(z - mean z) and b = σ_mach·(z - season mean z)
@@ -105,7 +113,7 @@ function gap_effects_pullback(dμt, dμc, st, σ_comp, σ_mach, g, season_counts
     dz_comp = σ_comp .* (da .- mean(da))
     dσ_mach = sum(db .* st.zm)
     dz_mach = σ_mach .* (db .- group_means(db, g.mach_season, season_counts)[g.mach_season])
-    return (; dγ, dz_comp, dσ_comp, dz_mach, dσ_mach)
+    return (; dγ, dz_comp, dσ_comp, dz_mach, dσ_mach, dκ)
 end
 
 function ChainRulesCore.rrule(::typeof(gap_loglik), γ, z_comp, σ_comp, z_mach, σ_mach, σ_y, g,

@@ -27,7 +27,8 @@ g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950
 chain = reduce(hcat, deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8])))
 sc, cov = season_counts(g), LossCovariates(g)
 spec = model_spec(model)
-names = (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, loss_param_names(spec.loss_duration, spec.era)...)
+names = (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, loss_param_names(spec.loss_duration, spec.era)...,
+         Diomedes.pace_param_names(spec.pace_scale)...)
 
 # Mean of Exponential(λ) truncated to (a, b), 0 ≤ a < b ≤ Inf.
 function trunc_exp_mean(a, b, λ)
@@ -42,7 +43,7 @@ function incident_sums(g, chain, names, picks, sc, cov, spec)
     r_sum, rl_sum = zeros(nt + nc), zeros(nt + nc)   # Σ over draws of r and r·E[L|incident]
     for (i, c) in picks
         θ = draw(chain, names, i, c)
-        μt, μc = _row_means(θ, g, sc)
+        μt, μc = _row_means(θ, g, sc, cov)
         πr, λr = race_loss(θ, cov, spec.loss_duration, spec.era)
         σ = θ.σ
         for k in 1:nt

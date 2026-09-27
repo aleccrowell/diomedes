@@ -9,7 +9,8 @@
 
 using Diomedes, PosteriorStats, Serialization, Statistics
 
-const ALL = ("t4", "pl", "pl_dur", "pl_decade", "pl_regime", "pl_rw", "pl_dur_regime", "pl_dur_rw")
+const ALL = ("t4", "pl", "pl_dur", "pl_decade", "pl_regime", "pl_rw", "pl_dur_regime", "pl_dur_rw",
+             "pl_rw_kappa", "pl_dur_rw_kappa")
 data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 models = isempty(ARGS) ? [m for m in ALL if isfile("output/gap_all_$(m)_chain1.jls")] : ARGS
 
