@@ -8,6 +8,14 @@
 # i.e. L·p ∈ [T_w·L/l, T_w·L/(l-1)). On the gap scale:
 #     y ∈ [100·log(L/l), 100·log(L/(l-1)))
 # Retirements (classified or not) are dropped as uninformative about pace.
+# Lapped cars are identified by status ("+N Lap(s)" in Ergast, "Lapped" in
+# recent Jolpica data), not by position: Ergast gives some retirements a numeric
+# position (e.g. Spain 2013: "Suspension" after 8 of 66 laps, position 22).
+# Counting those as lapped put 599 retirements into the lapped set as huge
+# "losses".
+
+"Whether a status string means a lapped finisher."
+is_lapped_status(s::AbstractString) = s == "Lapped" || occursin(r"^\+\d+ Laps?$", s)
 
 """
     GapData
@@ -45,8 +53,9 @@ end
 
 Build `GapData` from a results table. Per stage, the winner is the fastest
 timed row, and the race distance `L` is the winner's lap count. Timed rows get
-their % gap to the winner. With `include_lapped`, classified rows without a
-time that completed 2 ≤ l < L laps become intervals (see file header); with
+their % gap to the winner. With `include_lapped`, untimed rows with a lapped
+status (see `is_lapped_status`) that completed 2 ≤ l < L laps become intervals
+(see file header); with
 `max_laps_down = k`, only those at most k laps down. Everything else is dropped.
 """
 function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
@@ -72,7 +81,7 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
         (include_lapped && !ismissing(L)) || continue
         for i in eachindex(g.kind)
             l = g.laps[i]
-            if ismissing(g.time_ms[i]) && g.classified[i] && !ismissing(l) && 2 <= l < L &&
+            if ismissing(g.time_ms[i]) && is_lapped_status(g.status[i]) && !ismissing(l) && 2 <= l < L &&
                (max_laps_down === nothing || L - l <= max_laps_down)
                 g.kind[i] = :lapped
                 g.lo[i] = 100 * log(L / l)

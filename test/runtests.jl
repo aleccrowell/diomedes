@@ -115,8 +115,18 @@ end
         @test nrow(timed) == count(!ismissing, res.time_ms)
         @test sort(timed[timed.y .== 0, :competitor_id]) == ["bottas", "hamilton"]  # the two winners
         @test all(>=(0), g.y)
-        # every classified, untimed car with 2 <= laps < winner's laps is an interval
-        @test nrow(lapped) == count(r -> ismissing(r.time_ms) && r.classified, eachrow(res))
+        # every untimed car with a lapped status is an interval; retirements are not,
+        # even when they carry a numeric position (as in Ergast)
+        @test nrow(lapped) == count(r -> ismissing(r.time_ms) && Diomedes.is_lapped_status(r.status), eachrow(res))
+        @test all(Diomedes.is_lapped_status, lapped.status)
+        @test Diomedes.is_lapped_status("+1 Lap") && Diomedes.is_lapped_status("+12 Laps") &&
+              Diomedes.is_lapped_status("Lapped")
+        @test !Diomedes.is_lapped_status("Suspension") && !Diomedes.is_lapped_status("Finished") &&
+              !Diomedes.is_lapped_status("+1 Lapse")
+        retired = copy(res)
+        k = findfirst(r -> ismissing(r.time_ms) && Diomedes.is_lapped_status(r.status), eachrow(retired))
+        retired.status[k] = "Suspension"; retired.classified[k] = true   # retirement with a position
+        @test nrow(prepare_gaps(retired).rows) == nrow(g.rows) - 1
         r = first(lapped[lapped.laps .== 57, :])       # Australia 2019 (58 laps), 1 lap down
         @test r.lo ≈ 100 * log(58 / 57) && r.hi ≈ 100 * log(58 / 56)
         @test all(g.lo .< g.hi)
@@ -344,6 +354,7 @@ end
                 l = T[i] < Tw * L / (L - 1) ? L : floor(Int, L * Tw / T[i]) + 1
                 grp.laps[i] = l
                 grp.time_ms[i] = l == L ? T[i] : missing
+                grp.status[i] = l == L ? "Finished" : "+$(L - l) Lap" * (L - l == 1 ? "" : "s")
             end
         end
         g = prepare_gaps(select(rows, Not(:gap)))
@@ -399,6 +410,7 @@ end
                 l = T[i] < Tw * L / (L - 1) ? L : floor(Int, L * Tw / T[i]) + 1
                 grp.laps[i] = l
                 grp.time_ms[i] = l == L ? T[i] : missing
+                grp.status[i] = l == L ? "Finished" : "+$(L - l) Lap" * (L - l == 1 ? "" : "s")
             end
         end
         g = prepare_gaps(select(rows, Not(:gap)))
