@@ -182,7 +182,10 @@ rw_path(steps) = sum_to_zero(tril(ones(length(steps) + 1, length(steps)), -1) * 
 
 Per-race incident probability and mean loss from the loss parameters in `θ`.
 It is shared by the model, the pointwise log-likelihoods and diagnostics, so
-all three use the same definition. Era effects act on both logit π and log λ:
+all three use the same definition. Race duration (standardised log winner's
+time) has separate slopes on logit π (`β_dur_π`: more laps, more chances of
+an incident) and log λ (`β_dur_λ`: loss size in % of a longer or shorter race).
+Era effects act on both logit π and log λ:
 
 - `:decade` / `:regime`: hierarchical group effects, sum to zero, scales
   `τ_π_era`, `τ_λ_era`, standardised effects `z_π_era`, `z_λ_era`;
@@ -194,7 +197,10 @@ function race_loss(θ, cov::LossCovariates, loss_duration::Bool, era::Symbol)
     n = length(cov.log_duration)
     logitπ = fill(θ.a_π, n)
     logλ = fill(θ.a_λ, n)
-    loss_duration && (logλ = logλ .+ θ.β_dur .* cov.log_duration)
+    if loss_duration
+        logitπ = logitπ .+ θ.β_dur_π .* cov.log_duration
+        logλ = logλ .+ θ.β_dur_λ .* cov.log_duration
+    end
     if era === :decade || era === :regime
         idx = era === :decade ? cov.decade : cov.regime
         logitπ = logitπ .+ θ.τ_π_era .* sum_to_zero(θ.z_π_era)[idx]
@@ -209,7 +215,7 @@ end
 "Names of the loss parameters for a model variant, in sampling order."
 function loss_param_names(loss_duration::Bool, era::Symbol)
     names = (:a_π, :a_λ)
-    loss_duration && (names = (names..., :β_dur))
+    loss_duration && (names = (names..., :β_dur_π, :β_dur_λ))
     era in (:decade, :regime) && (names = (names..., :τ_π_era, :τ_λ_era, :z_π_era, :z_λ_era))
     era === :rw && (names = (names..., :τ_π_rw, :τ_λ_rw, :e_π_rw, :e_λ_rw))
     return names
@@ -224,13 +230,16 @@ observations. The pace structure is as in `gap_effects`. The noise is split
 into two independent sources (see the file header):
 
 - pace noise `σ` (half-normal(1), % units);
-- incident probability `π_race = logistic(a_π [+ era])`, with prior centred on ~18%;
-- mean incident loss `λ_race = exp(a_λ [+ β·log duration] [+ era])`, with
+- incident probability `π_race = logistic(a_π [+ β_π·log duration] [+ era])`,
+  with prior centred on ~18%;
+- mean incident loss `λ_race = exp(a_λ [+ β_λ·log duration] [+ era])`, with
   prior centred on 2%.
 
-`loss_duration` adds a slope on standardised log race duration (loss size
-only). `era` (`:none`, `:decade`, `:regime`, `:rw`) adds era effects to both
-the incident probability and the loss size (see `race_loss`).
+`loss_duration` adds slopes on standardised log race duration to both the
+incident probability and the loss size. `era` (`:none`, `:decade`, `:regime`,
+`:rw`) adds era effects to both (see `race_loss`). Duration varies within
+seasons as well as between them, so with both terms the era effects capture
+only what duration does not.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
                                  loss_duration::Bool, era::Symbol)
@@ -244,8 +253,9 @@ the incident probability and the loss size (see `race_loss`).
     a_λ ~ Normal(log(2), 1)
     θ = (; a_π, a_λ)
     if loss_duration
-        β_dur ~ Normal(0, 1)
-        θ = (; θ..., β_dur)
+        β_dur_π ~ Normal(0, 1)
+        β_dur_λ ~ Normal(0, 1)
+        θ = (; θ..., β_dur_π, β_dur_λ)
     end
     if era === :decade || era === :regime
         k = era === :decade ? cov.n_decades : cov.n_regimes
@@ -297,7 +307,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
              z_mach = 0.1 .* randn(rng, length(g.machines)),
              γ = race_mean .+ 0.1 .* randn(rng, length(race_mean)),
              a_π = -1.5 + 0.1 * randn(rng), a_λ = log(2) + 0.1 * randn(rng))
-        loss_duration && (p = (; p..., β_dur = 0.1 * randn(rng)))
+        loss_duration && (p = (; p..., β_dur_π = 0.1 * randn(rng), β_dur_λ = 0.1 * randn(rng)))
         if era === :decade || era === :regime
             k = era === :decade ? cov.n_decades : cov.n_regimes
             p = (; p..., τ_π_era = 0.1 + 0.1 * rand(rng), τ_λ_era = 0.1 + 0.1 * rand(rng),

@@ -258,7 +258,7 @@ end
         for dur in (false, true), era in (:none, :decade, :regime, :rw)
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
-            dur && (θ = (; θ..., β_dur = 0.3))
+            dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
             k = era === :decade ? cov.n_decades : cov.n_regimes
             era in (:decade, :regime) && (θ = (; θ..., τ_π_era = 0.3, τ_λ_era = 0.2,
                                                z_π_era = randn(rng, k), z_λ_era = randn(rng, k)))
@@ -271,7 +271,11 @@ end
                  sum(logpdf.(Normal(0, 5), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
                  logpdf(Normal(log(2), 1), θ.a_λ)
             logitπ, logλ = fill(θ.a_π, nr), fill(θ.a_λ, nr)
-            dur && (lp += logpdf(Normal(0, 1), θ.β_dur); logλ .+= θ.β_dur .* cov.log_duration)
+            if dur
+                lp += logpdf(Normal(0, 1), θ.β_dur_π) + logpdf(Normal(0, 1), θ.β_dur_λ)
+                logitπ .+= θ.β_dur_π .* cov.log_duration
+                logλ .+= θ.β_dur_λ .* cov.log_duration
+            end
             if era in (:decade, :regime)
                 idx = era === :decade ? cov.decade : cov.regime
                 lp += logpdf(H(0.5), θ.τ_π_era) + logpdf(H(0.5), θ.τ_λ_era) +
@@ -336,8 +340,8 @@ end
         @test length(rows) == length(g.y) + length(g.lo)
         @test sum(rows) ≈ Diomedes.gap_loglik(θt.γ, θt.z_comp, θt.σ_comp, θt.z_mach, θt.σ_mach, θt.σ_y,
                                               g, sc, StudentTNoise(4))
-        for (dur, era) in ((false, :none), (true, :regime), (false, :rw))
-            θ = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur = 0.3,
+        for (dur, era) in ((false, :none), (true, :regime), (false, :rw), (true, :rw))
+            θ = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
                  τ_π_era = 0.3, τ_λ_era = 0.2, z_π_era = randn(rng, cov.n_regimes), z_λ_era = randn(rng, cov.n_regimes),
                  τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1))
             πr, λr = Diomedes.race_loss(θ, cov, dur, era)
