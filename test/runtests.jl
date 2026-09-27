@@ -244,59 +244,84 @@ end
 
     @testset "paceloss_effects log density and gradient" begin
         rng = Xoshiro(21)
-        g = prepare_gaps(fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019))
+        # two seasons (2019 and a relabelled copy as 2020), so the random walk has a
+        # step and car effects are centred within each season
+        res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
+        res2 = copy(res); res2.season .= 2020; res2.event_id .= replace.(res2.event_id, "2019" => "2020")
+        g = prepare_gaps(vcat(res, res2))
+        @test LossCovariates(g).n_seasons == 2
         nc, nm, nr = length(g.competitors), length(g.machines), length(g.races)
         cov = LossCovariates(g)
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
         H(s) = Turing.truncated(Normal(0, s); lower = 0)
-        for (dur, era) in ((false, false), (true, false), (false, true), (true, true))
+        for dur in (false, true), era in (:none, :decade, :regime, :rw)
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur = 0.3))
-            era && (θ = (; θ..., τ_era = 0.2, z_era = randn(rng, cov.n_decades)))
-            # reference: priors from Distributions + per-row terms in plain loops
+            k = era === :decade ? cov.n_decades : cov.n_regimes
+            era in (:decade, :regime) && (θ = (; θ..., τ_π_era = 0.3, τ_λ_era = 0.2,
+                                               z_π_era = randn(rng, k), z_λ_era = randn(rng, k)))
+            era === :rw && (θ = (; θ..., τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1),
+                                 e_λ_rw = randn(rng, cov.n_seasons - 1)))
+            # reference: priors from Distributions, per-race loss written out by hand,
+            # per-row terms in plain loops
             lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
                  sum(logpdf.(Normal(), θ.z_comp)) + sum(logpdf.(Normal(), θ.z_mach)) +
                  sum(logpdf.(Normal(0, 5), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
                  logpdf(Normal(log(2), 1), θ.a_λ)
-            logλ = fill(θ.a_λ, nr)
+            logitπ, logλ = fill(θ.a_π, nr), fill(θ.a_λ, nr)
             dur && (lp += logpdf(Normal(0, 1), θ.β_dur); logλ .+= θ.β_dur .* cov.log_duration)
-            if era
-                lp += logpdf(H(0.5), θ.τ_era) + sum(logpdf.(Normal(), θ.z_era))
-                logλ .+= θ.τ_era .* (θ.z_era .- mean(θ.z_era))[cov.decade]
+            if era in (:decade, :regime)
+                idx = era === :decade ? cov.decade : cov.regime
+                lp += logpdf(H(0.5), θ.τ_π_era) + logpdf(H(0.5), θ.τ_λ_era) +
+                      sum(logpdf.(Normal(), θ.z_π_era)) + sum(logpdf.(Normal(), θ.z_λ_era))
+                logitπ .+= θ.τ_π_era .* (θ.z_π_era .- mean(θ.z_π_era))[idx]
+                logλ .+= θ.τ_λ_era .* (θ.z_λ_era .- mean(θ.z_λ_era))[idx]
+            elseif era === :rw
+                lp += logpdf(H(0.25), θ.τ_π_rw) + logpdf(H(0.25), θ.τ_λ_rw) +
+                      sum(logpdf.(Distributions.TDist(3), θ.e_π_rw)) + sum(logpdf.(Distributions.TDist(3), θ.e_λ_rw))
+                path(steps) = (p = [0.0; cumsum(steps)]; p .- mean(p))
+                logitπ .+= path(θ.τ_π_rw .* θ.e_π_rw)[cov.season]
+                logλ .+= path(θ.τ_λ_rw .* θ.e_λ_rw)[cov.season]
             end
-            π = 1 / (1 + exp(-θ.a_π))
+            π, λ = 1 ./ (1 .+ exp.(-logitπ)), exp.(logλ)
             a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
-            b = θ.σ_mach .* (θ.z_mach .- mean(θ.z_mach))       # one season in the fixture
+            zm = θ.z_mach .- [mean(θ.z_mach[g.mach_season .== g.mach_season[j]]) for j in 1:nm]
+            b = θ.σ_mach .* zm                                   # centred within season
             races = vcat(g.t_race, g.c_race)
             cs = vcat(a[g.t_comp] .+ b[g.t_mach], a[g.c_comp] .+ b[g.c_mach])
             cbar = [mean(cs[races .== r]) for r in 1:nr]
             for i in eachindex(g.y)
                 r = g.t_race[i]
                 lp += Diomedes.paceloss_logpdf(g.y[i] - (θ.γ[r] + a[g.t_comp[i]] + b[g.t_mach[i]] - cbar[r]),
-                                               θ.σ, π, exp(logλ[r]))
+                                               θ.σ, π[r], λ[r])
             end
             for i in eachindex(g.lo)
                 r = g.c_race[i]; μ = θ.γ[r] + a[g.c_comp[i]] + b[g.c_mach[i]] - cbar[r]
-                lp += Diomedes.paceloss_loginterval(g.lo[i] - μ, g.hi[i] - μ, θ.σ, π, exp(logλ[r]))
+                lp += Diomedes.paceloss_loginterval(g.lo[i] - μ, g.hi[i] - μ, θ.σ, π[r], λ[r])
             end
-            model = paceloss_effects(g; loss_duration = dur, loss_era = era)
+            model = paceloss_effects(g; loss_duration = dur, era)
             @test logjoint(model, θ) ≈ lp
-            # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff
+            # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
+            # in constrained space: positive-valued parameters are set positive by name
             rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
             fd = LDF(model; adtype = AutoForwardDiff())
-            npos = 3 + (era ? 1 : 0)              # σ_comp, σ_mach, σ (+ τ_era) must be positive
-            for _ in 1:3
-                x = 0.5 .* randn(rng, LDP.dimension(rd))
-                x[1:3] .= 0.3 .+ rand(rng, 3)
-                if era   # τ_era follows z_comp, z_mach, γ, a_π, a_λ (and β_dur)
-                    x[3 + nc + nm + nr + 2 + (dur ? 1 : 0) + 1] = 0.1 + rand(rng)
-                end
+            for _ in 1:2
+                θx = map(v -> v isa AbstractVector ? 0.5 .* randn(rng, length(v)) : 0.5 * randn(rng), θ)
+                θx = merge(θx, NamedTuple(k => 0.2 + rand(rng) for k in keys(θ)
+                                          if startswith(string(k), "σ") || startswith(string(k), "τ")))
+                x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θx)])
                 @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
             end
         end
+        @test_throws ArgumentError paceloss_effects(g; era = :century)
+        @test_throws ArgumentError paceloss_effects(prepare_gaps(res); era = :rw)   # one season
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
+        @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw)
+        @test model_spec("t4").family === :t4
+        @test_throws ArgumentError model_spec("pl_rw_decade")
+        @test cov.regime == [searchsortedlast(REGIME_STARTS, s) for s in g.race_season]
     end
 
     @testset "pointwise log-likelihoods sum to the fused likelihood" begin
@@ -311,16 +336,13 @@ end
         @test length(rows) == length(g.y) + length(g.lo)
         @test sum(rows) ≈ Diomedes.gap_loglik(θt.γ, θt.z_comp, θt.σ_comp, θt.z_mach, θt.σ_mach, θt.σ_y,
                                               g, sc, StudentTNoise(4))
-        for (dur, era) in ((false, false), (true, true))
-            θ = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur = 0.3, τ_era = 0.2,
-                 z_era = randn(rng, cov.n_decades))
-            logλ = fill(θ.a_λ, nr)
-            dur && (logλ .+= θ.β_dur .* cov.log_duration)
-            era && (logλ .+= θ.τ_era .* (θ.z_era .- mean(θ.z_era))[cov.decade])
-            πr = fill(1 / (1 + exp(-θ.a_π)), nr)
-            @test sum(Diomedes.paceloss_rows(θ, g; loss_duration = dur, loss_era = era)) ≈
-                  Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach, θ.σ, πr,
-                                           exp.(logλ), g, sc)
+        for (dur, era) in ((false, :none), (true, :regime), (false, :rw))
+            θ = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur = 0.3,
+                 τ_π_era = 0.3, τ_λ_era = 0.2, z_π_era = randn(rng, cov.n_regimes), z_λ_era = randn(rng, cov.n_regimes),
+                 τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1))
+            πr, λr = Diomedes.race_loss(θ, cov, dur, era)
+            @test sum(Diomedes.paceloss_rows(θ, g; loss_duration = dur, era)) ≈
+                  Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach, θ.σ, πr, λr, g, sc)
         end
     end
 
@@ -370,7 +392,7 @@ end
         conv = convergence_summary(chain)
         @test conv.max_rhat < 1.1 && conv.min_ess > 20
         # pointwise log-likelihoods from the chain: shape, and draw (1, 1) sums to the fused likelihood
-        ll = pointwise_loglik(chain, g, :pl)
+        ll = pointwise_loglik(chain, g, "pl")
         @test size(ll) == (300, 2, length(g.y) + length(g.lo))
         θ = Diomedes.draw(chain, (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, :a_π, :a_λ), 1, 1)
         @test sum(ll[1, 1, :]) ≈ Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach,

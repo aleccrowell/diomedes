@@ -29,15 +29,12 @@ function gap_rows(θ, g::GapData; noise::Noise = StudentTNoise(4), sc = season_c
 end
 
 "Per-row log-likelihoods of `paceloss_effects` for parameter values `θ` (a NamedTuple)."
-function paceloss_rows(θ, g::GapData; loss_duration::Bool = false, loss_era::Bool = false,
+function paceloss_rows(θ, g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                        sc = season_counts(g), cov = LossCovariates(g))
     μt, μc = _row_means(θ, g, sc)
-    logλ = fill(θ.a_λ, length(g.races))
-    loss_duration && (logλ = logλ .+ θ.β_dur .* cov.log_duration)
-    loss_era && (logλ = logλ .+ θ.τ_era .* sum_to_zero(θ.z_era)[cov.decade])
-    λ, π = exp.(logλ), logistic(θ.a_π)
-    timed = [paceloss_logpdf(g.y[i] - μt[i], θ.σ, π, λ[g.t_race[i]]) for i in eachindex(μt)]
-    lapped = [paceloss_loginterval(g.lo[i] - μc[i], g.hi[i] - μc[i], θ.σ, π, λ[g.c_race[i]])
+    πr, λr = race_loss(θ, cov, loss_duration, era)
+    timed = [paceloss_logpdf(g.y[i] - μt[i], θ.σ, πr[g.t_race[i]], λr[g.t_race[i]]) for i in eachindex(μt)]
+    lapped = [paceloss_loginterval(g.lo[i] - μc[i], g.hi[i] - μc[i], θ.σ, πr[g.c_race[i]], λr[g.c_race[i]])
               for i in eachindex(μc)]
     return vcat(timed, lapped)
 end
@@ -46,21 +43,35 @@ end
 draw(chain, names, i, c) = NamedTuple{names}(Tuple(chain[n][i, c] for n in names))
 
 """
+    model_spec(name) -> (; family, loss_duration, era)
+
+Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
+`pl[_dur][_<era>]` (`paceloss_effects`), e.g. `pl`, `pl_dur`, `pl_regime`,
+`pl_dur_rw`, with `<era>` one of `decade`, `regime`, `rw`.
+"""
+function model_spec(name::AbstractString)
+    name == "t4" && return (; family = :t4, loss_duration = false, era = :none)
+    parts = split(name, "_")
+    first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
+    dur = "dur" in parts
+    eras = [Symbol(p) for p in parts[2:end] if p != "dur"]
+    length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
+    return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras))
+end
+
+"""
     pointwise_loglik(chain, g::GapData, model) -> Array{Float64,3}
 
 Log-likelihood of every row for every draw, shaped (draws, chains, rows) as
-PosteriorStats' `loo` expects. `model` is `:t4` (Student-t(4) `gap_effects`),
-`:pl`, `:pl_dur`, `:pl_era` or `:pl_both` (`paceloss_effects` with the
-corresponding loss covariates).
+PosteriorStats' `loo` expects. `model` is a model name (see `model_spec`).
 """
-function pointwise_loglik(chain, g::GapData, model::Symbol)
+function pointwise_loglik(chain, g::GapData, model::AbstractString)
+    spec = model_spec(model)
     sc, cov = season_counts(g), LossCovariates(g)
-    dur, era = model in (:pl_dur, :pl_both), model in (:pl_era, :pl_both)
-    names = model === :t4 ? (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ) :
-        (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, :a_π, :a_λ,
-         (dur ? (:β_dur,) : ())..., (era ? (:τ_era, :z_era) : ())...)
-    rows(θ) = model === :t4 ? gap_rows(θ, g; sc) :
-        paceloss_rows(θ, g; loss_duration = dur, loss_era = era, sc, cov)
+    names = spec.family === :t4 ? (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ) :
+        (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, loss_param_names(spec.loss_duration, spec.era)...)
+    rows(θ) = spec.family === :t4 ? gap_rows(θ, g; sc) :
+        paceloss_rows(θ, g; loss_duration = spec.loss_duration, era = spec.era, sc, cov)
     ni, nc = size(chain[:σ_comp])
     out = Array{Float64,3}(undef, ni, nc, length(g.y) + length(g.lo))
     for c in 1:nc, i in 1:ni

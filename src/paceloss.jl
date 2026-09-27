@@ -132,25 +132,91 @@ ReverseDiff.@grad_from_chainrules paceloss_loglik(γ::ReverseDiff.TrackedArray, 
                                                   g::GapData, season_counts::Vector{Int})
 
 """
+Regulation regimes chosen a priori for changes plausibly affecting incident
+frequency or time lost per incident (first season of each regime):
+
+    1950 long races (500 km / 3 h)       1984 refuelling banned (turbo era)
+    1958 races cut to 300 km / 2 h       1989 turbos banned; safety car from 1993
+    1961 1.5 L formula                   1994 refuelling returns, driver aids banned
+    1966 3.0 L formula                   2010 refuelling banned again
+                                         2014 hybrid power units
+"""
+const REGIME_STARTS = [1950, 1958, 1961, 1966, 1984, 1989, 1994, 2010, 2014]
+
+"""
     LossCovariates(g::GapData)
 
 Race-level covariates for the loss component: standardised log race duration
-(winner's time) and the race's decade index.
+(winner's time), and three era groupings of the race's season: decade,
+regulation regime (`REGIME_STARTS`), and season index (for a random walk).
 """
 struct LossCovariates
     log_duration::Vector{Float64}   # standardised log(winner's race minutes)
     decade::Vector{Int}             # 1 = earliest decade in the data
     n_decades::Int
+    regime::Vector{Int}             # index into REGIME_STARTS
+    n_regimes::Int
+    season::Vector{Int}             # 1 = earliest season in the data
+    n_seasons::Int
 end
 function LossCovariates(g::GapData)
     ld = log.(g.race_minutes)
     decades = g.race_season .÷ 10
     d0 = minimum(decades)
-    return LossCovariates((ld .- mean(ld)) ./ std(ld), decades .- d0 .+ 1, maximum(decades) - d0 + 1)
+    regime = [searchsortedlast(REGIME_STARTS, s) for s in g.race_season]
+    s0 = minimum(g.race_season)
+    return LossCovariates((ld .- mean(ld)) ./ std(ld), decades .- d0 .+ 1, maximum(decades) - d0 + 1,
+                          regime, length(REGIME_STARTS),
+                          g.race_season .- s0 .+ 1, maximum(g.race_season) - s0 + 1)
+end
+
+const ERA_TERMS = (:none, :decade, :regime, :rw)
+
+# Random-walk path from its increments, centred to mean zero over seasons:
+# path[1] = 0, path[s] = Σ_{t<s} steps[t]. Written as a product with a constant
+# lower-triangular matrix (no cumsum on tracked arrays).
+rw_path(steps) = sum_to_zero(tril(ones(length(steps) + 1, length(steps)), -1) * steps)
+
+"""
+    race_loss(θ, cov::LossCovariates, loss_duration, era) -> (π_race, λ_race)
+
+Per-race incident probability and mean loss from the loss parameters in `θ`.
+It is shared by the model, the pointwise log-likelihoods and diagnostics, so
+all three use the same definition. Era effects act on both logit π and log λ:
+
+- `:decade` / `:regime`: hierarchical group effects, sum to zero, scales
+  `τ_π_era`, `τ_λ_era`, standardised effects `z_π_era`, `z_λ_era`;
+- `:rw`: random walks over seasons with Student-t(3) steps (mostly smooth, with
+  occasional jumps: inferred era boundaries), step scales `τ_π_rw`, `τ_λ_rw`,
+  standardised steps `e_π_rw`, `e_λ_rw`; paths centred over seasons.
+"""
+function race_loss(θ, cov::LossCovariates, loss_duration::Bool, era::Symbol)
+    n = length(cov.log_duration)
+    logitπ = fill(θ.a_π, n)
+    logλ = fill(θ.a_λ, n)
+    loss_duration && (logλ = logλ .+ θ.β_dur .* cov.log_duration)
+    if era === :decade || era === :regime
+        idx = era === :decade ? cov.decade : cov.regime
+        logitπ = logitπ .+ θ.τ_π_era .* sum_to_zero(θ.z_π_era)[idx]
+        logλ = logλ .+ θ.τ_λ_era .* sum_to_zero(θ.z_λ_era)[idx]
+    elseif era === :rw
+        logitπ = logitπ .+ rw_path(θ.τ_π_rw .* θ.e_π_rw)[cov.season]
+        logλ = logλ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)[cov.season]
+    end
+    return logistic.(logitπ), exp.(logλ)
+end
+
+"Names of the loss parameters for a model variant, in sampling order."
+function loss_param_names(loss_duration::Bool, era::Symbol)
+    names = (:a_π, :a_λ)
+    loss_duration && (names = (names..., :β_dur))
+    era in (:decade, :regime) && (names = (names..., :τ_π_era, :τ_λ_era, :z_π_era, :z_λ_era))
+    era === :rw && (names = (names..., :τ_π_rw, :τ_λ_rw, :e_π_rw, :e_λ_rw))
+    return names
 end
 
 """
-    paceloss_effects(g::GapData; loss_duration = false, loss_era = false)
+    paceloss_effects(g::GapData; loss_duration = false, era = :none)
 
 % gap to winner = race intercept + competitor effect + machine-season effect
 + pace noise + incident loss, with lapped finishers as interval-censored
@@ -158,17 +224,16 @@ observations. The pace structure is as in `gap_effects`. The noise is split
 into two independent sources (see the file header):
 
 - pace noise `σ` (half-normal(1), % units);
-- incident probability `π = logistic(a_π)`, with prior centred on ~18%;
-- mean incident loss `λ_race = exp(a_λ [+ β·log duration] [+ era effect])`,
-  with prior centred on 2%.
+- incident probability `π_race = logistic(a_π [+ era])`, with prior centred on ~18%;
+- mean incident loss `λ_race = exp(a_λ [+ β·log duration] [+ era])`, with
+  prior centred on 2%.
 
-`loss_duration` adds a slope on standardised log race duration; `loss_era`
-adds decade effects (hierarchical, sum to zero, scale `τ_era`). Both act on the
-loss magnitude only, to test whether era or race length explain the larger
-spreads in early decades.
+`loss_duration` adds a slope on standardised log race duration (loss size
+only). `era` (`:none`, `:decade`, `:regime`, `:rw`) adds era effects to both
+the incident probability and the loss size (see `race_loss`).
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
-                                 loss_duration::Bool, loss_era::Bool)
+                                 loss_duration::Bool, era::Symbol)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ ~ truncated(Normal(0, 1); lower = 0)
@@ -177,38 +242,52 @@ spreads in early decades.
     γ ~ filldist(Normal(0, 5), length(g.races))
     a_π ~ Normal(-1.5, 1)
     a_λ ~ Normal(log(2), 1)
-    logλ = fill(a_λ, length(g.races))
+    θ = (; a_π, a_λ)
     if loss_duration
         β_dur ~ Normal(0, 1)
-        logλ = logλ .+ β_dur .* cov.log_duration
+        θ = (; θ..., β_dur)
     end
-    if loss_era
-        τ_era ~ truncated(Normal(0, 0.5); lower = 0)
-        z_era ~ filldist(Normal(), cov.n_decades)
-        logλ = logλ .+ τ_era .* sum_to_zero(z_era)[cov.decade]
+    if era === :decade || era === :regime
+        k = era === :decade ? cov.n_decades : cov.n_regimes
+        τ_π_era ~ truncated(Normal(0, 0.5); lower = 0)
+        τ_λ_era ~ truncated(Normal(0, 0.5); lower = 0)
+        z_π_era ~ filldist(Normal(), k)
+        z_λ_era ~ filldist(Normal(), k)
+        θ = (; θ..., τ_π_era, τ_λ_era, z_π_era, z_λ_era)
+    elseif era === :rw
+        τ_π_rw ~ truncated(Normal(0, 0.25); lower = 0)
+        τ_λ_rw ~ truncated(Normal(0, 0.25); lower = 0)
+        e_π_rw ~ filldist(TDist(3), cov.n_seasons - 1)
+        e_λ_rw ~ filldist(TDist(3), cov.n_seasons - 1)
+        θ = (; θ..., τ_π_rw, τ_λ_rw, e_π_rw, e_λ_rw)
     end
-    πr = fill(logistic(a_π), length(g.races))
-    @addlogprob! paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, exp.(logλ), g, season_counts)
+    πr, λr = race_loss(θ, cov, loss_duration, era)
+    @addlogprob! paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, g, season_counts)
 end
 
-paceloss_effects(g::GapData; loss_duration::Bool = false, loss_era::Bool = false) =
-    paceloss_effects(g, season_counts(g), LossCovariates(g), loss_duration, loss_era)
+function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none)
+    era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
+    cov = LossCovariates(g)
+    era === :rw && cov.n_seasons < 2 && throw(ArgumentError("era = :rw needs at least 2 seasons"))
+    return paceloss_effects(g, season_counts(g), cov, loss_duration, era)
+end
 
 """
-    fit_paceloss(g::GapData; loss_duration=false, loss_era=false, n_samples=1000, n_chains=1, ...)
+    fit_paceloss(g::GapData; loss_duration=false, era=:none, n_samples=1000, n_chains=1, ...)
 
 Sample `paceloss_effects`, starting chains with race intercepts at each race's
-mean timed gap and the loss parameters at their prior centres (jittered per
-chain). Sampler, progress and ensemble options as in `fit_gaps`.
+mean timed gap and the loss parameters at their prior centres, era effects near
+zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gaps`.
 """
-function fit_paceloss(g::GapData; loss_duration::Bool = false, loss_era::Bool = false,
+function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                       n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
     adtype isa AutoReverseDiff && adtype.compile &&
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
-    cov = LossCovariates(g)
+    model = paceloss_effects(g; loss_duration, era)
+    cov = model.args.cov
     race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
     scale() = 0.3 + 0.4 * rand(rng)
@@ -219,10 +298,16 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, loss_era::Bool = 
              γ = race_mean .+ 0.1 .* randn(rng, length(race_mean)),
              a_π = -1.5 + 0.1 * randn(rng), a_λ = log(2) + 0.1 * randn(rng))
         loss_duration && (p = (; p..., β_dur = 0.1 * randn(rng)))
-        loss_era && (p = (; p..., τ_era = 0.1 + 0.1 * rand(rng), z_era = 0.1 .* randn(rng, cov.n_decades)))
+        if era === :decade || era === :regime
+            k = era === :decade ? cov.n_decades : cov.n_regimes
+            p = (; p..., τ_π_era = 0.1 + 0.1 * rand(rng), τ_λ_era = 0.1 + 0.1 * rand(rng),
+                 z_π_era = 0.1 .* randn(rng, k), z_λ_era = 0.1 .* randn(rng, k))
+        elseif era === :rw
+            p = (; p..., τ_π_rw = 0.05 + 0.05 * rand(rng), τ_λ_rw = 0.05 + 0.05 * rand(rng),
+                 e_π_rw = 0.1 .* randn(rng, cov.n_seasons - 1), e_λ_rw = 0.1 .* randn(rng, cov.n_seasons - 1))
+        end
         return InitFromParams(p)
     end
-    model = paceloss_effects(g, season_counts(g), cov, loss_duration, loss_era)
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler,
                     rng, progress, progress_log, log_every, kwargs...)
 end

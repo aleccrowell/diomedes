@@ -3,13 +3,13 @@
 #   julia --project scripts/loo_compare.jl [models...]
 #
 # Uses the chains saved by `scripts/gap_fit.jl all <model> chain <k>`
-# (output/gap_all_<model>_chain<k>.jls). Defaults to every model with saved
-# chains among t4, pl, pl_dur, pl_era, pl_both. All models are scored on the
+# (output/gap_all_<model>_chain<k>.jls). Defaults to every model in ALL with
+# saved chains. All models are scored on the
 # same rows (timed + lapped), so their elpd values are directly comparable.
 
 using Diomedes, PosteriorStats, Serialization, Statistics
 
-const ALL = ("t4", "pl", "pl_dur", "pl_era", "pl_both")
+const ALL = ("t4", "pl", "pl_dur", "pl_decade", "pl_regime", "pl_rw", "pl_dur_regime", "pl_dur_rw")
 data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 models = isempty(ARGS) ? [m for m in ALL if isfile("output/gap_all_$(m)_chain1.jls")] : ARGS
 
@@ -20,7 +20,7 @@ results = Dict{Symbol,Any}()
 for m in models
     paths = filter(isfile, ["output/gap_all_$(m)_chain$(k).jls" for k in 1:8])
     chain = reduce(hcat, deserialize.(paths))
-    t = @elapsed ll = pointwise_loglik(chain, g, Symbol(m))
+    t = @elapsed ll = pointwise_loglik(chain, g, m)
     r = loo(ll)
     k = r.psis_result.pareto_shape
     println("\n== $m: $(length(paths)) chains, pointwise log-lik in $(round(t; digits = 1)) s")

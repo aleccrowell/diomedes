@@ -5,8 +5,9 @@
 #   julia --project scripts/gap_fit.jl <timed|all> <model> combine [n=4]    # combine saved chains 1..n
 #
 # `timed`: lead-lap finishers only; `all`: plus lapped cars as intervals.
-# <model>: `t4` (Student-t(4) noise) or pace + loss noise with loss magnitude
-# covariates: `pl` (none), `pl_dur` (race duration), `pl_era` (decade), `pl_both`.
+# <model>: `t4` (Student-t(4) noise) or pace + loss noise `pl[_dur][_<era>]`:
+# `_dur` adds race duration to the loss size, `<era>` (decade, regime, rw) adds
+# era effects to incident probability and loss size (see `model_spec`).
 # 1000 draws per chain after 500 warm-up iterations.
 #
 # On a Raspberry Pi 5, running the chains as separate processes (`chain k`, one
@@ -21,10 +22,9 @@ model = get(ARGS, 2, "t4")
 action = get(ARGS, 3, "serial")
 data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
-model in ("t4", "pl", "pl_dur", "pl_era", "pl_both") || error("unknown model $model")
-fit(; kw...) = model == "t4" ? fit_gaps(g; kw...) :
-    fit_paceloss(g; loss_duration = model in ("pl_dur", "pl_both"),
-                 loss_era = model in ("pl_era", "pl_both"), kw...)
+spec = model_spec(model)
+fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
+    fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, kw...)
 
 res = fetch_results(ErgastCSV(data_dir), 1950:2100)
 g = prepare_gaps(res; include_lapped = mode == "all")
@@ -47,14 +47,16 @@ else
 end
 
 println("chains: $(FlexiChains.nchains(chain)) × $(FlexiChains.niters(chain)) draws")
-for k in (model == "t4" ? (:σ_comp, :σ_mach, :σ_y) : (:σ_comp, :σ_mach, :σ, :a_π, :a_λ))
+for k in (spec.family === :t4 ? (:σ_comp, :σ_mach, :σ_y) : (:σ_comp, :σ_mach, :σ, :a_π, :a_λ))
     println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
 end
-if model != "t4"
-    println("incident probability π ≈ $(round(mean(1 ./ (1 .+ exp.(-vec(chain[:a_π])))); digits = 3)), ",
-            "baseline mean loss λ ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
-    model in ("pl_dur", "pl_both") && println("β_dur: $(round(mean(chain[:β_dur]); digits = 3)) ± $(round(std(chain[:β_dur]); digits = 3))")
-    model in ("pl_era", "pl_both") && println("τ_era: $(round(mean(chain[:τ_era]); digits = 3)) ± $(round(std(chain[:τ_era]); digits = 3))")
+if spec.family === :pl
+    println("baseline incident probability logistic(a_π) ≈ $(round(mean(1 ./ (1 .+ exp.(-vec(chain[:a_π])))); digits = 3)), ",
+            "baseline mean loss exp(a_λ) ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
+    for k in Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw) && continue
+        println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
+    end
 end
 println("divergences: ", count(identity, chain[:numerical_error]),
         ", mean tree depth: ", round(mean(chain[:tree_depth]); digits = 2))
