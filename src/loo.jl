@@ -14,8 +14,14 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
     b = centred ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
     κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
     kb = centred ? ones(length(θ.γ)) : κ
-    ct = κ[g.t_race] .* a[g.t_comp] .+ kb[g.t_race] .* b[g.t_mach]
-    cc = κ[g.c_race] .* a[g.c_comp] .+ kb[g.c_race] .* b[g.c_mach]
+    at, ac = a[g.t_comp], a[g.c_comp]
+    if haskey(θ, :τ_age)                  # career curve (#15 stage 2)
+        fage = age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g))
+        at = at .+ [k == 0 ? 0.0 : fage[k] for k in g.t_age]
+        ac = ac .+ [k == 0 ? 0.0 : fage[k] for k in g.c_age]
+    end
+    ct = κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach]
+    cc = κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach]
     csum, n = zeros(length(θ.γ)), zeros(Int, length(θ.γ))
     for (c, r) in zip(ct, g.t_race); csum[r] += c; n[r] += 1; end
     for (c, r) in zip(cc, g.c_race); csum[r] += c; n[r] += 1; end
@@ -50,19 +56,19 @@ draw(chain, names, i, c) = NamedTuple{names}(Tuple(chain[n][i, c] for n in names
     model_spec(name) -> (; family, loss_duration, era)
 
 Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
-`pl[_dur][_<era>][_kappa]` (`paceloss_effects`), e.g. `pl`, `pl_dur`,
-`pl_regime`, `pl_dur_rw_kappa`, with `<era>` one of `decade`, `regime`, `rw`
-and `_kappa` adding the pace scale (#15).
+`pl[_dur][_<era>][_kappa][_age]` (`paceloss_effects`), e.g. `pl`, `pl_dur`,
+`pl_regime`, `pl_dur_rw_kappa_age`, with `<era>` one of `decade`, `regime`,
+`rw`, `_kappa` adding the pace scale and `_age` the career curve (#15).
 """
 function model_spec(name::AbstractString)
-    name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false)
+    name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
-    dur, kappa = "dur" in parts, "kappa" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa")]
+    dur, kappa, age = "dur" in parts, "kappa" in parts, "age" in parts
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa)
+            pace_scale = kappa, age)
 end
 
 """
@@ -90,5 +96,5 @@ function model_param_names(spec)
     spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
     return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
-            pace_param_names(spec.pace_scale)...)
+            pace_param_names(spec.pace_scale)..., age_param_names(spec.age)...)
 end
