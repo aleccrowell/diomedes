@@ -7,7 +7,8 @@
 # `timed`: lead-lap finishers only; `all`: plus lapped cars as intervals.
 # <model>: `t4` (Student-t(4) noise) or pace + loss noise `pl[_dur][_<era>]`:
 # `_dur` adds race duration to the loss size, `<era>` (decade, regime, rw) adds
-# era effects to incident probability and loss size (see `model_spec`).
+# era effects to incident probability and loss size, `_kappa` a pace scale by
+# season (#15) (see `model_spec`).
 # 1000 draws per chain after 500 warm-up iterations.
 #
 # On a Raspberry Pi 5, running the chains as separate processes (`chain k`, one
@@ -24,7 +25,7 @@ data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
 spec = model_spec(model)
 fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
-    fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, kw...)
+    fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale, kw...)
 
 res = fetch_results(ErgastCSV(data_dir), 1950:2100)
 g = prepare_gaps(res; include_lapped = mode == "all")
@@ -53,8 +54,9 @@ end
 if spec.family === :pl
     println("baseline incident probability logistic(a_π) ≈ $(round(mean(1 ./ (1 .+ exp.(-vec(chain[:a_π])))); digits = 3)), ",
             "baseline mean loss exp(a_λ) ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
-    for k in Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]
-        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw) && continue
+    for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]...,
+              Diomedes.pace_param_names(spec.pace_scale)...)
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach) && continue
         println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
     end
 end

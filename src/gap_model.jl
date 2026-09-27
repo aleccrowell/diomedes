@@ -239,13 +239,16 @@ end
 
 Posterior summaries of competitor effects (sum to zero) and machine-season
 effects (sum to zero within season), in % of race time; negative = faster.
+With a pace scale (#15), competitor effects are in average-season units and
+machine effects in their own season's units.
 """
 function gap_effects_table(chain, g::GapData)
     draws(sym) = stack(vec(chain[sym]); dims = 1)
     comp = mapslices(sum_to_zero, draws(:z_comp); dims = 2) .* vec(chain[:σ_comp])
     counts = season_counts(g)
-    mach = mapslices(z -> sum_to_zero_by(z, g.mach_season, counts), draws(:z_mach); dims = 2) .*
-           vec(chain[:σ_mach])
+    centred = any(vn -> string(vn) == "b_mach", Turing.FlexiChains.parameters(chain))   # #15 models
+    mach = centred ? mapslices(b -> sum_to_zero_by(b, g.mach_season, counts), draws(:b_mach); dims = 2) :
+        mapslices(z -> sum_to_zero_by(z, g.mach_season, counts), draws(:z_mach); dims = 2) .* vec(chain[:σ_mach])
     names = Dict(zip(g.rows.competitor_id, g.rows.competitor_name))
     all_comp = vcat(g.t_comp, g.c_comp)
     all_mach = vcat(g.t_mach, g.c_mach)

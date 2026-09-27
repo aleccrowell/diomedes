@@ -61,18 +61,98 @@ function paceloss_loginterval(lo, hi, σ, π, λ)
 end
 
 """
-    paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, g::GapData, season_counts)
+    paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, κr, g::GapData, season_counts)
 
 Log-likelihood of `paceloss_effects`: per-row means as in `gap_loglik`
 (field-centred race intercepts, sum-to-zero effects), pace noise `σ`, and
-per-race incident probability `πr[race]` and mean loss `λr[race]`.
+per-race incident probability `πr[race]` and mean loss `λr[race]`. `κr` is a
+per-race pace scale (`nothing` = 1): μ = γ + κ·(c - c̄) with c = driver + car.
 """
-function paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, g, season_counts)
+function paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, κr, g, season_counts)
     a = σ_comp .* sum_to_zero(z_comp)
     b = σ_mach .* sum_to_zero_by(z_mach, g.mach_season, season_counts)
     ct = a[g.t_comp] .+ b[g.t_mach]
     cc = a[g.c_comp] .+ b[g.c_mach]
-    T = promote_type(eltype(ct), eltype(γ), typeof(σ), eltype(πr), eltype(λr))
+    T = promote_type(eltype(ct), eltype(γ), typeof(σ), eltype(πr), eltype(λr),
+                     κr === nothing ? Float64 : eltype(κr))
+    csum, n = zeros(T, length(γ)), zeros(Int, length(γ))
+    for (c, r) in zip(ct, g.t_race); csum[r] += c; n[r] += 1; end
+    for (c, r) in zip(cc, g.c_race); csum[r] += c; n[r] += 1; end
+    cbar = csum ./ max.(n, 1)
+    k(r) = κr === nothing ? one(T) : κr[r]
+    ll = zero(T)
+    for i in eachindex(g.y)
+        r = g.t_race[i]
+        ll += paceloss_logpdf(g.y[i] - (γ[r] + k(r) * (ct[i] - cbar[r])), σ, πr[r], λr[r])
+    end
+    for i in eachindex(g.lo)
+        r = g.c_race[i]
+        μ = γ[r] + k(r) * (cc[i] - cbar[r])
+        ll += paceloss_loginterval(g.lo[i] - μ, g.hi[i] - μ, σ, πr[r], λr[r])
+    end
+    return ll
+end
+
+# Value and gradient of a scalar function of 4 arguments via ForwardDiff duals.
+const FD = ReverseDiff.ForwardDiff
+@inline function value_grad4(f, a, b, c, d)
+    D = FD.Dual{Nothing}
+    r = f(D(a, 1.0, 0.0, 0.0, 0.0), D(b, 0.0, 1.0, 0.0, 0.0), D(c, 0.0, 0.0, 1.0, 0.0),
+          D(d, 0.0, 0.0, 0.0, 1.0))
+    return FD.value(r), FD.partials(r)
+end
+
+# Per-row values and (μ, σ, π, λ) derivatives from 4-component duals, given
+# the row means in `st` (from row_means_ab).
+function paceloss_row_grads(st, σ, πr, λr, g)
+    dμt, dμc = zeros(length(st.μt)), zeros(length(st.μc))
+    dπ, dλ = zeros(length(πr)), zeros(length(λr))
+    val, dσ = 0.0, 0.0
+    for i in eachindex(st.μt)
+        r, y = g.t_race[i], g.y[i]
+        v, p = value_grad4((μ, s, q, l) -> paceloss_logpdf(y - μ, s, q, l), st.μt[i], σ, πr[r], λr[r])
+        val += v; dμt[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]
+    end
+    for i in eachindex(st.μc)
+        r, lo, hi = g.c_race[i], g.lo[i], g.hi[i]
+        v, p = value_grad4((μ, s, q, l) -> paceloss_loginterval(lo - μ, hi - μ, s, q, l),
+                           st.μc[i], σ, πr[r], λr[r])
+        val += v; dμc[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]
+    end
+    return val, dμt, dμc, dσ, dπ, dλ
+end
+
+# Fused reverse rule: per-row derivatives scattered into races and effects (and
+# κ) by the shared gap-model pullback.
+function ChainRulesCore.rrule(::typeof(paceloss_loglik), γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr,
+                              κr, g, season_counts)
+    st = gap_row_means(γ, z_comp, σ_comp, z_mach, σ_mach, g, season_counts; κ = κr)
+    val, dμt, dμc, dσ, dπ, dλ = paceloss_row_grads(st, σ, πr, λr, g)
+    d = gap_effects_pullback(dμt, dμc, st, σ_comp, σ_mach, g, season_counts; κ = κr)
+    dκ = κr === nothing ? NoTangent() : d.dκ
+    pullback(Δ) = (NoTangent(), Δ .* d.dγ, Δ .* d.dz_comp, Δ * d.dσ_comp, Δ .* d.dz_mach,
+                   Δ * d.dσ_mach, Δ * dσ, Δ .* dπ, Δ .* dλ, dκ isa NoTangent ? dκ : Δ .* dκ,
+                   NoTangent(), NoTangent())
+    return val, pullback
+end
+
+"""
+    paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, g::GapData, season_counts)
+
+Log-likelihood of the pace-scale model (#15) with **centred** car effects.
+Driver effects `a = σ_comp·(z_comp - mean)` are scaled by the per-race `κr`;
+car effects are `b = b_mach - season mean` (their spread by season is set in
+the prior, b_mach ~ N(0, σ_mach·κ_season)), so μ = γ + κ·a + b - (field mean).
+Centred car effects avoid the ridge between κ_season and the spread of that
+season's standardised effects that the non-centred form has; each car-season
+has ~30+ results, so its effect is well determined by the data.
+"""
+function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, g, season_counts)
+    a = σ_comp .* sum_to_zero(z_comp)
+    b = sum_to_zero_by(b_mach, g.mach_season, season_counts)
+    T = promote_type(eltype(a), eltype(b), eltype(γ), typeof(σ), eltype(πr), eltype(λr), eltype(κr))
+    ct = [κr[g.t_race[i]] * a[g.t_comp[i]] + b[g.t_mach[i]] for i in eachindex(g.t_race)]
+    cc = [κr[g.c_race[i]] * a[g.c_comp[i]] + b[g.c_mach[i]] for i in eachindex(g.c_race)]
     csum, n = zeros(T, length(γ)), zeros(Int, length(γ))
     for (c, r) in zip(ct, g.t_race); csum[r] += c; n[r] += 1; end
     for (c, r) in zip(cc, g.c_race); csum[r] += c; n[r] += 1; end
@@ -90,46 +170,39 @@ function paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, g, 
     return ll
 end
 
-# Value and gradient of a scalar function of 4 arguments via ForwardDiff duals.
-const FD = ReverseDiff.ForwardDiff
-@inline function value_grad4(f, a, b, c, d)
-    D = FD.Dual{Nothing}
-    r = f(D(a, 1.0, 0.0, 0.0, 0.0), D(b, 0.0, 1.0, 0.0, 0.0), D(c, 0.0, 0.0, 1.0, 0.0),
-          D(d, 0.0, 0.0, 0.0, 1.0))
-    return FD.value(r), FD.partials(r)
-end
-
-# Fused reverse rule: per-row value and (μ, σ, π, λ) derivatives from 4-component
-# duals, scattered into races and effects by the shared gap-model pullback.
-function ChainRulesCore.rrule(::typeof(paceloss_loglik), γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr,
+function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
                               g, season_counts)
-    st = gap_row_means(γ, z_comp, σ_comp, z_mach, σ_mach, g, season_counts)
-    dμt, dμc = zeros(length(st.μt)), zeros(length(st.μc))
-    dπ, dλ = zeros(length(πr)), zeros(length(λr))
-    val, dσ = 0.0, 0.0
-    for i in eachindex(st.μt)
-        r, y = g.t_race[i], g.y[i]
-        v, p = value_grad4((μ, s, q, l) -> paceloss_logpdf(y - μ, s, q, l), st.μt[i], σ, πr[r], λr[r])
-        val += v; dμt[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]
-    end
-    for i in eachindex(st.μc)
-        r, lo, hi = g.c_race[i], g.lo[i], g.hi[i]
-        v, p = value_grad4((μ, s, q, l) -> paceloss_loginterval(lo - μ, hi - μ, s, q, l),
-                           st.μc[i], σ, πr[r], λr[r])
-        val += v; dμc[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]
-    end
-    d = gap_effects_pullback(dμt, dμc, st, σ_comp, σ_mach, g, season_counts)
-    pullback(Δ) = (NoTangent(), Δ .* d.dγ, Δ .* d.dz_comp, Δ * d.dσ_comp, Δ .* d.dz_mach,
-                   Δ * d.dσ_mach, Δ * dσ, Δ .* dπ, Δ .* dλ, NoTangent(), NoTangent())
+    zc = z_comp .- mean(z_comp)
+    b = b_mach .- group_means(b_mach, g.mach_season, season_counts)[g.mach_season]
+    st = row_means_ab(γ, σ_comp .* zc, b, g; κ = κr, κ_cars = false)
+    val, dμt, dμc, dσ, dπ, dλ = paceloss_row_grads(st, σ, πr, λr, g)
+    d = row_pullback_ab(dμt, dμc, st, g; κ = κr, κ_cars = false)
+    dσ_comp = sum(d.da .* zc)
+    dz_comp = σ_comp .* (d.da .- mean(d.da))
+    db_mach = d.db .- group_means(d.db, g.mach_season, season_counts)[g.mach_season]
+    pullback(Δ) = (NoTangent(), Δ .* d.dγ, Δ .* dz_comp, Δ * dσ_comp, Δ .* db_mach, Δ * dσ,
+                   Δ .* dπ, Δ .* dλ, Δ .* d.dκ, NoTangent(), NoTangent())
     return val, pullback
 end
 
-# Uncompiled tapes only (see gap_loglik).
+ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
+                                                     σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
+                                                     σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
+                                                     λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
+                                                     g::GapData, season_counts::Vector{Int})
+
+# Uncompiled tapes only (see gap_loglik); one binding without and one with a pace scale.
 ReverseDiff.@grad_from_chainrules paceloss_loglik(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
                                                   σ_comp::ReverseDiff.TrackedReal, z_mach::ReverseDiff.TrackedArray,
                                                   σ_mach::ReverseDiff.TrackedReal, σ::ReverseDiff.TrackedReal,
                                                   πr::ReverseDiff.TrackedArray, λr::ReverseDiff.TrackedArray,
-                                                  g::GapData, season_counts::Vector{Int})
+                                                  κr::Nothing, g::GapData, season_counts::Vector{Int})
+ReverseDiff.@grad_from_chainrules paceloss_loglik(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
+                                                  σ_comp::ReverseDiff.TrackedReal, z_mach::ReverseDiff.TrackedArray,
+                                                  σ_mach::ReverseDiff.TrackedReal, σ::ReverseDiff.TrackedReal,
+                                                  πr::ReverseDiff.TrackedArray, λr::ReverseDiff.TrackedArray,
+                                                  κr::ReverseDiff.TrackedArray, g::GapData,
+                                                  season_counts::Vector{Int})
 
 """
 Regulation regimes chosen a priori for changes plausibly affecting incident
@@ -158,6 +231,7 @@ struct LossCovariates
     n_regimes::Int
     season::Vector{Int}             # 1 = earliest season in the data
     n_seasons::Int
+    mach_season::Vector{Int}        # season index (as `season`) of each machine level
 end
 function LossCovariates(g::GapData)
     ld = log.(g.race_minutes)
@@ -165,9 +239,11 @@ function LossCovariates(g::GapData)
     d0 = minimum(decades)
     regime = [searchsortedlast(REGIME_STARTS, s) for s in g.race_season]
     s0 = minimum(g.race_season)
+    data_seasons = sort(unique(g.race_season))         # GapData.mach_season indexes these
     return LossCovariates((ld .- mean(ld)) ./ std(ld), decades .- d0 .+ 1, maximum(decades) - d0 + 1,
                           regime, length(REGIME_STARTS),
-                          g.race_season .- s0 .+ 1, maximum(g.race_season) - s0 + 1)
+                          g.race_season .- s0 .+ 1, maximum(g.race_season) - s0 + 1,
+                          data_seasons[g.mach_season] .- s0 .+ 1)
 end
 
 const ERA_TERMS = (:none, :decade, :regime, :rw)
@@ -221,8 +297,22 @@ function loss_param_names(loss_duration::Bool, era::Symbol)
     return names
 end
 
+"Names of the pace-scale parameters (#15), in sampling order (after the loss parameters)."
+pace_param_names(pace_scale::Bool) = pace_scale ? (:τ_κ, :e_κ, :b_mach) : ()
+
 """
-    paceloss_effects(g::GapData; loss_duration = false, era = :none)
+    race_pace_scale(θ, cov) -> Vector
+
+Per-race pace scale κ (#15): `log κ_season` is a random walk over seasons with
+Student-t(3) steps (step scale `τ_κ`, standardised steps `e_κ`), centred so the
+geometric mean of κ over seasons is 1. Driver and car effects are then in
+average-season units.
+"""
+season_pace_scale(θ) = exp.(rw_path(θ.τ_κ .* θ.e_κ))
+race_pace_scale(θ, cov::LossCovariates) = season_pace_scale(θ)[cov.season]
+
+"""
+    paceloss_effects(g::GapData; loss_duration = false, era = :none, pace_scale = false)
 
 % gap to winner = race intercept + competitor effect + machine-season effect
 + pace noise + incident loss, with lapped finishers as interval-censored
@@ -240,14 +330,22 @@ incident probability and the loss size. `era` (`:none`, `:decade`, `:regime`,
 `:rw`) adds era effects to both (see `race_loss`). Duration varies within
 seasons as well as between them, so with both terms the era effects capture
 only what duration does not.
+
+`pace_scale` (#15) lets the spread of pace, in % terms, change by season
+with κ_season (see `race_pace_scale`): driver differences are scaled by κ in
+the likelihood, and car-effect spread through the car prior, with centred car
+effects `b_mach ~ N(0, σ_mach·κ_season)` (see `paceloss_loglik_cc`). Driver
+effects are then comparable across eras.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
-                                 loss_duration::Bool, era::Symbol)
+                                 loss_duration::Bool, era::Symbol, pace_scale::Bool)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ ~ truncated(Normal(0, 1); lower = 0)
     z_comp ~ filldist(Normal(), length(g.competitors))
-    z_mach ~ filldist(Normal(), length(g.machines))
+    if !pace_scale
+        z_mach ~ filldist(Normal(), length(g.machines))
+    end
     γ ~ filldist(Normal(0, 5), length(g.races))
     a_π ~ Normal(-1.5, 1)
     a_λ ~ Normal(log(2), 1)
@@ -272,31 +370,43 @@ only what duration does not.
         θ = (; θ..., τ_π_rw, τ_λ_rw, e_π_rw, e_λ_rw)
     end
     πr, λr = race_loss(θ, cov, loss_duration, era)
-    @addlogprob! paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, g, season_counts)
+    if pace_scale
+        τ_κ ~ truncated(Normal(0, 0.25); lower = 0)
+        e_κ ~ filldist(TDist(3), cov.n_seasons - 1)
+        κs = season_pace_scale((; τ_κ, e_κ))
+        b_mach ~ arraydist(Normal.(0, σ_mach .* κs[cov.mach_season]))     # centred car effects
+        @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], g,
+                                        season_counts)
+    else
+        @addlogprob! paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, nothing, g, season_counts)
+    end
 end
 
-function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none)
+function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
+                          pace_scale::Bool = false)
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     cov = LossCovariates(g)
-    era === :rw && cov.n_seasons < 2 && throw(ArgumentError("era = :rw needs at least 2 seasons"))
-    return paceloss_effects(g, season_counts(g), cov, loss_duration, era)
+    (era === :rw || pace_scale) && cov.n_seasons < 2 &&
+        throw(ArgumentError("random walks over seasons need at least 2 seasons"))
+    return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale)
 end
 
 """
-    fit_paceloss(g::GapData; loss_duration=false, era=:none, n_samples=1000, n_chains=1, ...)
+    fit_paceloss(g::GapData; loss_duration=false, era=:none, pace_scale=false, n_samples=1000, n_chains=1, ...)
 
 Sample `paceloss_effects`, starting chains with race intercepts at each race's
 mean timed gap and the loss parameters at their prior centres, era effects near
 zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gaps`.
 """
 function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
+                      pace_scale::Bool = false,
                       n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
     adtype isa AutoReverseDiff && adtype.compile &&
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
-    model = paceloss_effects(g; loss_duration, era)
+    model = paceloss_effects(g; loss_duration, era, pace_scale)
     cov = model.args.cov
     race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
@@ -315,6 +425,11 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         elseif era === :rw
             p = (; p..., τ_π_rw = 0.05 + 0.05 * rand(rng), τ_λ_rw = 0.05 + 0.05 * rand(rng),
                  e_π_rw = 0.1 .* randn(rng, cov.n_seasons - 1), e_λ_rw = 0.1 .* randn(rng, cov.n_seasons - 1))
+        end
+        if pace_scale      # centred car effects replace z_mach
+            p = (; (k => v for (k, v) in pairs(p) if k !== :z_mach)...,
+                 τ_κ = 0.05 + 0.05 * rand(rng), e_κ = 0.1 .* randn(rng, cov.n_seasons - 1),
+                 b_mach = 0.1 .* randn(rng, length(g.machines)))
         end
         return InitFromParams(p)
     end
