@@ -156,20 +156,46 @@ function fit_effects(d::ModelData; σ_y = 1.0, intercept::Bool = false,
                      init::Symbol = :near_prior_centre,
                      progress::Bool = true, progress_log::Union{Nothing,IO} = nothing,
                      log_every::Int = 100, kwargs...)
-    model = crossed_effects(d; σ_y, intercept)
-    if init === :near_prior_centre
-        inits = [near_prior_centre(rng, d; σ_y, intercept) for _ in 1:n_chains]
-        kwargs = (; kwargs..., initial_params = n_chains == 1 ? only(inits) : inits)
-    elseif init !== :uniform
+    init in (:near_prior_centre, :uniform) ||
         throw(ArgumentError("init must be :near_prior_centre or :uniform"))
+    inits = init === :uniform ? nothing :
+        [near_prior_centre(rng, d; σ_y, intercept) for _ in 1:n_chains]
+    return run_nuts(crossed_effects(d; σ_y, intercept), inits; n_samples, n_chains, ensemble,
+                    sampler, rng, progress, progress_log, log_every, kwargs...)
+end
+
+# Shared NUTS driver: initial values (one per chain, or `nothing` for Turing's
+# default), optional progress log, serial or parallel chains.
+#
+# AbstractMCMC does not call the callback during discarded warm-up iterations,
+# and Turing discards all adaptation iterations by default. A progress log would
+# then only start after warm-up, which is often most of the run. So when
+# logging, warm-up draws are kept (every iteration reaches the callback) and
+# trimmed from the returned chain, which is therefore the same as without
+# logging. Callers passing their own `discard_*` options are left alone.
+function run_nuts(model, inits; n_samples, n_chains, ensemble, sampler, rng, progress,
+                  progress_log, log_every, kwargs...)
+    if inits !== nothing
+        kwargs = (; kwargs..., initial_params = n_chains == 1 ? only(inits) : inits)
+    end
+    n_warmup = warmup_iterations(sampler, n_samples)
+    trim = progress_log !== nothing && n_warmup > 0 &&
+           !haskey(kwargs, :discard_initial) && !haskey(kwargs, :discard_adapt)
+    N = n_samples
+    if trim
+        N = n_samples + n_warmup
+        kwargs = (; kwargs..., nadapts = n_warmup, discard_adapt = false, discard_initial = 0)
     end
     if progress_log !== nothing
         kwargs = (; kwargs..., callback = progress_logger(progress_log; every = log_every,
-                                                          total = total_iterations(sampler, n_samples)))
+                                                          total = n_samples + n_warmup,
+                                                          n_warmup = trim ? n_warmup : 0,
+                                                          n_chains = ensemble isa MCMCSerial ? n_chains : 1))
     end
-    return n_chains == 1 ?
-        sample(rng, model, sampler, n_samples; progress, kwargs...) :
-        sample(rng, model, sampler, ensemble, n_samples, n_chains; progress, kwargs...)
+    chain = n_chains == 1 ?
+        sample(rng, model, sampler, N; progress, kwargs...) :
+        sample(rng, model, sampler, ensemble, N, n_chains; progress, kwargs...)
+    return trim ? chain[iter = (n_warmup + 1):N] : chain
 end
 
 """
@@ -189,39 +215,70 @@ function near_prior_centre(rng, d::ModelData; σ_y = 1.0, intercept::Bool = fals
     return InitFromParams(p)
 end
 
-# Iterations per chain including adaptation, mirroring Turing's defaults
-# (NUTS(δ) adapts for min(1000, N ÷ 2) iterations, run on top of the N kept).
-function total_iterations(sampler, n_samples)
-    hasproperty(sampler, :n_adapts) || return n_samples
+# Adaptation (warm-up) iterations per chain, mirroring Turing's defaults:
+# NUTS(δ) adapts for min(1000, N ÷ 2) iterations, run on top of the N kept.
+function warmup_iterations(sampler, n_samples)
+    hasproperty(sampler, :n_adapts) || return 0
     n = sampler.n_adapts
-    return n_samples + (n == -1 ? min(1000, n_samples ÷ 2) : n)
+    return n == -1 ? min(1000, n_samples ÷ 2) : n
 end
 
 """
-    progress_logger(io=stdout; every=100, total=nothing)
+    progress_logger(io=stdout; every=100, total=nothing, n_warmup=0, n_chains=1)
 
-An AbstractMCMC `callback` that prints the iteration, elapsed time and (given
-`total` iterations per chain) an ETA every `every` iterations, flushing `io` so
-progress is visible when output goes to a file.
+An AbstractMCMC `callback` that prints progress every `every` iterations,
+flushing `io` so it is visible when output goes to a file. Given `total`
+iterations per chain it adds ETAs.
 
-The ETA uses the rate over the last `every` iterations, not the average since
-the start: early adaptation is much slower than later sampling, so an average
-overstates the remaining time several-fold. Threaded chains report separately,
-labelled by thread id (approximate, since tasks can migrate between threads).
+- The chain ETA uses the rate over the last `every` iterations, not the average
+  since the start: early adaptation is much slower than later sampling, so an
+  average overstates the remaining time several-fold.
+- With `n_chains > 1` run one after another (`MCMCSerial`), each line says
+  which chain it is ("chain 2/4"; a new chain is detected when the iteration
+  count resets). Once a chain has finished, it also gives a total ETA from the
+  mean duration of finished chains, since every chain repeats the same
+  slow-then-fast pattern.
+- Threaded chains report separately, labelled by thread id (approximate, since
+  tasks can migrate between threads).
+- Iterations up to `n_warmup` are marked "(warm-up)". The callback only sees
+  warm-up iterations if they are not discarded; `fit_effects` / `fit_gaps`
+  arrange that when logging.
 """
-function progress_logger(io::IO = stdout; every::Int = 100, total = nothing)
+function progress_logger(io::IO = stdout; every::Int = 100, total = nothing, n_warmup::Int = 0,
+                         n_chains::Int = 1)
     t0 = time()
-    last = Dict{Int,Float64}()
+    last = Dict{Int,Float64}()        # time of the last report, per thread
+    last_iter = Dict{Int,Int}()       # last iteration seen, per thread
+    chain = Dict{Int,Int}()           # current chain number, per thread (serial runs)
+    chain_start = Dict{Int,Float64}()
+    finished = Float64[]              # durations of finished chains
     lk = ReentrantLock()
     return function (rng, model, sampler, transition, state, iteration; kwargs...)
-        iteration % every == 0 || return
         lock(lk) do
             now, tid = time(), Threads.threadid()
+            if iteration < get(last_iter, tid, 0)          # iteration count reset: new chain
+                push!(finished, now - get(chain_start, tid, t0))
+                chain[tid] = get(chain, tid, 1) + 1
+                chain_start[tid] = now
+                last[tid] = now
+            end
+            last_iter[tid] = iteration
+            iteration % every == 0 || return
             recent = now - get(last, tid, t0)
             last[tid] = now
-            eta = total === nothing ? "" :
-                string(", ETA ", round((total - iteration) * recent / every / 60; digits = 1), " min")
-            println(io, "  thread $tid: iter $iteration", total === nothing ? "" : "/$total",
+            k = get(chain, tid, 1)
+            label = n_chains > 1 ? "chain $k/$n_chains" : "thread $tid"
+            eta = ""
+            if total !== nothing
+                chain_eta = (total - iteration) * recent / every
+                eta = string(", chain ETA ", round(chain_eta / 60; digits = 1), " min")
+                if n_chains > 1 && !isempty(finished)
+                    total_eta = chain_eta + (n_chains - k) * mean(finished)
+                    eta *= string(", total ETA ", round(total_eta / 60; digits = 1), " min")
+                end
+            end
+            phase = iteration <= n_warmup ? " (warm-up)" : ""
+            println(io, "  $label: iter $iteration", total === nothing ? "" : "/$total", phase,
                     ", $(round((now - t0) / 60; digits = 1)) min elapsed", eta)
             flush(io)
         end

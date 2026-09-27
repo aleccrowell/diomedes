@@ -8,11 +8,19 @@ to the present.
 Unauthenticated limits are 4 req/s burst and 500 req/hour sustained. A full
 history is roughly 300 paged requests; responses are cached, so this is a
 one-off cost. Pass `refresh=true` to re-fetch (e.g. the in-progress season).
+`suspended_ms` (red-flag suspension included in official times, see
+`suspension_ms`): races whose winner's average lap is anomalously slow against
+the fastest lap (`suspect_suspension`) have their lap times fetched and checked,
+a few extra requests per season; other races get 0. Races without fastest-lap
+data (before 2004) get `missing`.
+The Indianapolis 500 (1950–1960) is excluded unless `include_indy500 = true`
+(see `INDY500`).
 """
 Base.@kwdef struct JolpicaF1 <: DataSource
     base_url::String = "https://api.jolpi.ca/ergast/f1"
     cache_dir::String = joinpath(default_cache_dir(), "jolpica")
     refresh::Bool = false
+    include_indy500::Bool = false
     limiter::RateLimiter = RateLimiter(0.3)
 end
 
@@ -28,6 +36,7 @@ end
 
 function jolpica_season(src::JolpicaF1, season::Integer)
     rows = empty_results()
+    fastest = Dict{String,Float64}()          # event_id => fastest lap (ms) in the race
     offset, total = 0, 1
     while offset < total
         url = "$(src.base_url)/$season/results.json?limit=$JOLPICA_PAGE&offset=$offset"
@@ -36,11 +45,47 @@ function jolpica_season(src::JolpicaF1, season::Integer)
         total = parse(Int, mr.total)
         # A race's results can be split across pages; each page repeats the race header.
         for race in mr.RaceTable.Races, r in race.Results
-            push!(rows, jolpica_row(race, r))
+            (src.include_indy500 || race.raceName != INDY500) || continue
+            row = jolpica_row(race, r)
+            push!(rows, row)
+            fl = get(r, :FastestLap, nothing)
+            if fl !== nothing && haskey(fl, :Time)
+                ms = laptime_ms(String(fl.Time.time))
+                fastest[row.event_id] = min(get(fastest, row.event_id, Inf), ms)
+            end
         end
         offset += JOLPICA_PAGE
     end
+    for g in groupby(rows, :event_id)
+        eid = first(g.event_id)
+        timed = findall(!ismissing, g.time_ms)
+        if !haskey(fastest, eid) || isempty(timed)
+            g.suspended_ms .= missing
+            continue
+        end
+        w = timed[argmin(g.time_ms[timed])]
+        g.suspended_ms .= suspect_suspension(g.time_ms[w], g.laps[w], fastest[eid]) ?
+            suspension_ms(jolpica_laps(src, season, first(g.round))) : 0.0
+    end
     return rows
+end
+
+# Lap times of one race, per car (vectors ordered by lap).
+function jolpica_laps(src::JolpicaF1, season, round)
+    laps = Dict{String,Vector{Tuple{Int,Float64}}}()
+    offset, total = 0, 1
+    while offset < total
+        url = "$(src.base_url)/$season/$round/laps.json?limit=$JOLPICA_PAGE&offset=$offset"
+        mr = cached_json(url; cache_dir = src.cache_dir, limiter = src.limiter,
+                         refresh = src.refresh).MRData
+        total = parse(Int, mr.total)
+        for race in mr.RaceTable.Races, lap in race.Laps, t in lap.Timings
+            push!(get!(laps, String(t.driverId), Tuple{Int,Float64}[]),
+                  (parse(Int, lap.number), laptime_ms(String(t.time))))
+        end
+        offset += JOLPICA_PAGE
+    end
+    return [last.(sort(v)) for v in values(laps)]
 end
 
 function jolpica_row(race, r)
@@ -63,7 +108,9 @@ function jolpica_row(race, r)
         machine_id = String(r.Constructor.constructorId),
         class = missing,
         time_ms = time === nothing ? missing : maybefloat(get(time, :millis, nothing)),
+        suspended_ms = missing,                # filled per race in jolpica_season
         position = classified ? maybeint(r.position) : missing,
+        laps = maybeint(get(r, :laps, nothing)),
         status = String(r.status),
         classified,
     )

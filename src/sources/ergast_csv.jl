@@ -1,15 +1,22 @@
 """
-    ErgastCSV(dir)
+    ErgastCSV(dir; include_indy500 = false)
 
 F1 results from a local Ergast-format CSV dump (`results.csv`, `races.csv`,
 `drivers.csv`, `constructors.csv`, `status.csv`). Useful offline and for checking
 parity with the legacy Python pipeline, which used such a dump.
 
 IDs use Ergast's `driverRef`/`constructorRef` strings so they match `JolpicaF1`.
+If the dump has `lap_times.csv` (1996+), `suspended_ms` is each race's red-flag
+suspension detected from lap times (see `suspension_ms`); it is `missing` for
+races without lap times.
+The Indianapolis 500 (1950–1960) is excluded unless `include_indy500 = true`
+(see `INDY500`).
 """
 struct ErgastCSV <: DataSource
     dir::String
+    include_indy500::Bool
 end
+ErgastCSV(dir::AbstractString; include_indy500::Bool = false) = ErgastCSV(dir, include_indy500)
 
 function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
     rd(name) = CSV.read(joinpath(src.dir, name), DataFrame; missingstring = "\\N")
@@ -21,10 +28,12 @@ function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
 
     df = innerjoin(results, races; on = :raceId)
     filter!(:year => in(Set(seasons)), df)
+    src.include_indy500 || filter!(:name => !=(INDY500), df)
     df = innerjoin(df, drivers; on = :driverId)
     df = innerjoin(df, constructors; on = :constructorId)
     df = innerjoin(df, status; on = :statusId)
     sort!(df, [:year, :round, :positionOrder])
+    susp = ergast_suspensions(src.dir, Set(df.raceId))
 
     out = DataFrame(
         series = "f1",
@@ -39,9 +48,25 @@ function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
         machine_id = String.(df.constructorRef),
         class = Vector{Union{Missing,String}}(missing, nrow(df)),
         time_ms = Vector{Union{Missing,Float64}}(maybefloat.(df.milliseconds)),
+        suspended_ms = Vector{Union{Missing,Float64}}([get(susp, id, missing) for id in df.raceId]),
         position = Vector{Union{Missing,Int}}(maybeint.(df.position)),
+        laps = Vector{Union{Missing,Int}}(maybeint.(df.laps)),
         status = String.(df.status),
         classified = .!ismissing.(df.position),
     )
     return validate_results(out)
+end
+
+# Suspended time per raceId from lap_times.csv, for races with lap data.
+function ergast_suspensions(dir, race_ids)
+    path = joinpath(dir, "lap_times.csv")
+    isfile(path) || return Dict{Int,Float64}()
+    lt = CSV.read(path, DataFrame; select = [:raceId, :driverId, :lap, :milliseconds])
+    filter!(:raceId => in(race_ids), lt)
+    sort!(lt, [:raceId, :driverId, :lap])
+    out = Dict{Int,Float64}()
+    for g in groupby(lt, :raceId)
+        out[first(g.raceId)] = suspension_ms([Float64.(c.milliseconds) for c in groupby(g, :driverId)])
+    end
+    return out
 end

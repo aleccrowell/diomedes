@@ -19,30 +19,42 @@ module Diomedes
 
 using ADTypes: AutoReverseDiff
 using CSV
+using ChainRulesCore: ChainRulesCore, NoTangent
 using DataFrames
 using Dates
 using HTTP
 using JSON3
 using LinearAlgebra
+using LogExpFunctions: log1mexp, logaddexp, logistic
 using Random
 using ReverseDiff
 using SHA
+using SpecialFunctions: erf, erfcx, loggamma
 using Statistics
+using StatsFuns: normlogcdf, normlogpdf, tdistcdf, tdistlogccdf
 using Turing
 
 include("schema.jl")
 include("cache.jl")
 include("sources/sources.jl")
+include("sources/suspensions.jl")
 include("sources/ergast_csv.jl")
 include("sources/jolpica.jl")
 include("sources/wrc.jl")
 include("prepare.jl")
 include("models.jl")
+include("noise.jl")
+include("gap_model.jl")
+include("paceloss.jl")
+include("likelihoods.jl")
+include("loo.jl")
 
 export RESULT_SCHEMA, empty_results, validate_results
 export DataSource, fetch_results, ErgastCSV, JolpicaF1, WRCTiming
 export ModelData, prepare, standardise_times!
 export crossed_effects, fit_effects, effects_table, progress_logger,
        convergence_summary
+export GapData, prepare_gaps, gap_effects, fit_gaps, gap_effects_table, NormalNoise, StudentTNoise
+export paceloss_effects, fit_paceloss, LossCovariates, pointwise_loglik, model_spec, REGIME_STARTS
 
 end

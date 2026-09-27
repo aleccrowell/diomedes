@@ -23,9 +23,16 @@ src/
     ergast_csv.jl      F1 from a local Ergast CSV dump
     wrc.jl             WRC 2018-present / ERC 2022-present stage times (wrc.com timing API)
   prepare.jl         standardise times per stage, index levels -> ModelData
-  models.jl          Turing models, fitting, effect summaries
+  models.jl          z-score model (legacy port), fitting, progress logging, diagnostics
+  gap_model.jl       % gap to winner, lapped cars as intervals -> GapData; Student-t model
+  paceloss.jl        pace + incident-loss noise model with race-duration / era terms
+  likelihoods.jl     fused likelihoods with hand-written reverse-mode rules
+  loo.jl             per-row log-likelihoods for PSIS-LOO
 scripts/
   legacy_parity.jl   check against the original Python pipeline
+  gap_fit.jl         fit a gap model (4 chains, as parallel processes: `chain k` + `combine`)
+  loo_compare.jl     PSIS-LOO comparison of fitted gap models
+  incident_diagnostic.jl, era_paths.jl   per-season incident rate / loss size
 test/                offline tests (fixtures in test/fixtures)
 legacy/              original TensorFlow Probability implementation (reference only)
 ```
@@ -52,6 +59,30 @@ hour; a full 1950-present history needs about 300.
 A full 4-chain fit on all F1 data (6,400 results) takes under 2 minutes on a
 Raspberry Pi 5. Chains run one after another by default: on that machine,
 threaded chains were slower in total (see `fit_effects`).
+
+### Gap model with lapped cars (F1)
+
+The z-score model uses lead-lap finishers only, so it silently drops the slower
+half of every field. The gap model uses every classified finisher:
+
+```julia
+julia> g = prepare_gaps(fetch_results(JolpicaF1(), 1950:2024))   # timed + lapped rows
+julia> chain = fit_paceloss(g; era = :rw, n_chains = 4)           # best by PSIS-LOO so far
+julia> gap_effects_table(chain, g).competitors
+```
+
+- Outcome: % gap to the winner, `100·log(T / T_winner)`. A car k laps down is an
+  interval, `[100·log(L/l), 100·log(L/(l-1)))`.
+- Noise: small Gaussian pace noise plus an incident loss (with probability π,
+  an exponential loss with mean λ) that only ever makes results slower.
+- `era = :rw` lets π and λ drift by season (random walks with heavy-tailed
+  steps). `:decade`, `:regime` (regulation eras) and `loss_duration` are the
+  alternatives.
+- Race intercepts; driver effects sum to zero; car-season effects sum to zero
+  within each season. The Indianapolis 500 (1950–60) is excluded by default.
+
+A full 4-chain fit on all F1 data takes 40–70 min on a Raspberry Pi 5:
+`scripts/gap_fit.jl all pl_rw chain k` for k = 1..4 in parallel, then `combine`.
 
 ### Adding a series
 

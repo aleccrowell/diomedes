@@ -22,6 +22,13 @@ fetch_results(src::DataSource, season::Integer) = fetch_results(src, [season])
 
 # Helpers shared by adapters
 
+"""
+The Indianapolis 500 counted towards the F1 World Championship from 1950 to
+1960, but it was effectively a separate series: different cars and a field of
+drivers who mostly raced only there. The F1 adapters drop it by default.
+"""
+const INDY500 = "Indianapolis 500"
+
 "`missing` for JSON null / absent keys, else the value converted to `String`."
 maybestring(x) = (x === nothing || x === missing) ? missing : string(x)
 

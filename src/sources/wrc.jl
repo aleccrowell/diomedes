@@ -78,7 +78,9 @@ function wrc_event(src::WRCTiming, season, round, event_id; refresh = src.refres
                 machine_id = something(maybestring(get(e, :vehicleModel, nothing)), "unknown"),
                 class = e.group === nothing ? missing : String(e.group.name),
                 time_ms = t.status == "Completed" ? maybefloat(t.elapsedDurationMs) : missing,
+                suspended_ms = missing,
                 position = t.status == "Completed" ? maybeint(t.position) : missing,
+                laps = missing,
                 status = String(t.status),
                 classified = t.status == "Completed",
             ))
