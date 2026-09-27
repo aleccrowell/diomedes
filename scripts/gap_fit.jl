@@ -56,7 +56,7 @@ if spec.family === :pl
             "baseline mean loss exp(a_λ) ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
     for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]...,
               Diomedes.pace_param_names(spec.pace_scale)...)
-        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ) && continue
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach) && continue
         println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
     end
 end

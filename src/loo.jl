@@ -10,16 +10,17 @@
 # κ if θ has one, see `race_pace_scale`).
 function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
     a = θ.σ_comp .* sum_to_zero(θ.z_comp)
-    b = θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
-    ct = a[g.t_comp] .+ b[g.t_mach]
-    cc = a[g.c_comp] .+ b[g.c_mach]
+    centred = haskey(θ, :b_mach)          # pace-scale model (#15): centred cars, κ on drivers
+    b = centred ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
+    κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
+    kb = centred ? ones(length(θ.γ)) : κ
+    ct = κ[g.t_race] .* a[g.t_comp] .+ kb[g.t_race] .* b[g.t_mach]
+    cc = κ[g.c_race] .* a[g.c_comp] .+ kb[g.c_race] .* b[g.c_mach]
     csum, n = zeros(length(θ.γ)), zeros(Int, length(θ.γ))
     for (c, r) in zip(ct, g.t_race); csum[r] += c; n[r] += 1; end
     for (c, r) in zip(cc, g.c_race); csum[r] += c; n[r] += 1; end
     cbar = csum ./ max.(n, 1)
-    κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
-    return θ.γ[g.t_race] .+ κ[g.t_race] .* (ct .- cbar[g.t_race]),
-           θ.γ[g.c_race] .+ κ[g.c_race] .* (cc .- cbar[g.c_race])
+    return θ.γ[g.t_race] .+ ct .- cbar[g.t_race], θ.γ[g.c_race] .+ cc .- cbar[g.c_race]
 end
 
 "Per-row log-likelihoods of `gap_effects` for parameter values `θ` (a NamedTuple)."
@@ -73,9 +74,7 @@ PosteriorStats' `loo` expects. `model` is a model name (see `model_spec`).
 function pointwise_loglik(chain, g::GapData, model::AbstractString)
     spec = model_spec(model)
     sc, cov = season_counts(g), LossCovariates(g)
-    names = spec.family === :t4 ? (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ) :
-        (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, loss_param_names(spec.loss_duration, spec.era)...,
-         pace_param_names(spec.pace_scale)...)
+    names = model_param_names(spec)
     rows(θ) = spec.family === :t4 ? gap_rows(θ, g; sc) :
         paceloss_rows(θ, g; loss_duration = spec.loss_duration, era = spec.era, sc, cov)
     ni, nc = size(chain[:σ_comp])
@@ -84,4 +83,12 @@ function pointwise_loglik(chain, g::GapData, model::AbstractString)
         out[i, c, :] = rows(draw(chain, names, i, c))
     end
     return out
+end
+
+"Names of the parameters of a model variant (see `model_spec`) needed to evaluate it."
+function model_param_names(spec)
+    spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
+    cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
+    return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
+            pace_param_names(spec.pace_scale)...)
 end
