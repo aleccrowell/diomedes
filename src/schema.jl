@@ -20,7 +20,8 @@ const RESULT_SCHEMA = [
     :codriver_id   => Union{Missing,String},    # rallying only
     :machine_id    => String,                   # constructor / vehicle model
     :class         => Union{Missing,String},    # e.g. "Rally1", "Rally2"
-    :time_ms       => Union{Missing,Float64},   # stage/race time; missing if not timed
+    :time_ms       => Union{Missing,Float64},   # official stage/race time; missing if not timed
+    :suspended_ms  => Union{Missing,Float64},   # red-flag suspension included in time_ms (per race); missing = unknown
     :position      => Union{Missing,Int},
     :laps          => Union{Missing,Int},       # laps completed (circuit racing); missing for rally stages
     :status        => String,                   # source status text ("Finished", "+1 Lap", "DNF", ...)

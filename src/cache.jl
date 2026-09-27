@@ -51,7 +51,7 @@ function cached_get(url::AbstractString; cache_dir::AbstractString = default_cac
             return body
         elseif resp.status == 429 || resp.status >= 500
             ra = HTTP.header(resp, "Retry-After", "")
-            delay = something(tryparse(Float64, ra), backoff)
+            delay = max(something(tryparse(Float64, ra), 0.0), backoff)   # Retry-After can be 0
             @warn "HTTP $(resp.status) from $url; retrying in $(delay)s" attempt
             sleep(delay)
             backoff *= 2

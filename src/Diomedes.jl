@@ -37,6 +37,7 @@ using Turing
 include("schema.jl")
 include("cache.jl")
 include("sources/sources.jl")
+include("sources/suspensions.jl")
 include("sources/ergast_csv.jl")
 include("sources/jolpica.jl")
 include("sources/wrc.jl")

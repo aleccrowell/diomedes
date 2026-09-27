@@ -1,6 +1,7 @@
 using Diomedes
 using DataFrames
 using JSON3
+using CSV
 using Random
 using Statistics
 using Test
@@ -65,6 +66,7 @@ end
         @test isequal(j.laps, j.laps_1) && !any(ismissing, j.laps)
         @test j.classified == j.classified_1
         @test j.status == j.status_1
+        @test all(==(0.0), api.suspended_ms)          # fastest laps known, no suspect race
     end
 
     @testset "Indy 500 excluded by default" begin
@@ -77,6 +79,57 @@ end
         @test Set(fetch_results(ErgastCSV(dir), 2019).event_id) == Set(["2019-01"])
         @test Set(fetch_results(ErgastCSV(dir; include_indy500 = true), 2019).event_id) ==
               Set(["2019-01", "2019-02"])
+    end
+
+    @testset "red-flag suspensions" begin
+        @test Diomedes.laptime_ms("1:16.956") ≈ 76_956
+        @test Diomedes.laptime_ms("16.956") ≈ 16_956
+        @test Diomedes.laptime_ms("2:03:10.5") ≈ 7_390_500
+        @test Diomedes.suspect_suspension(14_679_537, 70, 76_956)         # Canada 2011
+        @test !Diomedes.suspect_suspension(5_400_000, 58, 85_000)        # a normal race
+        @test !Diomedes.suspect_suspension(missing, 58, 85_000)
+        cars = [fill(90_000.0 + 500c, 60) for c in 1:20]                  # 20 cars × 60 laps
+        @test Diomedes.suspension_ms(cars) == 0
+        for c in 1:20
+            cars[c][30] *= 1.5                                            # safety-car lap: not flagged
+            cars[c][25 - c % 4] += 120 * 60_000                           # stoppage on laps 22–25:
+        end                                                               # field spread over lap numbers
+        cars[3][40] += 8 * 60_000                                         # one car's long repair stop
+        @test Diomedes.suspension_ms(cars) ≈ 120 * 60_000 rtol = 0.01
+        cars2 = deepcopy(cars); foreach(c -> c[50] += 20 * 60_000, cars2) # a second stoppage
+        @test Diomedes.suspension_ms(cars2) ≈ 140 * 60_000 rtol = 0.01
+
+        # Ergast dump with a 2-hour stoppage in race 1: official times include it (as
+        # since 2005) and lap times show it; the correction must recover the original gaps
+        dir = mktempdir()
+        for f in readdir(joinpath(FIXTURES, "ergast"))
+            cp(joinpath(FIXTURES, "ergast", f), joinpath(dir, f))
+        end
+        base = fetch_results(ErgastCSV(dir), 2019)
+        @test all(ismissing, base.suspended_ms)                 # no lap_times.csv
+        stop = 120 * 60_000
+        rc = CSV.read(joinpath(dir, "results.csv"), DataFrame; missingstring = "\\N")
+        rc.milliseconds = [r.raceId == 1010 && !ismissing(r.milliseconds) ? r.milliseconds + stop :
+                           r.milliseconds for r in eachrow(rc)]
+        CSV.write(joinpath(dir, "results.csv"), rc; missingstring = "\\N")
+        inflated = fetch_results(ErgastCSV(dir), 2019)
+        open(joinpath(dir, "lap_times.csv"), "w") do io
+            println(io, "raceId,driverId,lap,position,time,milliseconds")
+            for d in 1:20, l in 1:58               # stoppage on laps 23–25: field spread over lap numbers
+                println(io, "1010,$d,$l,$d,\"x\",$(85_000 + 300d + (l == 25 - d % 3 ? stop : 0))")
+            end
+        end
+        res = fetch_results(ErgastCSV(dir), 2019)
+        r1 = res.event_id .== "2019-01"
+        @test all(res.suspended_ms[r1] .≈ stop)
+        @test all(ismissing, res.suspended_ms[.!r1])            # race 2 has no lap times
+        gb, gi, gc = prepare_gaps(base), prepare_gaps(inflated), prepare_gaps(res)
+        @test gc.y ≈ gb.y                                       # correction recovers the true gaps
+        @test gc.race_minutes ≈ gb.race_minutes
+        k = gi.rows.event_id[gi.rows.kind .== :timed] .== "2019-01"
+        @test all(gi.y[k] .<= gb.y[k]) && any(gi.y[k] .< gb.y[k])   # uncorrected: gaps shrunk
+        @test gi.lo ≈ gb.lo && gi.hi ≈ gb.hi                    # lapped intervals unaffected
+        @test isequal(prepare(inflated).y, prepare(base).y) || prepare(inflated).y ≈ prepare(base).y   # z-scores: shift cancels
     end
 
     @testset "prepare" begin
@@ -481,6 +534,13 @@ end
         est = eff.competitors.mean[sortperm(parse.(Int, eff.competitors.label))]
         @test cor(est, comp_eff) > 0.85
         @test abs(mean(eff.competitors.mean)) < 1e-8   # sum-to-zero
+    end
+
+    opt_in("DIOMEDES_NETWORK_TESTS") && @testset "network: Jolpica red-flag suspension (Canada 2011)" begin
+        res = fetch_results(JolpicaF1(; cache_dir = mktempdir()), 2011)
+        can = res[res.event_name .== "Canadian Grand Prix", :]
+        @test first(can.suspended_ms) ≈ 123 * 60_000 rtol = 0.02
+        @test count(>(0), coalesce.(unique(res[:, [:event_id, :suspended_ms]]).suspended_ms, 0.0)) == 1
     end
 
     opt_in("DIOMEDES_NETWORK_TESTS") && @testset "network: WRCTiming" begin

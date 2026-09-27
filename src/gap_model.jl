@@ -8,6 +8,10 @@
 # i.e. L·p ∈ [T_w·L/l, T_w·L/(l-1)). On the gap scale:
 #     y ∈ [100·log(L/l), 100·log(L/(l-1)))
 # Retirements (classified or not) are dropped as uninformative about pace.
+# Times are racing times: official time minus any red-flag suspension
+# (`suspended_ms`, see src/sources/suspensions.jl). Unknown suspensions
+# (`missing`) count as 0, which is correct for aggregate-timed stopped races
+# before 2002.
 # Lapped cars are identified by status ("+N Lap(s)" in Ergast, "Lapped" in
 # recent Jolpica data), not by position: Ergast gives some retirements a numeric
 # position (e.g. Spain 2013: "Suspension" after 8 of 66 laps, position 22).
@@ -67,15 +71,17 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
     df.y = Vector{Union{Missing,Float64}}(missing, nrow(df))
     df.lo = Vector{Union{Missing,Float64}}(missing, nrow(df))
     df.hi = Vector{Union{Missing,Float64}}(missing, nrow(df))
+    # racing time: official time minus any red-flag suspension (same for every car)
+    df.race_ms = df.time_ms .- coalesce.(df.suspended_ms, 0.0)
     for g in groupby(df, [:series, :event_id, :stage_id])
-        timed = findall(!ismissing, g.time_ms)
+        timed = findall(!ismissing, g.race_ms)
         isempty(timed) && continue
-        w = timed[argmin(g.time_ms[timed])]
-        T_w = g.time_ms[w]
+        w = timed[argmin(g.race_ms[timed])]
+        T_w = g.race_ms[w]
         g.winner_ms .= T_w
         for i in timed
             g.kind[i] = :timed
-            g.y[i] = 100 * log(g.time_ms[i] / T_w)
+            g.y[i] = 100 * log(g.race_ms[i] / T_w)
         end
         L = g.laps[w]
         (include_lapped && !ismissing(L)) || continue
