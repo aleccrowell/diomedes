@@ -15,10 +15,13 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
     κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
     kb = centred ? ones(length(θ.γ)) : κ
     at, ac = a[g.t_comp], a[g.c_comp]
-    if haskey(θ, :τ_age)                  # career curve (#15 stage 2)
-        fage = age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g))
-        at = at .+ [k == 0 ? 0.0 : fage[k] for k in g.t_age]
-        ac = ac .+ [k == 0 ? 0.0 : fage[k] for k in g.c_age]
+    if haskey(θ, :τ_age) || haskey(θ, :τ_slope)     # career terms (#15 stage 2)
+        fage = haskey(θ, :τ_age) ? age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g)) : nothing
+        slope = haskey(θ, :τ_slope) ? career_slopes(θ.τ_slope, θ.u_slope) : nothing
+        h = driver_offsets(CareerRows(g), fage, slope)
+        nt = length(g.t_comp)
+        at = at .+ h[1:nt]
+        ac = ac .+ h[(nt + 1):end]
     end
     ct = κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach]
     cc = κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach]
@@ -63,20 +66,21 @@ draw(chain, names, i, c) = NamedTuple{names}(Tuple(chain[n][i, c] for n in names
     model_spec(name) -> (; family, loss_duration, era)
 
 Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
-`pl[_dur][_<era>][_kappa][_age]` (`paceloss_effects`), e.g. `pl`, `pl_dur`,
-`pl_regime`, `pl_dur_rw_kappa_age`, with `<era>` one of `decade`, `regime`,
-`rw`, `_kappa` adding the pace scale and `_age` the career curve (#15).
+`pl[_dur][_<era>][_kappa][_age][_big][_slope]` (`paceloss_effects`), e.g. `pl`,
+`pl_dur`, `pl_regime`, `pl_dur_rw_kappa_age`, with `<era>` one of `decade`,
+`regime`, `rw`, `_kappa` adding the pace scale, `_age` the career curve and
+`_slope` per-driver career slopes (#15), and `_big` the big-loss component (#16).
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
-                            big_loss = false)
+                            big_loss = false, slopes = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
-    dur, kappa, age, big = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big")]
+    dur, kappa, age, big, slopes = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts, "slope" in parts
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa, age, big_loss = big)
+            pace_scale = kappa, age, big_loss = big, slopes)
 end
 
 """
@@ -104,5 +108,6 @@ function model_param_names(spec)
     spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
     return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
-            pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...)
+            pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
+            slope_param_names(spec.slopes)...)
 end
