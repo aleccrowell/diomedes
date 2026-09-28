@@ -340,7 +340,8 @@ end
         H(s) = Turing.truncated(Normal(0, s); lower = 0)
         for (dur, era, kap, age, big) in [[(d, e, false, false, false) for d in (false, true) for e in (:none, :decade, :regime, :rw)];
                                           (true, :rw, true, false, false); (false, :none, true, false, false);
-                                          (true, :rw, true, true, false); (true, :rw, true, false, true)]
+                                          (true, :rw, true, true, false); (true, :rw, true, false, true);
+                                          (true, :rw, true, true, true)]
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
