@@ -244,6 +244,25 @@ end
         end
     end
 
+    @testset "two-component incident loss (#16)" begin
+        simpson(f, a, b, n) = (h = (b - a) / n; h / 3 * (f(a) + f(b) +
+            4 * sum(f(a + (2k - 1) * h) for k in 1:(n ÷ 2)) + 2 * sum(f(a + 2k * h) for k in 1:(n ÷ 2 - 1))))
+        for (σ, π, λ, ρ, λ2) in ((0.3, 0.2, 2.0, 0.05, 30.0), (0.5, 0.4, 1.0, 0.2, 8.0))
+            pdf(x) = exp(Diomedes.pacebig_logpdf(x, σ, π, λ, ρ, λ2))
+            @test simpson(pdf, -10σ, 60λ2, 400_000) ≈ 1 rtol = 1e-5
+            for (lo, hi) in ((-1.0, 1.0), (1.5, 3.4), (8.0, 10.0), (100.0, 104.0), (-3σ, -2σ))
+                @test Diomedes.pacebig_loginterval(lo, hi, σ, π, λ, ρ, λ2) ≈ log(simpson(pdf, lo, hi, 20_000)) rtol = 1e-6
+            end
+        end
+        # ρ → 0 recovers the single-component model
+        @test Diomedes.pacebig_logpdf(2.0, 0.3, 0.2, 2.0, 1e-14, 30.0) ≈ Diomedes.paceloss_logpdf(2.0, 0.3, 0.2, 2.0)
+        @test Diomedes.pacebig_loginterval(1.5, 3.4, 0.3, 0.2, 2.0, 1e-14, 30.0) ≈
+              Diomedes.paceloss_loginterval(1.5, 3.4, 0.3, 0.2, 2.0)
+        # a result many laps down is far more likely under the big-loss component
+        @test Diomedes.pacebig_loginterval(300.0, 305.0, 0.5, 0.2, 2.0, 0.05, 40.0) >
+              Diomedes.paceloss_loginterval(300.0, 305.0, 0.5, 0.2, 2.0) + 50
+    end
+
     @testset "gap_effects log density and gradient" begin
         rng = Xoshiro(5)
         res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
@@ -319,8 +338,9 @@ end
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
         H(s) = Turing.truncated(Normal(0, s); lower = 0)
-        for (dur, era, kap, age) in [[(d, e, false, false) for d in (false, true) for e in (:none, :decade, :regime, :rw)];
-                                     (true, :rw, true, false); (false, :none, true, false); (true, :rw, true, true)]
+        for (dur, era, kap, age, big) in [[(d, e, false, false, false) for d in (false, true) for e in (:none, :decade, :regime, :rw)];
+                                          (true, :rw, true, false, false); (false, :none, true, false, false);
+                                          (true, :rw, true, true, false); (true, :rw, true, false, true)]
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
@@ -333,6 +353,7 @@ end
             kap && (θ = (; (k => v for (k, v) in pairs(θ) if k !== :z_mach)...,
                          τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm)))
             age && (θ = (; θ..., τ_age = 0.2, e_age = randn(rng, length(g.age_years) - 1)))
+            big && (θ = (; θ..., a_ρ = -2.5, δ_λ2 = 2.0))
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
             lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
@@ -359,6 +380,15 @@ end
                 logλ .+= path(θ.τ_λ_rw .* θ.e_λ_rw)[cov.season]
             end
             π, λ = 1 ./ (1 .+ exp.(-logitπ)), exp.(logλ)
+            if big
+                lp += logpdf(Normal(log(0.05 / 0.95), 1), θ.a_ρ) +
+                      logpdf(Turing.truncated(Normal(log(10), 1); lower = 0), θ.δ_λ2)
+                ρ, λ2 = 1 / (1 + exp(-θ.a_ρ)), exp(θ.a_λ + θ.δ_λ2)
+            end
+            rowpdf(x, r) = big ? Diomedes.pacebig_logpdf(x, θ.σ, π[r], λ[r], ρ, λ2) :
+                                 Diomedes.paceloss_logpdf(x, θ.σ, π[r], λ[r])
+            rowint(lo, hi, r) = big ? Diomedes.pacebig_loginterval(lo, hi, θ.σ, π[r], λ[r], ρ, λ2) :
+                                      Diomedes.paceloss_loginterval(lo, hi, θ.σ, π[r], λ[r])
             κ = ones(nr)
             a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
             seasonmean(v) = [mean(v[g.mach_season .== g.mach_season[j]]) for j in 1:nm]
@@ -392,13 +422,13 @@ end
             nt = length(g.y)
             for i in eachindex(g.y)
                 r = g.t_race[i]
-                lp += Diomedes.paceloss_logpdf(g.y[i] - (θ.γ[r] + cs[i] - cbar[r]), θ.σ, π[r], λ[r])
+                lp += rowpdf(g.y[i] - (θ.γ[r] + cs[i] - cbar[r]), r)
             end
             for i in eachindex(g.lo)
                 r = g.c_race[i]; μ = θ.γ[r] + cs[nt + i] - cbar[r]
-                lp += Diomedes.paceloss_loginterval(g.lo[i] - μ, g.hi[i] - μ, θ.σ, π[r], λ[r])
+                lp += rowint(g.lo[i] - μ, g.hi[i] - μ, r)
             end
-            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age)
+            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big)
             @test logjoint(model, θ) ≈ lp
             # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
             # in constrained space: positive-valued parameters are set positive by name
@@ -415,9 +445,11 @@ end
         @test_throws ArgumentError paceloss_effects(g; era = :century)
         @test_throws ArgumentError paceloss_effects(prepare_gaps(res); era = :rw)   # one season
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
-        @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false)
-        @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false)
+        @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false, big_loss = false)
+        @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false, big_loss = false)
         @test model_spec("pl_dur_rw_kappa_age").age
+        @test model_spec("pl_dur_rw_kappa_big").big_loss
+        @test_throws ArgumentError paceloss_effects(g; big_loss = true)        # needs pace_scale
         @test_throws ArgumentError paceloss_effects(g; age = true)             # needs pace_scale
         @test model_spec("t4").family === :t4
         @test_throws ArgumentError model_spec("pl_rw_decade")
@@ -451,6 +483,15 @@ end
                                               age ? age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g)) : nothing, g, sc) :
                   Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach, θ.σ, πr, λr, nothing, g, sc))
         end
+        # two-component incident loss (#16)
+        θb = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
+              τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1),
+              τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm), a_ρ = -2.5, δ_λ2 = 2.0)
+        πr, λr = Diomedes.race_loss(θb, cov, true, :rw)
+        @test sum(Diomedes.paceloss_rows(θb, g; loss_duration = true, era = :rw)) ≈
+              Diomedes.paceloss_loglik_cc(θb.γ, θb.z_comp, θb.σ_comp, θb.b_mach, θb.σ, πr, λr,
+                                          race_pace_scale(θb, cov), nothing,
+                                          [1 / (1 + exp(-θb.a_ρ)), exp(θb.a_λ + θb.δ_λ2)], g, sc)
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
