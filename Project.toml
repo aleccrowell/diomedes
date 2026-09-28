@@ -24,6 +24,8 @@ Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [compat]
+julia = "1.12"
+Distributions = "0.25"
 ADTypes = "1.24.0"
 CSV = "0.10.17"
 ChainRulesCore = "1.26.1"
@@ -44,7 +46,8 @@ Turing = "0.49.0"
 Unicode = "1.11.0"
 
 [extras]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Distributions", "Test"]
