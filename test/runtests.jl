@@ -8,6 +8,7 @@ using Test
 using Turing: logjoint
 using Distributions: Normal, cdf, ccdf, logpdf
 using ADTypes: AutoForwardDiff, AutoReverseDiff
+import SpecialFunctions
 import Turing
 import Distributions
 
@@ -216,6 +217,21 @@ end
     end
 
     @testset "pace + loss noise" begin
+        # EMG log kernel: matches a 512-bit reference, and stays exact when λ ≪ σ
+        # (the naive sum of three huge terms cancelled catastrophically there)
+        ref(x, σ, λ) = setprecision(512) do
+            X, S, L = big(x), big(σ), big(λ)
+            Float64(S^2 / (2L^2) - X / L + log(SpecialFunctions.erfc(-(X / S - S / L) / sqrt(big(2))) / 2))
+        end
+        for (x, σ, λ) in ((0.3, 0.5, 2.0), (-1.0, 0.5, 2.0), (8.0, 0.4, 3.0), (0.2, 0.4, 0.01), (-2.0, 0.4, 1e-6))
+            @test Diomedes.emg_logkernel(x, σ, λ) ≈ ref(x, σ, λ) rtol = 1e-10
+        end
+        # as λ → 0 the loss vanishes and the density is Gaussian; gradients stay finite
+        for x in (-1.0, 0.0, 0.7, 13.0)
+            @test Diomedes.paceloss_logpdf(x, 0.36, 0.2, 1e-11) ≈ logpdf(Normal(0, 0.36), x) rtol = 1e-8
+            v, p = Diomedes.value_gradN((s, l) -> Diomedes.pacebig_loginterval(x, x + 1.5, s, 0.2, l, 0.01, 60.0), 0.36, 1e-11)
+            @test isfinite(v) && all(isfinite, p)
+        end
         # composite Simpson on [a, b] with n (even) intervals
         simpson(f, a, b, n) = (h = (b - a) / n; h / 3 * (f(a) + f(b) +
             4 * sum(f(a + (2k - 1) * h) for k in 1:(n ÷ 2)) + 2 * sum(f(a + 2k * h) for k in 1:(n ÷ 2 - 1))))
