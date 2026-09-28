@@ -37,6 +37,11 @@ maybeint(x::Integer) = Int(x)
 maybeint(x::AbstractString) = something(tryparse(Int, x), missing)
 maybeint(::Any) = missing
 
+"Parse a date (Date, or \"yyyy-mm-dd...\" string), returning `missing` on failure."
+maybedate(x::Date) = x
+maybedate(x::AbstractString) = length(x) >= 10 ? something(tryparse(Date, x[1:10]), missing) : missing
+maybedate(::Any) = missing
+
 maybefloat(x::Real) = Float64(x)
 maybefloat(x::AbstractString) = something(tryparse(Float64, x), missing)
 maybefloat(::Any) = missing

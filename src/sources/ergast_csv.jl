@@ -21,8 +21,8 @@ ErgastCSV(dir::AbstractString; include_indy500::Bool = false) = ErgastCSV(dir, i
 function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
     rd(name) = CSV.read(joinpath(src.dir, name), DataFrame; missingstring = "\\N")
     results = rd("results.csv")
-    races = select(rd("races.csv"), :raceId, :year, :round, :name)
-    drivers = select(rd("drivers.csv"), :driverId, :driverRef, :forename, :surname)
+    races = select(rd("races.csv"), :raceId, :year, :round, :name, :date)
+    drivers = select(rd("drivers.csv"), :driverId, :driverRef, :forename, :surname, :dob)
     constructors = select(rd("constructors.csv"), :constructorId, :constructorRef)
     status = rd("status.csv")
 
@@ -41,9 +41,11 @@ function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
         round = Int.(df.round),
         event_id = string.(df.year, "-", lpad.(df.round, 2, '0')),
         event_name = String.(df.name),
+        event_date = Vector{Union{Missing,Date}}(maybedate.(df.date)),
         stage_id = "race",
         competitor_id = String.(df.driverRef),
         competitor_name = string.(df.forename, " ", df.surname),
+        competitor_birth = Vector{Union{Missing,Date}}(maybedate.(df.dob)),
         codriver_id = Vector{Union{Missing,String}}(missing, nrow(df)),
         machine_id = String.(df.constructorRef),
         class = Vector{Union{Missing,String}}(missing, nrow(df)),

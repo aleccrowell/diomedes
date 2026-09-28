@@ -40,6 +40,10 @@ struct GapData
     mach_season::Vector{Int}      # season index of each machine level
     race_season::Vector{Int}      # calendar year of each race
     race_minutes::Vector{Float64} # winner's race time in minutes (race duration)
+    t_age::Vector{Int}            # age bin of each timed row (0 = unknown)
+    c_age::Vector{Int}            # age bin of each lapped row (0 = unknown)
+    age_years::Vector{Int}        # age (whole years) of each age bin
+    age_rows::Vector{Float64}     # number of rows in each age bin
     competitors::Vector{String}
     machines::Vector{String}
     races::Vector{String}
@@ -120,6 +124,16 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
         race_minutes[k] = r.winner_ms / 60_000
     end
 
+    # driver age in whole years at the event, binned (0 = unknown date of birth or event date)
+    hasage = hasproperty(df, :competitor_birth) && hasproperty(df, :event_date)
+    ageyrs = [hasage && !ismissing(r.competitor_birth) && !ismissing(r.event_date) ?
+              floor(Int, Dates.value(r.event_date - r.competitor_birth) / 365.2425) : missing
+              for r in eachrow(df)]
+    known = collect(skipmissing(ageyrs))
+    age_years = isempty(known) ? Int[] : collect(minimum(known):maximum(known))
+    df.age_bin = [ismissing(a) ? 0 : a - first(age_years) + 1 for a in ageyrs]
+    age_rows = [Float64(count(==(k), df.age_bin)) for k in eachindex(age_years)]
+
     t = df[df.kind .== :timed, :]
     c = df[df.kind .== :lapped, :]
     idx(d, col, map) = [map[k] for k in d[!, col]]
@@ -127,7 +141,8 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
                    idx(t, :race_key, ri),
                    Float64.(c.lo), Float64.(c.hi), idx(c, :competitor_id, ci),
                    idx(c, :machine_key, mi), idx(c, :race_key, ri),
-                   mach_season, race_season, race_minutes, comps, machs, races, df)
+                   mach_season, race_season, race_minutes, t.age_bin, c.age_bin, age_years, age_rows,
+                   comps, machs, races, df)
 end
 
 """
