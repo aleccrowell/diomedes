@@ -18,8 +18,22 @@
 # with D = Φ(hi/σ) - Φ(lo/σ). Lapped cars sit in the right tail, where D
 # underflows and G must be differenced in log space.
 
+"""
+    emg_logkernel(x, σ, λ)
+
+`σ²/(2λ²) - x/λ + log Φ(z)` with `z = x/σ - σ/λ`: log G(x), and the EMG log
+density up to `-log λ`. When λ ≪ σ the three terms are huge and nearly cancel
+(at λ ~ 1e-11 the naive sum gave a log density of +2.7e7 with NaN gradients,
+which trapped NUTS). For z < 0, Φ(z) = erfcx(-z/√2)·exp(-z²/2)/2 cancels them
+exactly: the kernel is -x²/(2σ²) + log(erfcx(-z/√2)/2).
+"""
+function emg_logkernel(x, σ, λ)
+    z = x / σ - σ / λ
+    return z < 0 ? -x^2 / (2σ^2) + log(erfcx(-z / sqrt(2)) / 2) : σ^2 / (2λ^2) - x / λ + normlogcdf(z)
+end
+
 "log G(x), with G as above."
-paceloss_logG(x, σ, λ) = σ^2 / (2λ^2) - x / λ + normlogcdf(x / σ - σ / λ)
+paceloss_logG(x, σ, λ) = emg_logkernel(x, σ, λ)
 
 """
     paceloss_logpdf(x, σ, π, λ)
@@ -28,7 +42,7 @@ Log-density of the residual `x = y - μ` under pace noise + mixture loss.
 """
 function paceloss_logpdf(x, σ, π, λ)
     lnorm = normlogpdf(x / σ) - log(σ)
-    lemg = -log(λ) + σ^2 / (2λ^2) - x / λ + normlogcdf(x / σ - σ / λ)
+    lemg = -log(λ) + emg_logkernel(x, σ, λ)
     return logaddexp(log1p(-π) + lnorm, log(π) + lemg)
 end
 
@@ -64,7 +78,7 @@ function log_pemg(lo, hi, σ, λ, logD)
     end
 end
 
-log_emg_pdf(x, σ, λ) = -log(λ) + σ^2 / (2λ^2) - x / λ + normlogcdf(x / σ - σ / λ)
+log_emg_pdf(x, σ, λ) = -log(λ) + emg_logkernel(x, σ, λ)
 
 """
     pacebig_logpdf(x, σ, π, λ, ρ, λ2)
