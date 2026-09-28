@@ -51,7 +51,7 @@ include("likelihoods.jl")
 include("loo.jl")
 
 export RESULT_SCHEMA, empty_results, validate_results
-export DataSource, fetch_results, ErgastCSV, JolpicaF1, WRCTiming
+export DataSource, fetch_results, ErgastCSV, JolpicaF1, WRCTiming, wrc_top_tiers, wrc_tier, wrc_machine_key
 export ModelData, prepare, standardise_times!
 export crossed_effects, fit_effects, effects_table, progress_logger,
        convergence_summary

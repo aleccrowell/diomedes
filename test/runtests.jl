@@ -89,6 +89,14 @@ end
         @test nm("Puma Rally 1") == "PUMA RALLY1"
         @test nm("Fiesta Rally 3") == nm("FIESTA RALLY3")
         @test nm("Rally 12x") == "RALLY 12X"  # only a single-digit class number is joined
+        # top two tiers, predecessor class names included
+        @test wrc_tier("WRC") == wrc_tier("Rally1") == "Rally1" && wrc_tier("R5") == wrc_tier("Rally2") == "Rally2"
+        @test ismissing(wrc_tier("Rally3")) && ismissing(wrc_tier(missing))
+        df = DataFrame(season = [2021, 2022, 2022, 2022, 2019], class = ["WRC", "WRC", "Rally1", "Rally3", "R5"],
+                       manufacturer = ["Ford", "Ford", "Toyota", "Ford", "Skoda"])
+        top = wrc_top_tiers(df)
+        @test top.class == ["WRC", "Rally1", "R5"]
+        @test wrc_machine_key.(eachrow(top)) == ["Ford Rally1_2021", "Toyota Rally1_2022", "Skoda Rally2_2019"]
     end
     @testset "red-flag suspensions" begin
         @test Diomedes.laptime_ms("1:16.956") ≈ 76_956

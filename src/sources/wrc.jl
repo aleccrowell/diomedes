@@ -109,3 +109,23 @@ function normalise_model(s::AbstractString)
 end
 
 named(x) = x === nothing || get(x, :name, nothing) === nothing ? missing : String(strip(x.name))
+
+# Entry class -> tier, with predecessor class names mapped to their successors:
+# WRC cars (to 2021) -> Rally1, R5 (to 2019) -> Rally2.
+const WRC_TIERS = Dict("Rally1" => "Rally1", "WRC" => "Rally1", "Rally2" => "Rally2", "R5" => "Rally2")
+
+"Tier of a WRC entry class (`missing` outside the top two tiers; see `wrc_top_tiers`)."
+wrc_tier(class) = ismissing(class) ? missing : get(WRC_TIERS, class, missing)
+
+"""
+    wrc_top_tiers(results) -> DataFrame
+
+The rows of WRC results in the top two tiers: Rally1 (WRC cars before 2022)
+and Rally2 (R5 before 2020). WRC-class cars entered after Rally1 replaced them
+(2022 on) are dropped: they are old cars, not a tier of their own.
+"""
+wrc_top_tiers(df::AbstractDataFrame) =
+    df[[!ismissing(wrc_tier(r.class)) && !(r.class == "WRC" && r.season >= 2022) for r in eachrow(df)], :]
+
+"Machine grouping for WRC fits: manufacturer × tier × season (e.g. \"Toyota Rally1_2024\")."
+wrc_machine_key(r) = string(coalesce(r.manufacturer, "unknown"), " ", coalesce(wrc_tier(r.class), "other"), "_", r.season)
