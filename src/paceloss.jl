@@ -18,8 +18,22 @@
 # with D = Φ(hi/σ) - Φ(lo/σ). Lapped cars sit in the right tail, where D
 # underflows and G must be differenced in log space.
 
+"""
+    emg_logkernel(x, σ, λ)
+
+`σ²/(2λ²) - x/λ + log Φ(z)` with `z = x/σ - σ/λ`: log G(x), and the EMG log
+density up to `-log λ`. When λ ≪ σ the three terms are huge and nearly cancel
+(at λ ~ 1e-11 the naive sum gave a log density of +2.7e7 with NaN gradients,
+which trapped NUTS). For z < 0, Φ(z) = erfcx(-z/√2)·exp(-z²/2)/2 cancels them
+exactly: the kernel is -x²/(2σ²) + log(erfcx(-z/√2)/2).
+"""
+function emg_logkernel(x, σ, λ)
+    z = x / σ - σ / λ
+    return z < 0 ? -x^2 / (2σ^2) + log(erfcx(-z / sqrt(2)) / 2) : σ^2 / (2λ^2) - x / λ + normlogcdf(z)
+end
+
 "log G(x), with G as above."
-paceloss_logG(x, σ, λ) = σ^2 / (2λ^2) - x / λ + normlogcdf(x / σ - σ / λ)
+paceloss_logG(x, σ, λ) = emg_logkernel(x, σ, λ)
 
 """
     paceloss_logpdf(x, σ, π, λ)
@@ -28,7 +42,7 @@ Log-density of the residual `x = y - μ` under pace noise + mixture loss.
 """
 function paceloss_logpdf(x, σ, π, λ)
     lnorm = normlogpdf(x / σ) - log(σ)
-    lemg = -log(λ) + σ^2 / (2λ^2) - x / λ + normlogcdf(x / σ - σ / λ)
+    lemg = -log(λ) + emg_logkernel(x, σ, λ)
     return logaddexp(log1p(-π) + lnorm, log(π) + lemg)
 end
 
@@ -50,14 +64,43 @@ Computed as the mixture of the two components' interval probabilities,
 """
 function paceloss_loginterval(lo, hi, σ, π, λ)
     logD = logdiffΦ(lo / σ, hi / σ)
+    return logaddexp(log1p(-π) + logD, log(π) + log_pemg(lo, hi, σ, λ, logD))
+end
+
+"log P_EMG(lo < x < hi) for loss mean `λ`, given `logD = log(Φ(hi/σ) - Φ(lo/σ))` (see above)."
+function log_pemg(lo, hi, σ, λ, logD)
     lGlo, lGhi = paceloss_logG(lo, σ, λ), paceloss_logG(hi, σ, λ)
     if lGlo > lGhi
-        logPemg = logaddexp(logD, lGlo + log1mexp(lGhi - lGlo))
+        return logaddexp(logD, lGlo + log1mexp(lGhi - lGlo))
     else
         r = lGhi + log1mexp(lGlo - lGhi) - logD          # log(|G(lo) - G(hi)| / D)
-        logPemg = r < 0 ? logD + log1mexp(r) : oftype(logD, -Inf)
+        return r < 0 ? logD + log1mexp(r) : oftype(logD, -Inf)
     end
-    return logaddexp(log1p(-π) + logD, log(π) + logPemg)
+end
+
+log_emg_pdf(x, σ, λ) = -log(λ) + emg_logkernel(x, σ, λ)
+
+"""
+    pacebig_logpdf(x, σ, π, λ, ρ, λ2)
+    pacebig_loginterval(lo, hi, σ, π, λ, ρ, λ2)
+
+Pace + loss noise with a **two-component incident loss** (#16): an incident
+(probability π) costs Exponential(mean λ) with probability 1 - ρ, or a big loss
+Exponential(mean λ2 > λ) with probability ρ (repairs, long stops, many laps
+down):
+    f(x) = (1-π)·φ_σ(x) + π·[(1-ρ)·EMG(x; λ) + ρ·EMG(x; λ2)].
+With ρ → 0 these reduce to `paceloss_logpdf` / `paceloss_loginterval`.
+"""
+function pacebig_logpdf(x, σ, π, λ, ρ, λ2)
+    lnorm = normlogpdf(x / σ) - log(σ)
+    lloss = logaddexp(log1p(-ρ) + log_emg_pdf(x, σ, λ), log(ρ) + log_emg_pdf(x, σ, λ2))
+    return logaddexp(log1p(-π) + lnorm, log(π) + lloss)
+end
+
+function pacebig_loginterval(lo, hi, σ, π, λ, ρ, λ2)
+    logD = logdiffΦ(lo / σ, hi / σ)
+    lloss = logaddexp(log1p(-ρ) + log_pemg(lo, hi, σ, λ, logD), log(ρ) + log_pemg(lo, hi, σ, λ2, logD))
+    return logaddexp(log1p(-π) + logD, log(π) + lloss)
 end
 
 """
@@ -100,6 +143,35 @@ const FD = ReverseDiff.ForwardDiff
     r = f(D(a, 1.0, 0.0, 0.0, 0.0), D(b, 0.0, 1.0, 0.0, 0.0), D(c, 0.0, 0.0, 1.0, 0.0),
           D(d, 0.0, 0.0, 0.0, 1.0))
     return FD.value(r), FD.partials(r)
+end
+
+# Value and gradient of a scalar function of N arguments via ForwardDiff duals.
+@inline function value_gradN(f, xs::Vararg{Real,N}) where {N}
+    D = FD.Dual{Nothing}
+    duals = ntuple(i -> D(xs[i], ntuple(j -> Float64(i == j), N)...), N)
+    r = f(duals...)
+    return FD.value(r), FD.partials(r)
+end
+
+# Per-row values and derivatives with the big-loss component (#16): as
+# paceloss_row_grads, plus scalar derivatives for ρ and λ2.
+function pacebig_row_grads(st, σ, πr, λr, ρ, λ2, g)
+    dμt, dμc = zeros(length(st.μt)), zeros(length(st.μc))
+    dπ, dλ = zeros(length(πr)), zeros(length(λr))
+    val, dσ, dρ, dλ2 = 0.0, 0.0, 0.0, 0.0
+    for i in eachindex(st.μt)
+        r, y = g.t_race[i], g.y[i]
+        v, p = value_gradN((μ, s, q, l, h, l2) -> pacebig_logpdf(y - μ, s, q, l, h, l2),
+                           st.μt[i], σ, πr[r], λr[r], ρ, λ2)
+        val += v; dμt[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]; dρ += p[5]; dλ2 += p[6]
+    end
+    for i in eachindex(st.μc)
+        r, lo, hi = g.c_race[i], g.lo[i], g.hi[i]
+        v, p = value_gradN((μ, s, q, l, h, l2) -> pacebig_loginterval(lo - μ, hi - μ, s, q, l, h, l2),
+                           st.μc[i], σ, πr[r], λr[r], ρ, λ2)
+        val += v; dμc[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]; dρ += p[5]; dλ2 += p[6]
+    end
+    return val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2
 end
 
 # Per-row values and (μ, σ, π, λ) derivatives from 4-component duals, given
@@ -152,10 +224,19 @@ curve to each row's driver part: κ·(a[driver] + fage[age bin]). Rows of
 unknown age (bin 0) get no age term.
 """
 function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, g, season_counts)
+    return paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, nothing, g, season_counts)
+end
+
+# `big` = nothing, or [ρ, λ2] for the two-component incident loss (#16).
+function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, big, g, season_counts)
     a = σ_comp .* sum_to_zero(z_comp)
     b = sum_to_zero_by(b_mach, g.mach_season, season_counts)
     T = promote_type(eltype(a), eltype(b), eltype(γ), typeof(σ), eltype(πr), eltype(λr), eltype(κr),
-                     fage === nothing ? Float64 : eltype(fage))
+                     fage === nothing ? Float64 : eltype(fage), big === nothing ? Float64 : eltype(big))
+    lpdf(x, r) = big === nothing ? paceloss_logpdf(x, σ, πr[r], λr[r]) :
+        pacebig_logpdf(x, σ, πr[r], λr[r], big[1], big[2])
+    lint(lo, hi, r) = big === nothing ? paceloss_loginterval(lo, hi, σ, πr[r], λr[r]) :
+        pacebig_loginterval(lo, hi, σ, πr[r], λr[r], big[1], big[2])
     fa(bin) = (fage === nothing || bin == 0) ? zero(T) : fage[bin]
     ct = [κr[g.t_race[i]] * (a[g.t_comp[i]] + fa(g.t_age[i])) + b[g.t_mach[i]] for i in eachindex(g.t_race)]
     cc = [κr[g.c_race[i]] * (a[g.c_comp[i]] + fa(g.c_age[i])) + b[g.c_mach[i]] for i in eachindex(g.c_race)]
@@ -166,22 +247,36 @@ function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage
     ll = zero(T)
     for i in eachindex(g.y)
         r = g.t_race[i]
-        ll += paceloss_logpdf(g.y[i] - (γ[r] + ct[i] - cbar[r]), σ, πr[r], λr[r])
+        ll += lpdf(g.y[i] - (γ[r] + ct[i] - cbar[r]), r)
     end
     for i in eachindex(g.lo)
         r = g.c_race[i]
         μ = γ[r] + cc[i] - cbar[r]
-        ll += paceloss_loginterval(g.lo[i] - μ, g.hi[i] - μ, σ, πr[r], λr[r])
+        ll += lint(g.lo[i] - μ, g.hi[i] - μ, r)
     end
     return ll
 end
 
 function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
-                              fage, g, season_counts)
+                              fage, g::GapData, season_counts)
+    val, pb = ChainRulesCore.rrule(paceloss_loglik_cc, γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage,
+                                   nothing, g, season_counts)
+    pullback(Δ) = (d = pb(Δ); (d[1:10]..., d[12], d[13]))     # drop the `big` slot
+    return val, pullback
+end
+
+function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
+                              fage, big, g, season_counts)
     zc = z_comp .- mean(z_comp)
     b = b_mach .- group_means(b_mach, g.mach_season, season_counts)[g.mach_season]
     st = row_means_ab(γ, σ_comp .* zc, b, g; κ = κr, κ_cars = false, fage)
-    val, dμt, dμc, dσ, dπ, dλ = paceloss_row_grads(st, σ, πr, λr, g)
+    if big === nothing
+        val, dμt, dμc, dσ, dπ, dλ = paceloss_row_grads(st, σ, πr, λr, g)
+        dbig = NoTangent()
+    else
+        val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2 = pacebig_row_grads(st, σ, πr, λr, big[1], big[2], g)
+        dbig = [dρ, dλ2]
+    end
     d = row_pullback_ab(dμt, dμc, st, g; κ = κr, κ_cars = false,
                         nage = fage === nothing ? 0 : length(fage))
     dσ_comp = sum(d.da .* zc)
@@ -190,9 +285,39 @@ function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp,
     dfage = fage === nothing ? NoTangent() : d.dfage
     pullback(Δ) = (NoTangent(), Δ .* d.dγ, Δ .* dz_comp, Δ * dσ_comp, Δ .* db_mach, Δ * dσ,
                    Δ .* dπ, Δ .* dλ, Δ .* d.dκ, dfage isa NoTangent ? dfage : Δ .* dfage,
-                   NoTangent(), NoTangent())
+                   dbig isa NoTangent ? dbig : Δ .* dbig, NoTangent(), NoTangent())
     return val, pullback
 end
+
+# The big-loss component as two scalars, ρ and λ2 (#16). The model passes them
+# this way because [ρ, λ2] built from tracked scalars is a Vector of TrackedReal,
+# not a TrackedArray, so it matches no binding: ReverseDiff then traces the
+# scalar loop over every row, ~30× slower (gradients still correct).
+function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, ρ::Real, λ2::Real, g, season_counts)
+    return paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, [ρ, λ2], g, season_counts)
+end
+
+function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
+                              fage, ρ::Real, λ2::Real, g::GapData, season_counts)
+    val, pb = ChainRulesCore.rrule(paceloss_loglik_cc, γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage,
+                                   [ρ, λ2], g, season_counts)
+    pullback(Δ) = (d = pb(Δ); (d[1:10]..., d[11][1], d[11][2], d[12], d[13]))   # split the `big` slot
+    return val, pullback
+end
+
+# With the big-loss component (#16), with and without an age curve.
+ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
+                                                     σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
+                                                     σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
+                                                     λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
+                                                     fage::Nothing, ρ::ReverseDiff.TrackedReal, λ2::ReverseDiff.TrackedReal,
+                                                     g::GapData, season_counts::Vector{Int})
+ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
+                                                     σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
+                                                     σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
+                                                     λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
+                                                     fage::ReverseDiff.TrackedArray, ρ::ReverseDiff.TrackedReal,
+                                                     λ2::ReverseDiff.TrackedReal, g::GapData, season_counts::Vector{Int})
 
 # With and without an age curve (uncompiled tapes only; see gap_loglik).
 ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
@@ -351,6 +476,9 @@ pace_param_names(pace_scale::Bool) = pace_scale ? (:τ_κ, :e_κ, :b_mach) : ()
 "Names of the age-curve parameters (#15 stage 2), in sampling order (after the pace scale)."
 age_param_names(age::Bool) = age ? (:τ_age, :e_age) : ()
 
+"Names of the big-loss parameters (#16), in sampling order (after the age curve)."
+big_param_names(big::Bool) = big ? (:a_ρ, :δ_λ2) : ()
+
 """
     race_pace_scale(θ, cov) -> Vector
 
@@ -382,6 +510,11 @@ incident probability and the loss size. `era` (`:none`, `:decade`, `:regime`,
 seasons as well as between them, so with both terms the era effects capture
 only what duration does not.
 
+`big_loss` (#16, needs `pace_scale`) splits incident losses into normal
+incidents (mean λ) and big losses (share ρ, mean λ2 = λ_baseline·e^δ, δ > 0),
+so extreme results (repairs, many laps down) don't have to be explained by λ
+(see `pacebig_logpdf`).
+
 `age` (#15 stage 2, needs `pace_scale`) adds a population career curve over
 driver age, with only its shape up to a linear tilt identified (see
 `AgeCurveBasis`).
@@ -393,7 +526,8 @@ effects `b_mach ~ N(0, σ_mach·κ_season)` (see `paceloss_loglik_cc`). Driver
 effects are then comparable across eras.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
-                                 loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis)
+                                 loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis,
+                                 big_loss::Bool)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ ~ truncated(Normal(0, 1); lower = 0)
@@ -436,23 +570,32 @@ effects are then comparable across eras.
             e_age ~ filldist(Normal(), length(g.age_years) - 1)
             fage = age_curve(τ_age, e_age, age_basis)
         end
-        @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], fage, g,
-                                        season_counts)
+        # each call matches a ReverseDiff binding of the fused rule (see paceloss_loglik_cc)
+        if big_loss       # two-component incident loss (#16)
+            a_ρ ~ Normal(log(0.05 / 0.95), 1)                       # share of incidents that are big, ~5%
+            δ_λ2 ~ truncated(Normal(log(10), 1); lower = 0)         # λ2 = λ_baseline·e^δ > λ_baseline
+            @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], fage,
+                                            logistic(a_ρ), exp(a_λ + δ_λ2), g, season_counts)
+        else
+            @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], fage, g,
+                                            season_counts)
+        end
     else
         @addlogprob! paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, nothing, g, season_counts)
     end
 end
 
 function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
-                          pace_scale::Bool = false, age::Bool = false)
+                          pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false)
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     cov = LossCovariates(g)
     (era === :rw || pace_scale) && cov.n_seasons < 2 &&
         throw(ArgumentError("random walks over seasons need at least 2 seasons"))
     age && !pace_scale && throw(ArgumentError("the age curve is implemented for pace-scale models (pace_scale = true)"))
+    big_loss && !pace_scale && throw(ArgumentError("the big-loss component is implemented for pace-scale models (pace_scale = true)"))
     age && length(g.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
-                            age ? AgeCurveBasis(g) : nothing)
+                            age ? AgeCurveBasis(g) : nothing, big_loss)
 end
 
 """
@@ -463,14 +606,14 @@ mean timed gap and the loss parameters at their prior centres, era effects near
 zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gaps`.
 """
 function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
-                      pace_scale::Bool = false, age::Bool = false,
+                      pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                       n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
     adtype isa AutoReverseDiff && adtype.compile &&
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
-    model = paceloss_effects(g; loss_duration, era, pace_scale, age)
+    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss)
     cov = model.args.cov
     race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
@@ -496,6 +639,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
                  b_mach = 0.1 .* randn(rng, length(g.machines)))
         end
         age && (p = (; p..., τ_age = 0.05 + 0.05 * rand(rng), e_age = 0.1 .* randn(rng, length(g.age_years) - 1)))
+        big_loss && (p = (; p..., a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)))
         return InitFromParams(p)
     end
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler,

@@ -43,6 +43,13 @@ function paceloss_rows(θ, g::GapData; loss_duration::Bool = false, era::Symbol 
                        sc = season_counts(g), cov = LossCovariates(g))    # pace scale if θ has τ_κ
     μt, μc = _row_means(θ, g, sc, cov)
     πr, λr = race_loss(θ, cov, loss_duration, era)
+    if haskey(θ, :a_ρ)                    # two-component incident loss (#16)
+        ρ, λ2 = logistic(θ.a_ρ), exp(θ.a_λ + θ.δ_λ2)
+        timed = [pacebig_logpdf(g.y[i] - μt[i], θ.σ, πr[g.t_race[i]], λr[g.t_race[i]], ρ, λ2) for i in eachindex(μt)]
+        lapped = [pacebig_loginterval(g.lo[i] - μc[i], g.hi[i] - μc[i], θ.σ, πr[g.c_race[i]], λr[g.c_race[i]], ρ, λ2)
+                  for i in eachindex(μc)]
+        return vcat(timed, lapped)
+    end
     timed = [paceloss_logpdf(g.y[i] - μt[i], θ.σ, πr[g.t_race[i]], λr[g.t_race[i]]) for i in eachindex(μt)]
     lapped = [paceloss_loginterval(g.lo[i] - μc[i], g.hi[i] - μc[i], θ.σ, πr[g.c_race[i]], λr[g.c_race[i]])
               for i in eachindex(μc)]
@@ -61,14 +68,15 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 `rw`, `_kappa` adding the pace scale and `_age` the career curve (#15).
 """
 function model_spec(name::AbstractString)
-    name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false)
+    name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
+                            big_loss = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
-    dur, kappa, age = "dur" in parts, "kappa" in parts, "age" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age")]
+    dur, kappa, age, big = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa, age)
+            pace_scale = kappa, age, big_loss = big)
 end
 
 """
@@ -96,5 +104,5 @@ function model_param_names(spec)
     spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
     return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
-            pace_param_names(spec.pace_scale)..., age_param_names(spec.age)...)
+            pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...)
 end
