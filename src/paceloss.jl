@@ -195,7 +195,7 @@ function ChainRulesCore.rrule(::typeof(paceloss_loglik), γ, z_comp, σ_comp, z_
 end
 
 """
-    paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, g::GapData, season_counts)
+    paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv[, big], g::GapData, season_counts)
 
 Log-likelihood of the pace-scale model (#15) with **centred** car effects.
 Driver effects `a = σ_comp·(z_comp - mean)` are scaled by the per-race `κr`;
@@ -205,27 +205,29 @@ Centred car effects avoid the ridge between κ_season and the spread of that
 season's standardised effects that the non-centred form has; each car-season
 has ~30+ results, so its effect is well determined by the data.
 
-`fage` (`nothing`, or a value per age bin; see `age_curve`) adds a career
-curve to each row's driver part: κ·(a[driver] + fage[age bin]). Rows of
-unknown age (bin 0) get no age term.
+`hdrv` (`nothing`, or a value per row: timed rows, then lapped rows) is added
+to each row's driver part, κ·(a[driver] + hdrv[row]). It carries the career
+terms (#15): the population age curve and per-driver slopes (see
+`driver_offsets`).
 """
-function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, g, season_counts)
-    return paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, nothing, g, season_counts)
+function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, g, season_counts)
+    return paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, nothing, g, season_counts)
 end
 
 # `big` = nothing, or [ρ, λ2] for the two-component incident loss (#16).
-function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage, big, g, season_counts)
+function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, big, g, season_counts)
     a = σ_comp .* sum_to_zero(z_comp)
     b = sum_to_zero_by(b_mach, g.mach_season, season_counts)
     T = promote_type(eltype(a), eltype(b), eltype(γ), typeof(σ), eltype(πr), eltype(λr), eltype(κr),
-                     fage === nothing ? Float64 : eltype(fage), big === nothing ? Float64 : eltype(big))
+                     hdrv === nothing ? Float64 : eltype(hdrv), big === nothing ? Float64 : eltype(big))
     lpdf(x, r) = big === nothing ? paceloss_logpdf(x, σ, πr[r], λr[r]) :
         pacebig_logpdf(x, σ, πr[r], λr[r], big[1], big[2])
     lint(lo, hi, r) = big === nothing ? paceloss_loginterval(lo, hi, σ, πr[r], λr[r]) :
         pacebig_loginterval(lo, hi, σ, πr[r], λr[r], big[1], big[2])
-    fa(bin) = (fage === nothing || bin == 0) ? zero(T) : fage[bin]
-    ct = [κr[g.t_race[i]] * (a[g.t_comp[i]] + fa(g.t_age[i])) + b[g.t_mach[i]] for i in eachindex(g.t_race)]
-    cc = [κr[g.c_race[i]] * (a[g.c_comp[i]] + fa(g.c_age[i])) + b[g.c_mach[i]] for i in eachindex(g.c_race)]
+    nt = length(g.t_race)
+    h(i) = hdrv === nothing ? zero(T) : hdrv[i]
+    ct = [κr[g.t_race[i]] * (a[g.t_comp[i]] + h(i)) + b[g.t_mach[i]] for i in eachindex(g.t_race)]
+    cc = [κr[g.c_race[i]] * (a[g.c_comp[i]] + h(nt + i)) + b[g.c_mach[i]] for i in eachindex(g.c_race)]
     csum, n = zeros(T, length(γ)), zeros(Int, length(γ))
     for (c, r) in zip(ct, g.t_race); csum[r] += c; n[r] += 1; end
     for (c, r) in zip(cc, g.c_race); csum[r] += c; n[r] += 1; end
@@ -244,18 +246,18 @@ function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage
 end
 
 function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
-                              fage, g::GapData, season_counts)
-    val, pb = ChainRulesCore.rrule(paceloss_loglik_cc, γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, fage,
+                              hdrv, g::GapData, season_counts)
+    val, pb = ChainRulesCore.rrule(paceloss_loglik_cc, γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv,
                                    nothing, g, season_counts)
     pullback(Δ) = (d = pb(Δ); (d[1:10]..., d[12], d[13]))     # drop the `big` slot
     return val, pullback
 end
 
 function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
-                              fage, big, g, season_counts)
+                              hdrv, big, g, season_counts)
     zc = z_comp .- mean(z_comp)
     b = b_mach .- group_means(b_mach, g.mach_season, season_counts)[g.mach_season]
-    st = row_means_ab(γ, σ_comp .* zc, b, g; κ = κr, κ_cars = false, fage)
+    st = row_means_ab(γ, σ_comp .* zc, b, g; κ = κr, κ_cars = false, hdrv)
     if big === nothing
         val, dμt, dμc, dσ, dπ, dλ = paceloss_row_grads(st, σ, πr, λr, g)
         dbig = NoTangent()
@@ -263,43 +265,42 @@ function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp,
         val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2 = pacebig_row_grads(st, σ, πr, λr, big[1], big[2], g)
         dbig = [dρ, dλ2]
     end
-    d = row_pullback_ab(dμt, dμc, st, g; κ = κr, κ_cars = false,
-                        nage = fage === nothing ? 0 : length(fage))
+    d = row_pullback_ab(dμt, dμc, st, g; κ = κr, κ_cars = false, hdrv = hdrv !== nothing)
     dσ_comp = sum(d.da .* zc)
     dz_comp = σ_comp .* (d.da .- mean(d.da))
     db_mach = d.db .- group_means(d.db, g.mach_season, season_counts)[g.mach_season]
-    dfage = fage === nothing ? NoTangent() : d.dfage
+    dh = hdrv === nothing ? NoTangent() : d.dh
     pullback(Δ) = (NoTangent(), Δ .* d.dγ, Δ .* dz_comp, Δ * dσ_comp, Δ .* db_mach, Δ * dσ,
-                   Δ .* dπ, Δ .* dλ, Δ .* d.dκ, dfage isa NoTangent ? dfage : Δ .* dfage,
+                   Δ .* dπ, Δ .* dλ, Δ .* d.dκ, dh isa NoTangent ? dh : Δ .* dh,
                    dbig isa NoTangent ? dbig : Δ .* dbig, NoTangent(), NoTangent())
     return val, pullback
 end
 
-# With the big-loss component (#16), with and without an age curve.
+# With the big-loss component (#16), with and without career offsets.
 ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
                                                      σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
                                                      σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
                                                      λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
-                                                     fage::Nothing, big::ReverseDiff.TrackedArray, g::GapData,
+                                                     hdrv::Nothing, big::ReverseDiff.TrackedArray, g::GapData,
                                                      season_counts::Vector{Int})
 ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
                                                      σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
                                                      σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
                                                      λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
-                                                     fage::ReverseDiff.TrackedArray, big::ReverseDiff.TrackedArray,
+                                                     hdrv::ReverseDiff.TrackedArray, big::ReverseDiff.TrackedArray,
                                                      g::GapData, season_counts::Vector{Int})
 
-# With and without an age curve (uncompiled tapes only; see gap_loglik).
+# With and without career offsets (uncompiled tapes only; see gap_loglik).
 ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
                                                      σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
                                                      σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
                                                      λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
-                                                     fage::Nothing, g::GapData, season_counts::Vector{Int})
+                                                     hdrv::Nothing, g::GapData, season_counts::Vector{Int})
 ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
                                                      σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
                                                      σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
                                                      λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
-                                                     fage::ReverseDiff.TrackedArray, g::GapData,
+                                                     hdrv::ReverseDiff.TrackedArray, g::GapData,
                                                      season_counts::Vector{Int})
 
 # Uncompiled tapes only (see gap_loglik); one binding without and one with a pace scale.
@@ -440,6 +441,55 @@ end
 "Career curve per age bin from step scale `τ_age` and standardised steps `e_age`."
 age_curve(τ_age, e_age, basis::AgeCurveBasis) = basis.proj * (basis.walk * (τ_age .* e_age))
 
+"""
+    CareerRows(g::GapData)
+
+Per-row data for the career terms (#15), rows in GapData order (timed, then
+lapped): the age bin (`bin`, with unknown ages pointing at bin 1 and masked out
+by `known`), the driver (`comp`), and the row's age minus that driver's mean
+age over their rows, in decades (`agec`; 0 when the age is unknown).
+
+A per-driver slope s_d multiplies `agec`, so it is orthogonal to the driver's
+constant effect. The slopes' mean is not identified (a common slope is the
+linear age term of the age–period–cohort problem, see `AgeCurveBasis`), so the
+slopes are centred to mean zero: they measure how a driver's career trajectory
+differs from the average driver's, not whether drivers improve with age.
+"""
+struct CareerRows
+    bin::Vector{Int}
+    known::Vector{Float64}
+    comp::Vector{Int}
+    agec::Vector{Float64}
+end
+function CareerRows(g::GapData)
+    bins = vcat(g.t_age, g.c_age)
+    comp = vcat(g.t_comp, g.c_comp)
+    known = Float64.(bins .> 0)
+    yrs = [k == 0 ? 0.0 : Float64(g.age_years[k]) for k in bins]
+    s, n = zeros(length(g.competitors)), zeros(length(g.competitors))
+    for i in eachindex(bins); s[comp[i]] += known[i] * yrs[i]; n[comp[i]] += known[i]; end
+    m = s ./ max.(n, 1)
+    agec = [known[i] * (yrs[i] - m[comp[i]]) / 10 for i in eachindex(bins)]
+    return CareerRows(max.(bins, 1), known, comp, agec)
+end
+
+"""
+    driver_offsets(cr::CareerRows, fage, slope) -> per-row vector or `nothing`
+
+Career terms added to each row's driver part (see `paceloss_loglik_cc`): the
+age curve `fage` (per age bin, or `nothing`) and per-driver slopes `slope` (in
+% per decade of age, or `nothing`).
+"""
+function driver_offsets(cr::CareerRows, fage, slope)
+    h = fage === nothing ? nothing : fage[cr.bin] .* cr.known
+    slope === nothing && return h
+    hs = slope[cr.comp] .* cr.agec
+    return h === nothing ? hs : h .+ hs
+end
+
+"Centred per-driver career slopes (% per decade) from scale `τ_slope` and standardised `u_slope`."
+career_slopes(τ_slope, u_slope) = τ_slope .* (u_slope .- mean(u_slope))
+
 "Names of the pace-scale parameters (#15), in sampling order (after the loss parameters)."
 pace_param_names(pace_scale::Bool) = pace_scale ? (:τ_κ, :e_κ, :b_mach) : ()
 
@@ -448,6 +498,9 @@ age_param_names(age::Bool) = age ? (:τ_age, :e_age) : ()
 
 "Names of the big-loss parameters (#16), in sampling order (after the age curve)."
 big_param_names(big::Bool) = big ? (:a_ρ, :δ_λ2) : ()
+
+"Names of the career-slope parameters (#15 stage 2b), in sampling order (after the big-loss component)."
+slope_param_names(slopes::Bool) = slopes ? (:τ_slope, :u_slope) : ()
 
 """
     race_pace_scale(θ, cov) -> Vector
@@ -487,7 +540,8 @@ so extreme results (repairs, many laps down) don't have to be explained by λ
 
 `age` (#15 stage 2, needs `pace_scale`) adds a population career curve over
 driver age, with only its shape up to a linear tilt identified (see
-`AgeCurveBasis`).
+`AgeCurveBasis`). `slopes` (#15 stage 2b, needs `pace_scale`) adds a linear
+career slope per driver, centred across drivers (see `CareerRows`).
 
 `pace_scale` (#15) lets the spread of pace, in % terms, change by season
 with κ_season (see `race_pace_scale`): driver differences are scaled by κ in
@@ -497,7 +551,7 @@ effects are then comparable across eras.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
                                  loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis,
-                                 big_loss::Bool)
+                                 big_loss::Bool, career_rows)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ ~ truncated(Normal(0, 1); lower = 0)
@@ -546,7 +600,14 @@ effects are then comparable across eras.
             δ_λ2 ~ truncated(Normal(log(10), 1); lower = 0)         # λ2 = λ_baseline·e^δ > λ_baseline
             big = [logistic(a_ρ), exp(a_λ + δ_λ2)]
         end
-        @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], fage, big, g,
+        slope = nothing
+        if career_rows !== nothing && career_rows.slopes     # per-driver career slopes (#15 stage 2b)
+            τ_slope ~ truncated(Normal(0, 0.5); lower = 0)
+            u_slope ~ filldist(Normal(), length(g.competitors))
+            slope = career_slopes(τ_slope, u_slope)
+        end
+        hdrv = career_rows === nothing ? nothing : driver_offsets(career_rows.rows, fage, slope)
+        @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], hdrv, big, g,
                                         season_counts)
     else
         @addlogprob! paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, nothing, g, season_counts)
@@ -554,16 +615,19 @@ effects are then comparable across eras.
 end
 
 function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
-                          pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false)
+                          pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
+                          slopes::Bool = false)
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     cov = LossCovariates(g)
     (era === :rw || pace_scale) && cov.n_seasons < 2 &&
         throw(ArgumentError("random walks over seasons need at least 2 seasons"))
     age && !pace_scale && throw(ArgumentError("the age curve is implemented for pace-scale models (pace_scale = true)"))
     big_loss && !pace_scale && throw(ArgumentError("the big-loss component is implemented for pace-scale models (pace_scale = true)"))
+    slopes && !pace_scale && throw(ArgumentError("career slopes are implemented for pace-scale models (pace_scale = true)"))
     age && length(g.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
+    career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
-                            age ? AgeCurveBasis(g) : nothing, big_loss)
+                            age ? AgeCurveBasis(g) : nothing, big_loss, career_rows)
 end
 
 """
@@ -575,13 +639,13 @@ zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gap
 """
 function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
-                      n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
+                      slopes::Bool = false, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
     adtype isa AutoReverseDiff && adtype.compile &&
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
-    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss)
+    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes)
     cov = model.args.cov
     race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
@@ -608,6 +672,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         end
         age && (p = (; p..., τ_age = 0.05 + 0.05 * rand(rng), e_age = 0.1 .* randn(rng, length(g.age_years) - 1)))
         big_loss && (p = (; p..., a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)))
+        slopes && (p = (; p..., τ_slope = 0.05 + 0.05 * rand(rng), u_slope = 0.1 .* randn(rng, length(g.competitors))))
         return InitFromParams(p)
     end
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler,

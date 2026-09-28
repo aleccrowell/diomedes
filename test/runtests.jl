@@ -195,6 +195,15 @@ end
         f = age_curve(0.3, randn(Xoshiro(2), length(g.age_years) - 1), B)
         @test abs(sum(g.age_rows .* f)) < 1e-9
         @test abs(sum(g.age_rows .* g.age_years .* f)) < 1e-7
+        # career rows: each driver's centred ages average zero over their rows
+        cr = CareerRows(g)
+        comps = vcat(g.t_comp, g.c_comp)
+        @test length(cr.agec) == length(g.y) + length(g.lo) && all(cr.known .== 1)
+        @test all(abs(sum(cr.agec[comps .== d])) < 1e-9 for d in unique(comps))
+        @test driver_offsets(cr, f, nothing) ≈ f[vcat(g.t_age, g.c_age)]
+        s = career_slopes(0.4, randn(Xoshiro(3), length(g.competitors)))
+        @test abs(sum(s)) < 1e-12
+        @test driver_offsets(cr, f, s) ≈ f[vcat(g.t_age, g.c_age)] .+ s[comps] .* cr.agec
     end
 
     @testset "logdiffΦ" begin
@@ -338,10 +347,12 @@ end
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
         H(s) = Turing.truncated(Normal(0, s); lower = 0)
-        for (dur, era, kap, age, big) in [[(d, e, false, false, false) for d in (false, true) for e in (:none, :decade, :regime, :rw)];
-                                          (true, :rw, true, false, false); (false, :none, true, false, false);
-                                          (true, :rw, true, true, false); (true, :rw, true, false, true);
-                                          (true, :rw, true, true, true)]
+        for (dur, era, kap, age, big, slp) in [[(d, e, false, false, false, false) for d in (false, true)
+                                                for e in (:none, :decade, :regime, :rw)];
+                                               (true, :rw, true, false, false, false); (false, :none, true, false, false, false);
+                                               (true, :rw, true, true, false, false); (true, :rw, true, false, true, false);
+                                               (true, :rw, true, true, true, false); (true, :rw, true, false, false, true);
+                                               (true, :rw, true, true, true, true)]
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
@@ -355,6 +366,7 @@ end
                          τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm)))
             age && (θ = (; θ..., τ_age = 0.2, e_age = randn(rng, length(g.age_years) - 1)))
             big && (θ = (; θ..., a_ρ = -2.5, δ_λ2 = 2.0))
+            slp && (θ = (; θ..., τ_slope = 0.3, u_slope = randn(rng, nc)))
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
             lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
@@ -416,6 +428,15 @@ end
                 fage = fr .- X * ((w .* X) \ (w .* fr))
                 at = at .+ fage[g.t_age]; ac = ac .+ fage[g.c_age]
             end
+            if slp
+                # per-driver slopes, centred across drivers, times (age - driver's mean age) in decades
+                lp += logpdf(H(0.5), θ.τ_slope) + sum(logpdf.(Normal(), θ.u_slope))
+                s = θ.τ_slope .* (θ.u_slope .- mean(θ.u_slope))
+                ages, comps = g.age_years[vcat(g.t_age, g.c_age)], vcat(g.t_comp, g.c_comp)
+                m = [any(comps .== d) ? mean(ages[comps .== d]) : 0.0 for d in 1:nc]
+                at = at .+ s[g.t_comp] .* (g.age_years[g.t_age] .- m[g.t_comp]) ./ 10
+                ac = ac .+ s[g.c_comp] .* (g.age_years[g.c_age] .- m[g.c_comp]) ./ 10
+            end
             races = vcat(g.t_race, g.c_race)
             cs = vcat(κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach],
                       κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach])
@@ -429,7 +450,7 @@ end
                 r = g.c_race[i]; μ = θ.γ[r] + cs[nt + i] - cbar[r]
                 lp += rowint(g.lo[i] - μ, g.hi[i] - μ, r)
             end
-            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big)
+            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big, slopes = slp)
             @test logjoint(model, θ) ≈ lp
             # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
             # in constrained space: positive-valued parameters are set positive by name
@@ -446,8 +467,12 @@ end
         @test_throws ArgumentError paceloss_effects(g; era = :century)
         @test_throws ArgumentError paceloss_effects(prepare_gaps(res); era = :rw)   # one season
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
-        @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false, big_loss = false)
-        @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false, big_loss = false)
+        @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
+                                          big_loss = false, slopes = false)
+        @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
+                                                big_loss = false, slopes = false)
+        @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
+        @test_throws ArgumentError paceloss_effects(g; slopes = true)          # needs pace_scale
         @test model_spec("pl_dur_rw_kappa_age").age
         @test model_spec("pl_dur_rw_kappa_big").big_loss
         @test_throws ArgumentError paceloss_effects(g; big_loss = true)        # needs pace_scale
@@ -469,19 +494,25 @@ end
         @test length(rows) == length(g.y) + length(g.lo)
         @test sum(rows) ≈ Diomedes.gap_loglik(θt.γ, θt.z_comp, θt.σ_comp, θt.z_mach, θt.σ_mach, θt.σ_y,
                                               g, sc, StudentTNoise(4))
-        for (dur, era, kap, age) in ((false, :none, false, false), (true, :regime, false, false),
-                                     (false, :rw, false, false), (true, :rw, false, false),
-                                     (true, :rw, true, false), (false, :none, true, false), (true, :rw, true, true))
+        cr = CareerRows(g)
+        for (dur, era, kap, age, slp) in ((false, :none, false, false, false), (true, :regime, false, false, false),
+                                          (false, :rw, false, false, false), (true, :rw, false, false, false),
+                                          (true, :rw, true, false, false), (false, :none, true, false, false),
+                                          (true, :rw, true, true, false), (true, :rw, true, false, true),
+                                          (true, :rw, true, true, true))
             θ = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
                  (kap ? (; τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm)) : (;))...,
                  (age ? (; τ_age = 0.2, e_age = randn(rng, length(g.age_years) - 1)) : (;))...,
+                 (slp ? (; τ_slope = 0.3, u_slope = randn(rng, nc)) : (;))...,
                  τ_π_era = 0.3, τ_λ_era = 0.2, z_π_era = randn(rng, cov.n_regimes), z_λ_era = randn(rng, cov.n_regimes),
                  τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1))
             πr, λr = Diomedes.race_loss(θ, cov, dur, era)
             @test sum(Diomedes.paceloss_rows(θ, g; loss_duration = dur, era)) ≈ (kap ?
                   Diomedes.paceloss_loglik_cc(θ.γ, θ.z_comp, θ.σ_comp, θ.b_mach, θ.σ, πr, λr,
                                               race_pace_scale(θ, cov),
-                                              age ? age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g)) : nothing, g, sc) :
+                                              (age || slp) ? driver_offsets(cr, age ? age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g)) : nothing,
+                                                                            slp ? career_slopes(θ.τ_slope, θ.u_slope) : nothing) :
+                                                             nothing, g, sc) :
                   Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach, θ.σ, πr, λr, nothing, g, sc))
         end
         # two-component incident loss (#16)
