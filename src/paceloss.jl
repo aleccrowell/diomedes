@@ -461,13 +461,16 @@ struct CareerRows
     comp::Vector{Int}
     agec::Vector{Float64}
 end
-function CareerRows(g::GapData)
+function CareerRows(g::GapData; train = nothing)     # driver mean ages over `train` rows only, if given
     bins = vcat(g.t_age, g.c_age)
     comp = vcat(g.t_comp, g.c_comp)
     known = Float64.(bins .> 0)
     yrs = [k == 0 ? 0.0 : Float64(g.age_years[k]) for k in bins]
     s, n = zeros(length(g.competitors)), zeros(length(g.competitors))
-    for i in eachindex(bins); s[comp[i]] += known[i] * yrs[i]; n[comp[i]] += known[i]; end
+    for i in eachindex(bins)
+        (train === nothing || train[i]) || continue
+        s[comp[i]] += known[i] * yrs[i]; n[comp[i]] += known[i]
+    end
     m = s ./ max.(n, 1)
     agec = [known[i] * (yrs[i] - m[comp[i]]) / 10 for i in eachindex(bins)]
     return CareerRows(max.(bins, 1), known, comp, agec)
