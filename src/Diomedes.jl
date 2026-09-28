@@ -27,6 +27,7 @@ using JSON3
 using LinearAlgebra
 using LogExpFunctions: log1mexp, logaddexp, logistic
 using Random
+using Unicode
 using ReverseDiff
 using SHA
 using SpecialFunctions: erf, erfcx, loggamma

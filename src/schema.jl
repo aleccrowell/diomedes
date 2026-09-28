@@ -5,7 +5,8 @@
 #   WRC: event = rally,      stage = special stage (~15-25 per event)
 #
 # `machine_id` is whatever the series treats as "the car": the constructor in F1,
-# the vehicle model in rallying. Models pair it with `season` to form a
+# the vehicle model in rallying (normalised text; see `manufacturer` and `entrant`
+# for the cleaner rally identifiers). Models pair it with `season` to form a
 # machine-season effect, since cars change year to year.
 
 const RESULT_SCHEMA = [
@@ -22,6 +23,8 @@ const RESULT_SCHEMA = [
     :codriver_id   => Union{Missing,String},    # rallying only
     :machine_id    => String,                   # constructor / vehicle model
     :class         => Union{Missing,String},    # e.g. "Rally1", "Rally2"
+    :manufacturer  => Union{Missing,String},    # rallying: car maker (e.g. "Toyota"); missing in F1
+    :entrant       => Union{Missing,String},    # rallying: entering team (works or privateer); missing in F1
     :time_ms       => Union{Missing,Float64},   # official stage/race time; missing if not timed
     :suspended_ms  => Union{Missing,Float64},   # red-flag suspension included in time_ms (per race); missing = unknown
     :position      => Union{Missing,Int},

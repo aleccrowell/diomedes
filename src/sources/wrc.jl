@@ -9,8 +9,11 @@ Coverage: WRC 2018 onwards and the European Rally Championship 2022 onwards
 (`WRCTiming(championship = "European Rally Championship", series = "erc")`).
 
 Each completed special stage is one `stage_id`. `machine_id` is the vehicle model
-(e.g. "GR Yaris Rally1") and `class` is the entry group (Rally1, Rally2, ...), so
-factory and customer cars of the same model share a machine effect. Stage times
+as typed by the organisers, normalised (`normalise_model`: "i20 Coupé  WRC " →
+"I20 COUPE WRC"); `class` is the entry group (Rally1, Rally2, ...). The cleaner
+identifiers are `manufacturer` (e.g. "Toyota") and `entrant` (works team or
+privateer), so a machine grouping such as manufacturer × class × season can be
+built with `prepare_gaps(...; machine_key)`. Stage times
 exclude penalties. Only stages with status "Completed" are included; cancelled
 and interrupted stages (which get notional times) are skipped.
 
@@ -77,8 +80,10 @@ function wrc_event(src::WRCTiming, season, round, event_id; refresh = src.refres
                 competitor_name = String(e.driver.fullName),
                 competitor_birth = missing,
                 codriver_id = maybestring(get(e, :codriverId, nothing)),
-                machine_id = something(maybestring(get(e, :vehicleModel, nothing)), "unknown"),
+                machine_id = normalise_model(something(maybestring(get(e, :vehicleModel, nothing)), "unknown")),
                 class = e.group === nothing ? missing : String(e.group.name),
+                manufacturer = named(get(e, :manufacturer, nothing)),
+                entrant = named(get(e, :entrant, nothing)),
                 time_ms = t.status == "Completed" ? maybefloat(t.elapsedDurationMs) : missing,
                 suspended_ms = missing,
                 position = t.status == "Completed" ? maybeint(t.position) : missing,
@@ -90,3 +95,17 @@ function wrc_event(src::WRCTiming, season, round, event_id; refresh = src.refres
     end
     return rows
 end
+
+"""
+    normalise_model(s)
+
+Canonical form of a free-text vehicle model: accents stripped, upper case, runs
+of spaces collapsed, and "RALLY 1" written "RALLY1".
+"""
+function normalise_model(s::AbstractString)
+    t = uppercase(Unicode.normalize(String(s); stripmark = true))
+    t = replace(strip(t), r"\s+" => " ")
+    return replace(t, r"\bRALLY (\d)\b" => s"RALLY\1")
+end
+
+named(x) = x === nothing || get(x, :name, nothing) === nothing ? missing : String(strip(x.name))

@@ -49,6 +49,8 @@ function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
         codriver_id = Vector{Union{Missing,String}}(missing, nrow(df)),
         machine_id = String.(df.constructorRef),
         class = Vector{Union{Missing,String}}(missing, nrow(df)),
+        manufacturer = Vector{Union{Missing,String}}(missing, nrow(df)),
+        entrant = Vector{Union{Missing,String}}(missing, nrow(df)),
         time_ms = Vector{Union{Missing,Float64}}(maybefloat.(df.milliseconds)),
         suspended_ms = Vector{Union{Missing,Float64}}([get(susp, id, missing) for id in df.raceId]),
         position = Vector{Union{Missing,Int}}(maybeint.(df.position)),

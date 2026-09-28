@@ -83,6 +83,13 @@ end
               Set(["2019-01", "2019-02"])
     end
 
+    @testset "WRC vehicle model normalisation" begin
+        nm = Diomedes.normalise_model
+        @test nm(" i20 Coupé  WRC ") == nm("I20 COUPE WRC") == "I20 COUPE WRC"
+        @test nm("Puma Rally 1") == "PUMA RALLY1"
+        @test nm("Fiesta Rally 3") == nm("FIESTA RALLY3")
+        @test nm("Rally 12x") == "RALLY 12X"  # only a single-digit class number is joined
+    end
     @testset "red-flag suspensions" begin
         @test Diomedes.laptime_ms("1:16.956") ≈ 76_956
         @test Diomedes.laptime_ms("16.956") ≈ 16_956

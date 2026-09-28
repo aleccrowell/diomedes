@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "7657fdd53b7c945296111fe6deac68b6a33a88f5"
+project_hash = "bcb2098db03ada10dd7b671c426715f6b7359b1d"
 
 [[deps.ADTypes]]
 deps = ["PrecompileTools"]
@@ -517,7 +517,7 @@ version = "0.30.2"
     StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [[deps.Diomedes]]
-deps = ["ADTypes", "CSV", "ChainRulesCore", "DataFrames", "Dates", "HTTP", "JSON3", "LinearAlgebra", "LogExpFunctions", "Random", "ReverseDiff", "SHA", "SpecialFunctions", "Statistics", "StatsFuns", "Turing"]
+deps = ["ADTypes", "CSV", "ChainRulesCore", "DataFrames", "Dates", "HTTP", "JSON3", "LinearAlgebra", "LogExpFunctions", "PosteriorStats", "Random", "ReverseDiff", "SHA", "SpecialFunctions", "Statistics", "StatsFuns", "Turing"]
 path = "."
 uuid = "789b8860-c702-47b3-916c-ed8b34bafc84"
 version = "0.1.0"
