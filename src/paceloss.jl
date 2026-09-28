@@ -290,19 +290,35 @@ function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp,
     return val, pullback
 end
 
+# The big-loss component as two scalars, ρ and λ2 (#16). The model passes them
+# this way because [ρ, λ2] built from tracked scalars is a Vector of TrackedReal,
+# not a TrackedArray, so it matches no binding: ReverseDiff then traces the
+# scalar loop over every row, ~30× slower (gradients still correct).
+function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, ρ::Real, λ2::Real, g, season_counts)
+    return paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, [ρ, λ2], g, season_counts)
+end
+
+function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
+                              hdrv, ρ::Real, λ2::Real, g::GapData, season_counts)
+    val, pb = ChainRulesCore.rrule(paceloss_loglik_cc, γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv,
+                                   [ρ, λ2], g, season_counts)
+    pullback(Δ) = (d = pb(Δ); (d[1:10]..., d[11][1], d[11][2], d[12], d[13]))   # split the `big` slot
+    return val, pullback
+end
+
 # With the big-loss component (#16), with and without career offsets.
 ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
                                                      σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
                                                      σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
                                                      λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
-                                                     hdrv::Nothing, big::ReverseDiff.TrackedArray, g::GapData,
-                                                     season_counts::Vector{Int})
+                                                     hdrv::Nothing, ρ::ReverseDiff.TrackedReal, λ2::ReverseDiff.TrackedReal,
+                                                     g::GapData, season_counts::Vector{Int})
 ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
                                                      σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
                                                      σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
                                                      λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
-                                                     hdrv::ReverseDiff.TrackedArray, big::ReverseDiff.TrackedArray,
-                                                     g::GapData, season_counts::Vector{Int})
+                                                     hdrv::ReverseDiff.TrackedArray, ρ::ReverseDiff.TrackedReal,
+                                                     λ2::ReverseDiff.TrackedReal, g::GapData, season_counts::Vector{Int})
 
 # With and without career offsets (uncompiled tapes only; see gap_loglik).
 ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
@@ -608,11 +624,9 @@ effects are then comparable across eras.
             e_age ~ filldist(Normal(), length(g.age_years) - 1)
             fage = age_curve(τ_age, e_age, age_basis)
         end
-        big = nothing
         if big_loss       # two-component incident loss (#16)
             a_ρ ~ Normal(log(0.05 / 0.95), 1)                       # share of incidents that are big, ~5%
             δ_λ2 ~ truncated(Normal(log(10), 1); lower = 0)         # λ2 = λ_baseline·e^δ > λ_baseline
-            big = [logistic(a_ρ), exp(a_λ + δ_λ2)]
         end
         slope = nothing
         if career_rows !== nothing && career_rows.slopes     # per-driver career slopes (#15 stage 2b)
@@ -621,8 +635,14 @@ effects are then comparable across eras.
             slope = career_slopes(τ_slope, u_slope)
         end
         hdrv = career_rows === nothing ? nothing : driver_offsets(career_rows.rows, fage, slope)
-        @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], hdrv, big, g,
-                                        season_counts)
+        # each call matches a ReverseDiff binding of the fused rule (see paceloss_loglik_cc)
+        if big_loss
+            @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], hdrv,
+                                            logistic(a_ρ), exp(a_λ + δ_λ2), g, season_counts)
+        else
+            @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], hdrv, g,
+                                            season_counts)
+        end
     else
         @addlogprob! paceloss_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ, πr, λr, nothing, g, season_counts)
     end

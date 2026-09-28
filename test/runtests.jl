@@ -479,6 +479,12 @@ end
                 x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θx)])
                 @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
             end
+            # the likelihood must reach ReverseDiff through the fused rule: if a call
+            # matches no binding, ReverseDiff traces the per-row loop instead (correct
+            # gradients but ~30× slower; the tape here grew from ~450 to ~4,000-6,000)
+            tape = Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(model), z),
+                                                     reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θ)]))
+            @test length(tape.tape) < 1000
         end
         @test_throws ArgumentError paceloss_effects(g; era = :century)
         @test_throws ArgumentError paceloss_effects(prepare_gaps(res); era = :rw)   # one season
@@ -539,7 +545,7 @@ end
         @test sum(Diomedes.paceloss_rows(θb, g; loss_duration = true, era = :rw)) ≈
               Diomedes.paceloss_loglik_cc(θb.γ, θb.z_comp, θb.σ_comp, θb.b_mach, θb.σ, πr, λr,
                                           race_pace_scale(θb, cov), nothing,
-                                          [1 / (1 + exp(-θb.a_ρ)), exp(θb.a_λ + θb.δ_λ2)], g, sc)
+                                          1 / (1 + exp(-θb.a_ρ)), exp(θb.a_λ + θb.δ_λ2), g, sc)
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
