@@ -370,9 +370,12 @@ end
                   (true, :rw, true, true, true, true, false); (true, :rw, true, false, false, false, true);
                   (true, :rw, true, true, true, true, true)]
         # centred driver effects (#28): with and without the pace scale, and with every term on
-        cases = [[(c, false) for c in combos]; ((true, :rw, false, false, false, false, false), true);
-                 ((true, :rw, true, false, false, false, false), true); ((true, :rw, true, true, true, true, true), true)]
-        for ((dur, era, kap, age, big, slp, dev), cdrv) in cases
+        # and Student-t(3) drivers, centred and not (tdrv)
+        cases = [[(c, false, false) for c in combos]; ((true, :rw, false, false, false, false, false), true, false);
+                 ((true, :rw, true, false, false, false, false), true, false); ((true, :rw, true, true, true, true, true), true, false);
+                 ((true, :rw, true, false, false, false, false), true, true); ((true, :rw, true, false, false, false, false), false, true);
+                 ((true, :rw, true, true, true, true, true), true, true)]
+        for ((dur, era, kap, age, big, slp, dev), cdrv, tdrv) in cases
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
@@ -393,7 +396,8 @@ end
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
             lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
-                 (cdrv ? sum(logpdf.(Normal(0, θ.σ_comp), θ.a_comp)) : sum(logpdf.(Normal(), θ.z_comp))) +
+                 (cdrv ? sum(logpdf.(tdrv ? θ.σ_comp * Distributions.TDist(3) : Normal(0, θ.σ_comp), θ.a_comp)) :
+                         sum(logpdf.(tdrv ? Distributions.TDist(3) : Normal(), θ.z_comp))) +
                  (kap ? 0.0 : sum(logpdf.(Normal(), θ.z_mach))) +
                  sum(logpdf.(Normal(0, 5), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
                  logpdf(Normal(log(2), 1), θ.a_λ)
@@ -491,7 +495,7 @@ end
                 lp += rowint(g.lo[i] - μ, g.hi[i] - μ, r)
             end
             model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big, slopes = slp, dev,
-                                     centred_drivers = cdrv)
+                                     centred_drivers = cdrv, driver_ν = tdrv ? 3 : nothing)
             @test logjoint(model, θ) ≈ lp
             # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
             # in constrained space: positive-valued parameters are set positive by name
@@ -516,13 +520,14 @@ end
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
         @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
                                           big_loss = false, slopes = false, dev = false,
-                                          centred_drivers = false)
+                                          centred_drivers = false, driver_ν = nothing)
         @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
                                                 big_loss = false, slopes = false, dev = false,
-                                          centred_drivers = false)
+                                          centred_drivers = false, driver_ν = nothing)
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
         @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
         @test model_spec("pl_dur_rw_kappa_cdrv").centred_drivers
+        @test model_spec("pl_dur_rw_kappa_cdrv_tdrv").driver_ν == 3
         @test Diomedes.model_param_names(model_spec("pl_dur_rw_kappa_cdrv"))[4] === :a_comp
         @test_throws ArgumentError paceloss_effects(g; dev = true)             # needs pace_scale
         @test_throws ArgumentError paceloss_effects(g; slopes = true)          # needs pace_scale

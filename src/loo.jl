@@ -80,16 +80,19 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
-                            big_loss = false, slopes = false, dev = false, centred_drivers = false)
+                            big_loss = false, slopes = false, dev = false, centred_drivers = false,
+                            driver_ν = nothing)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
     dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
                                         "slope" in parts, "dev" in parts
     cdrv = "cdrv" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv")]
+    tdrv = "tdrv" in parts          # Student-t(3) driver prior (#28)
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv)
+            pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
+            driver_ν = tdrv ? 3.0 : nothing)
 end
 
 """
