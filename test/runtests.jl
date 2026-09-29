@@ -225,7 +225,14 @@ end
         @test size(B.mach, 2) == nm - maximum(g.mach_season) && length(B.mach_rep) == size(B.mach, 2)
         b = B.mach * randn(Xoshiro(4), size(B.mach, 2))
         @test all(abs(sum(b[g.mach_season .== s])) < 1e-10 for s in 1:maximum(g.mach_season))
-        @test all(g.mach_season[B.mach_rep[j]] == g.mach_season[findfirst(!=(0), B.mach[:, j])] for j in axes(B.mach, 2))
+        Hd = Matrix(B.mach)
+        @test all(g.mach_season[B.mach_rep[j]] == g.mach_season[findfirst(!=(0), Hd[:, j])] for j in axes(Hd, 2))
+        # the O(n) map and its adjoint match the dense basis
+        Hm = Matrix(B.mach)
+        xm, ym = randn(Xoshiro(5), size(B.mach, 2)), randn(Xoshiro(6), nm)
+        @test B.mach * xm ≈ Hm * xm && Diomedes.zerosum_adjoint(B.mach, ym) ≈ Hm' * ym
+        @test Matrix(B.comp) ≈ zerosum_basis(length(g.competitors))
+        @test Diomedes.ReverseDiff.gradient(x -> sum(abs2, B.mach * x), xm) ≈ 2 .* (Hm' * (Hm * xm))
         θ = expand_effects((; x_comp = ones(size(B.comp, 2)), bx_mach = ones(size(B.mach, 2)), σ = 1.0), B)
         @test θ.z_comp ≈ B.comp * ones(size(B.comp, 2)) && θ.b_mach ≈ B.mach * ones(size(B.mach, 2)) && θ.σ == 1.0
         @test Diomedes.model_param_names(model_spec("pl_dur_rw_kappa_slope"))[4] === :x_comp

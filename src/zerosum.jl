@@ -27,31 +27,94 @@ function zerosum_basis(n::Int)
 end
 
 """
+    ZeroSumMap(groups, n_out)
+
+The linear map x ↦ H·x for a block-diagonal Helmert basis: `groups[b]` are the
+output rows of block b (a block of size m takes m - 1 inputs, in order), and
+rows in no group are 0. Applied in O(n) (a reverse cumulative sum minus a
+shifted term) with a hand-written adjoint, so the sampler's gradient does not
+pay for a dense matrix product (`M * x` works as for the matrix; `Matrix(M)`
+gives the dense form).
+
+With w_k = x_k/√(k(k+1)) within a block: (H·x)_i = Σ_{k≥i} w_k - (i-1)·w_{i-1};
+adjoint: x̄_k = (Σ_{i≤k} ȳ_i - k·ȳ_{k+1})/√(k(k+1)).
+"""
+struct ZeroSumMap
+    groups::Vector{Vector{Int}}
+    n_out::Int
+    n_in::Int
+end
+ZeroSumMap(groups::Vector{Vector{Int}}, n_out::Int) = ZeroSumMap(groups, n_out, sum(length(r) - 1 for r in groups; init = 0))
+Base.size(M::ZeroSumMap) = (M.n_out, M.n_in)
+Base.size(M::ZeroSumMap, d::Integer) = size(M)[d]
+Base.:*(M::ZeroSumMap, x::AbstractVector) = zerosum_apply(M, x)
+function Base.Matrix(M::ZeroSumMap)
+    H = zeros(M.n_out, M.n_in)
+    j = 0
+    for r in M.groups
+        m = length(r)
+        H[r, (j + 1):(j + m - 1)] = zerosum_basis(m)
+        j += m - 1
+    end
+    return H
+end
+
+function zerosum_apply(M::ZeroSumMap, x::AbstractVector)
+    length(x) == M.n_in || throw(DimensionMismatch("ZeroSumMap takes $(M.n_in) inputs, got $(length(x))"))
+    y = zeros(eltype(x), M.n_out)
+    j = 0
+    for r in M.groups
+        m = length(r)
+        S = zero(eltype(x))
+        for i in m:-1:1
+            i <= m - 1 && (S += x[j + i] / sqrt(i * (i + 1)))
+            y[r[i]] = i >= 2 ? S - (i - 1) * x[j + i - 1] / sqrt((i - 1) * i) : S
+        end
+        j += m - 1
+    end
+    return y
+end
+
+function zerosum_adjoint(M::ZeroSumMap, ȳ::AbstractVector)
+    x̄ = zeros(eltype(ȳ), M.n_in)
+    j = 0
+    for r in M.groups
+        m = length(r)
+        P = zero(eltype(ȳ))
+        for k in 1:(m - 1)
+            P += ȳ[r[k]]
+            x̄[j + k] = (P - k * ȳ[r[k + 1]]) / sqrt(k * (k + 1))
+        end
+        j += m - 1
+    end
+    return x̄
+end
+
+function ChainRulesCore.rrule(::typeof(zerosum_apply), M::ZeroSumMap, x::AbstractVector)
+    pullback(ȳ) = (NoTangent(), NoTangent(), zerosum_adjoint(M, ChainRulesCore.unthunk(ȳ)))
+    return zerosum_apply(M, x), pullback
+end
+ReverseDiff.@grad_from_chainrules zerosum_apply(M::ZeroSumMap, x::ReverseDiff.TrackedArray)
+
+"""
     ZeroSumBases(g::GapData)
 
 Bases for the gap models' effect vectors: `comp` (competitors, one block) and
-`mach` (machine levels, one block per season, block-diagonal), with for each
+`mach` (machine levels, one block per season), as `ZeroSumMap`s, with for each
 free car coordinate a representative machine level (`mach_rep`, to look up its
 season's pace scale). A season with a single machine level has no free
 coordinate: its centred effect is 0.
 """
 struct ZeroSumBases
-    comp::Matrix{Float64}
-    mach::Matrix{Float64}
+    comp::ZeroSumMap
+    mach::ZeroSumMap
     mach_rep::Vector{Int}
 end
 function ZeroSumBases(g::GapData)
     groups = [findall(==(s), g.mach_season) for s in 1:maximum(g.mach_season)]
-    M = zeros(length(g.machines), sum(length(idx) - 1 for idx in groups))
-    rep = Int[]
-    j = 0
-    for idx in groups
-        n = length(idx)
-        M[idx, (j + 1):(j + n - 1)] = zerosum_basis(n)
-        append!(rep, fill(first(idx), n - 1))
-        j += n - 1
-    end
-    return ZeroSumBases(zerosum_basis(length(g.competitors)), M, rep)
+    rep = reduce(vcat, [fill(first(r), length(r) - 1) for r in groups]; init = Int[])
+    comp = ZeroSumMap([collect(eachindex(g.competitors))], length(g.competitors))
+    return ZeroSumBases(comp, ZeroSumMap(groups, length(g.machines)), rep)
 end
 
 """
