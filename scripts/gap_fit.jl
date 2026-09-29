@@ -29,7 +29,7 @@ chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
 spec = model_spec(model)
 fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
-                 age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, kw...)
+                 age = spec.age, kw...)
 
 wrc = match(r"^wrc(\d{4})-(\d{4})$", mode)
 if wrc === nothing
@@ -65,9 +65,8 @@ if spec.family === :pl
     println("baseline incident probability logistic(a_π) ≈ $(round(mean(1 ./ (1 .+ exp.(-vec(chain[:a_π])))); digits = 3)), ",
             "baseline mean loss exp(a_λ) ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
     for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]...,
-              Diomedes.pace_param_names(spec.pace_scale)..., Diomedes.age_param_names(spec.age)...,
-              Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)...)
-        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :bx_mach, :e_age, :u_slope, :x_slope) && continue
+              Diomedes.pace_param_names(spec.pace_scale)..., Diomedes.age_param_names(spec.age)...)
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age) && continue
         println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
     end
 end
