@@ -520,6 +520,61 @@ end
 "Centred per-driver career slopes (% per decade) from scale `τ_slope` and standardised `u_slope`."
 career_slopes(τ_slope, u_slope) = τ_slope .* (u_slope .- mean(u_slope))
 
+"""
+    center_by(u, group, counts)
+
+`u` minus the mean of its group (`group[i]` in 1:length(counts), `counts` the
+group sizes), as `sum_to_zero_by`, but with a hand-written adjoint (centring is
+self-adjoint) so ReverseDiff keeps a tracked vector a TrackedArray.
+"""
+center_by(u::AbstractVector, group::Vector{Int}, counts::Vector{Int}) = sum_to_zero_by(u, group, counts)
+function ChainRulesCore.rrule(::typeof(center_by), u::AbstractVector, group::Vector{Int}, counts::Vector{Int})
+    pullback(ȳ) = (NoTangent(), sum_to_zero_by(collect(ChainRulesCore.unthunk(ȳ)), group, counts), NoTangent(), NoTangent())
+    return center_by(u, group, counts), pullback
+end
+ReverseDiff.@grad_from_chainrules center_by(u::ReverseDiff.TrackedArray, group::Vector{Int}, counts::Vector{Int})
+
+"""
+    DevRows(g::GapData)
+
+Per-row data for in-season car development (#14), rows in GapData order (timed,
+then lapped): the machine level of each row (`mach`) and the race's position
+in its season minus the mean position over that car's rows (`posc`). Position
+runs from 0 at a season's first round in the data to 1 at its last.
+
+A car's development trend t multiplies `posc`, so it is orthogonal to the
+car-season effect. A trend shared by every car in a season is absorbed by the
+race intercepts, so trends are centred within each season (see `dev_trends`):
+they measure how a car's form over the season differed from the field's.
+"""
+struct DevRows
+    mach::Vector{Int}
+    posc::Vector{Float64}
+end
+function DevRows(g::GapData)
+    races = vcat(g.t_race, g.c_race)
+    mach = vcat(g.t_mach, g.c_mach)
+    # each race's round, then its position among its season's rounds
+    round_of = Dict(r.race_key => r.round for r in eachrow(g.rows))
+    rnd = [round_of[k] for k in g.races]
+    pos = zeros(length(g.races))
+    for s in unique(g.race_season)
+        idx = findall(==(s), g.race_season)
+        rounds = sort(unique(rnd[idx]))
+        n = length(rounds)
+        for r in idx
+            pos[r] = n == 1 ? 0.0 : (searchsortedfirst(rounds, rnd[r]) - 1) / (n - 1)
+        end
+    end
+    p = pos[races]
+    s, n = zeros(length(g.machines)), zeros(length(g.machines))
+    for i in eachindex(p); s[mach[i]] += p[i]; n[mach[i]] += 1; end
+    return DevRows(mach, p .- (s ./ max.(n, 1))[mach])
+end
+
+"In-season development trends (% per season), centred within season, from scale `τ_dev` and standardised `u_dev`."
+dev_trends(τ_dev, u_dev, g::GapData, season_counts) = τ_dev .* center_by(u_dev, g.mach_season, season_counts)
+
 "Names of the pace-scale parameters (#15), in sampling order (after the loss parameters)."
 pace_param_names(pace_scale::Bool) = pace_scale ? (:τ_κ, :e_κ, :b_mach) : ()
 
@@ -531,6 +586,9 @@ big_param_names(big::Bool) = big ? (:a_ρ, :δ_λ2) : ()
 
 "Names of the career-slope parameters (#15 stage 2b), in sampling order (after the big-loss component)."
 slope_param_names(slopes::Bool) = slopes ? (:τ_slope, :u_slope) : ()
+
+"Names of the in-season development parameters (#14), in sampling order (after the career slopes)."
+dev_param_names(dev::Bool) = dev ? (:τ_dev, :u_dev) : ()
 
 """
     race_pace_scale(θ, cov) -> Vector
@@ -571,7 +629,9 @@ so extreme results (repairs, many laps down) don't have to be explained by λ
 `age` (#15 stage 2, needs `pace_scale`) adds a population career curve over
 driver age, with only its shape up to a linear tilt identified (see
 `AgeCurveBasis`). `slopes` (#15 stage 2b, needs `pace_scale`) adds a linear
-career slope per driver, centred across drivers (see `CareerRows`).
+career slope per driver, centred across drivers (see `CareerRows`). `dev` (#14,
+needs `pace_scale`) adds a linear in-season development trend per car-season,
+centred within season (see `DevRows`).
 
 `pace_scale` (#15) lets the spread of pace, in % terms, change by season
 with κ_season (see `race_pace_scale`): driver differences are scaled by κ in
@@ -581,7 +641,7 @@ effects are then comparable across eras.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
                                  loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis,
-                                 big_loss::Bool, career_rows)
+                                 big_loss::Bool, career_rows, dev_rows)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ ~ truncated(Normal(0, 1); lower = 0)
@@ -635,6 +695,14 @@ effects are then comparable across eras.
             slope = career_slopes(τ_slope, u_slope)
         end
         hdrv = career_rows === nothing ? nothing : driver_offsets(career_rows.rows, fage, slope)
+        if dev_rows !== nothing     # in-season car development (#14)
+            τ_dev ~ truncated(Normal(0, 1); lower = 0)
+            u_dev ~ filldist(Normal(), length(g.machines))
+            # the car part is not scaled by κ, but hdrv is: pass the car offset as offset/κ
+            hcar = dev_trends(τ_dev, u_dev, g, season_counts)[dev_rows.mach] .* dev_rows.posc ./
+                   κs[cov.season][vcat(g.t_race, g.c_race)]
+            hdrv = hdrv === nothing ? hcar : hdrv .+ hcar
+        end
         # each call matches a ReverseDiff binding of the fused rule (see paceloss_loglik_cc)
         if big_loss
             @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], hdrv,
@@ -650,7 +718,7 @@ end
 
 function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                           pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
-                          slopes::Bool = false)
+                          slopes::Bool = false, dev::Bool = false)
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     cov = LossCovariates(g)
     (era === :rw || pace_scale) && cov.n_seasons < 2 &&
@@ -658,10 +726,11 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     age && !pace_scale && throw(ArgumentError("the age curve is implemented for pace-scale models (pace_scale = true)"))
     big_loss && !pace_scale && throw(ArgumentError("the big-loss component is implemented for pace-scale models (pace_scale = true)"))
     slopes && !pace_scale && throw(ArgumentError("career slopes are implemented for pace-scale models (pace_scale = true)"))
+    dev && !pace_scale && throw(ArgumentError("in-season development is implemented for pace-scale models (pace_scale = true)"))
     age && length(g.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
-                            age ? AgeCurveBasis(g) : nothing, big_loss, career_rows)
+                            age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, dev ? DevRows(g) : nothing)
 end
 
 """
@@ -673,13 +742,13 @@ zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gap
 """
 function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
-                      slopes::Bool = false, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
+                      slopes::Bool = false, dev::Bool = false, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
     adtype isa AutoReverseDiff && adtype.compile &&
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
-    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes)
+    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev)
     cov = model.args.cov
     race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
@@ -707,6 +776,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         age && (p = (; p..., τ_age = 0.05 + 0.05 * rand(rng), e_age = 0.1 .* randn(rng, length(g.age_years) - 1)))
         big_loss && (p = (; p..., a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)))
         slopes && (p = (; p..., τ_slope = 0.05 + 0.05 * rand(rng), u_slope = 0.1 .* randn(rng, length(g.competitors))))
+        dev && (p = (; p..., τ_dev = 0.05 + 0.05 * rand(rng), u_dev = 0.1 .* randn(rng, length(g.machines))))
         return InitFromParams(p)
     end
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler,

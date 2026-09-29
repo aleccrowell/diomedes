@@ -25,6 +25,13 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
     end
     ct = κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach]
     cc = κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach]
+    if haskey(θ, :τ_dev)                  # in-season car development (#14), not scaled by κ
+        dr = DevRows(g)
+        hcar = dev_trends(θ.τ_dev, θ.u_dev, g, sc)[dr.mach] .* dr.posc
+        nt = length(g.t_comp)
+        ct = ct .+ hcar[1:nt]
+        cc = cc .+ hcar[(nt + 1):end]
+    end
     csum, n = zeros(length(θ.γ)), zeros(Int, length(θ.γ))
     for (c, r) in zip(ct, g.t_race); csum[r] += c; n[r] += 1; end
     for (c, r) in zip(cc, g.c_race); csum[r] += c; n[r] += 1; end
@@ -73,14 +80,15 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
-                            big_loss = false, slopes = false)
+                            big_loss = false, slopes = false, dev = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
-    dur, kappa, age, big, slopes = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts, "slope" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope")]
+    dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
+                                        "slope" in parts, "dev" in parts
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa, age, big_loss = big, slopes)
+            pace_scale = kappa, age, big_loss = big, slopes, dev)
 end
 
 """
@@ -109,5 +117,5 @@ function model_param_names(spec)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
     return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
             pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
-            slope_param_names(spec.slopes)...)
+            slope_param_names(spec.slopes)..., dev_param_names(spec.dev)...)
 end

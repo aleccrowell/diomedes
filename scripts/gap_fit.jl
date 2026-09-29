@@ -26,7 +26,7 @@ chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
 spec = model_spec(model)
 fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
-                 age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, kw...)
+                 age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev, kw...)
 
 res = fetch_results(ErgastCSV(data_dir), 1950:2100)
 g = prepare_gaps(res; include_lapped = mode == "all")
@@ -57,8 +57,8 @@ if spec.family === :pl
             "baseline mean loss exp(a_λ) ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
     for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]...,
               Diomedes.pace_param_names(spec.pace_scale)..., Diomedes.age_param_names(spec.age)...,
-              Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)...)
-        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age, :u_slope) && continue
+              Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)..., Diomedes.dev_param_names(spec.dev)...)
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age, :u_slope, :u_dev) && continue
         println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
     end
 end
