@@ -263,7 +263,7 @@ function gap_effects_table(chain, g::GapData)
     B = ZeroSumBases(g)
     # full-length vectors per draw; chains from before #25 store them directly
     draws(sym) = stack(vec(chain[sym]); dims = 1)
-    full(sym, xsym, H) = string(xsym) in names_in ? draws(xsym) * H' : draws(sym)
+    full(sym, xsym, M) = string(xsym) in names_in ? draws(xsym) * Matrix(M)' : draws(sym)
     comp = mapslices(sum_to_zero, full(:z_comp, :x_comp, B.comp); dims = 2) .* vec(chain[:σ_comp])
     counts = season_counts(g)
     centred = "b_mach" in names_in || "bx_mach" in names_in          # #15 models
