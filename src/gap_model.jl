@@ -175,6 +175,26 @@ function sum_to_zero_by(z::AbstractVector, group::Vector{Int}, counts::Vector{In
 end
 
 """
+    PriorScale(g::GapData) -> (; s, m)
+
+Scale and location of a dataset's gaps (% of the winner's time), used to set
+weakly informative priors in the same units for every series (#30): `s` is the
+median absolute deviation of all rows from their race's median (lapped cars at
+the midpoint of their interval), and `m` the median over races of the race
+median. F1 1950–2025: s ≈ 1.15, m ≈ 2.1; WRC top two tiers 2018–25: s ≈ 4.9,
+m ≈ 7.7. Priors written for one series' scale are not reused on another's.
+"""
+function PriorScale(g::GapData)
+    y = vcat(g.y, (g.lo .+ g.hi) ./ 2)
+    r = vcat(g.t_race, g.c_race)
+    byrace = [Float64[] for _ in eachindex(g.races)]
+    for i in eachindex(y); push!(byrace[r[i]], y[i]); end
+    med = [isempty(v) ? NaN : median(v) for v in byrace]
+    s = median(abs.(y .- med[r]))
+    return (; s = s > 0 ? s : 1.0, m = median(filter(!isnan, med)))
+end
+
+"""
     gap_effects(g::GapData; noise = StudentTNoise(4))
 
 % gap to winner = race intercept + competitor effect + machine-season effect + noise,
@@ -197,18 +217,20 @@ with lapped finishers as interval-censored observations.
   a slow stop, a few laps down) inflated σ_y from 0.48% (timed rows only) to
   3.7% once lapped cars were included; Student-t(4) brings it to ~1.0%.
 """
-@model function gap_effects(g::GapData, season_counts::Vector{Int}, noise::Noise)
-    σ_comp ~ truncated(Normal(0, 2); lower = 0)
-    σ_mach ~ truncated(Normal(0, 2); lower = 0)
-    σ_y ~ truncated(Normal(0, 2); lower = 0)
+@model function gap_effects(g::GapData, season_counts::Vector{Int}, noise::Noise, ps)
+    # priors in units of the dataset's gap scale (#30; see PriorScale)
+    σ_comp ~ truncated(Normal(0, 2ps.s); lower = 0)
+    σ_mach ~ truncated(Normal(0, 2ps.s); lower = 0)
+    σ_y ~ truncated(Normal(0, 2ps.s); lower = 0)
     z_comp ~ filldist(Normal(), length(g.competitors))
     z_mach ~ filldist(Normal(), length(g.machines))
-    γ ~ filldist(Normal(0, 5), length(g.races))
+    γ ~ filldist(Normal(ps.m, 4ps.s), length(g.races))
     @addlogprob! gap_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ_y, g, season_counts, noise)
 end
 
 season_counts(g::GapData) = [count(==(k), g.mach_season) for k in 1:maximum(g.mach_season)]
-gap_effects(g::GapData; noise::Noise = StudentTNoise(4)) = gap_effects(g, season_counts(g), noise)
+gap_effects(g::GapData; noise::Noise = StudentTNoise(4), prior_scale = PriorScale(g)) =
+    gap_effects(g, season_counts(g), noise, prior_scale)
 
 """
     gap_sampler()
@@ -240,13 +262,14 @@ function fit_gaps(g::GapData; noise::Noise = StudentTNoise(4), n_samples::Int = 
         ys = g.y[g.t_race .== r]
         race_mean[r] = isempty(ys) ? 0.0 : mean(ys)
     end
-    scale() = 0.3 + 0.4 * rand(rng)
+    ps = PriorScale(g)
+    scale() = (0.3 + 0.4 * rand(rng)) * ps.s          # start scales at the dataset's gap scale (#30)
     inits = [InitFromParams((; σ_comp = scale(), σ_mach = scale(), σ_y = scale(),
                              z_comp = 0.1 .* randn(rng, length(g.competitors)),
                              z_mach = 0.1 .* randn(rng, length(g.machines)),
                              γ = race_mean .+ 0.1 .* randn(rng, length(race_mean))))
              for _ in 1:n_chains]
-    return run_nuts(gap_effects(g; noise), inits; n_samples, n_chains, ensemble, sampler, rng,
+    return run_nuts(gap_effects(g; noise, prior_scale = ps), inits; n_samples, n_chains, ensemble, sampler, rng,
                     progress, progress_log, log_every, kwargs...)
 end
 

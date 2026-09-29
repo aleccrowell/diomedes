@@ -191,6 +191,16 @@ end
         h = findfirst(r -> r.competitor_id == "hamilton" && r.event_id == "2019-01", eachrow(g.rows))
         @test g.age_years[g.rows.age_bin[h]] == 34
         @test sum(g.age_rows) == nrow(g.rows) && all(>(0), vcat(g.t_age, g.c_age))
+        # prior scale (#30): MAD of all rows about their race median, lapped rows at interval midpoints
+        ps = PriorScale(g)
+        yall, rall = vcat(g.y, (g.lo .+ g.hi) ./ 2), vcat(g.t_race, g.c_race)
+        med = [median(yall[rall .== r]) for r in eachindex(g.races)]
+        @test ps.s ≈ median(abs.(yall .- med[rall])) && ps.m ≈ median(med)
+        # it scales with the data's units: every gap × 3 gives s × 3 and m × 3
+        g3 = GapData(3 .* g.y, g.t_comp, g.t_mach, g.t_race, 3 .* g.lo, 3 .* g.hi, g.c_comp, g.c_mach, g.c_race,
+                     g.mach_season, g.race_season, g.race_minutes, g.t_age, g.c_age, g.age_years, g.age_rows,
+                     g.competitors, g.machines, g.races, g.rows)
+        @test PriorScale(g3).s ≈ 3ps.s && PriorScale(g3).m ≈ 3ps.m
         # the career curve has no constant or linear part (weighted by rows per bin)
         B = AgeCurveBasis(g)
         f = age_curve(0.3, randn(Xoshiro(2), length(g.age_years) - 1), B)
@@ -298,10 +308,11 @@ end
         # reference: plain loops with Distributions
         a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
         b = θ.σ_mach .* (θ.z_mach .- mean(θ.z_mach))     # one season in the fixture
-        H = Turing.truncated(Normal(0, 2); lower = 0)
+        ps = PriorScale(g)                              # priors in the dataset's gap units (#30)
+        H = Turing.truncated(Normal(0, 2ps.s); lower = 0)
         lp = logpdf(H, θ.σ_comp) + logpdf(H, θ.σ_mach) + logpdf(H, θ.σ_y) +
              sum(logpdf.(Normal(), θ.z_comp)) + sum(logpdf.(Normal(), θ.z_mach)) +
-             sum(logpdf.(Normal(0, 5), θ.γ))
+             sum(logpdf.(Normal(ps.m, 4ps.s), θ.γ))
         # race intercepts are relative to the field mean of a[comp] + b[mach] over the race's rows
         races = vcat(g.t_race, g.c_race)
         cs = vcat(a[g.t_comp] .+ b[g.t_mach], a[g.c_comp] .+ b[g.c_mach])
@@ -395,12 +406,13 @@ end
             cdrv && (θ = NamedTuple(k === :z_comp ? (:a_comp => θ.σ_comp .* v) : (k => v) for (k, v) in pairs(θ)))
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
-            lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
+            ps = PriorScale(g)                          # priors in the dataset's gap units (#30)
+            lp = logpdf(H(2ps.s), θ.σ_comp) + logpdf(H(2ps.s), θ.σ_mach) + logpdf(H(ps.s), θ.σ) +
                  (cdrv ? sum(logpdf.(tdrv ? θ.σ_comp * Distributions.TDist(3) : Normal(0, θ.σ_comp), θ.a_comp)) :
                          sum(logpdf.(tdrv ? Distributions.TDist(3) : Normal(), θ.z_comp))) +
                  (kap ? 0.0 : sum(logpdf.(Normal(), θ.z_mach))) +
-                 sum(logpdf.(Normal(0, 5), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
-                 logpdf(Normal(log(2), 1), θ.a_λ)
+                 sum(logpdf.(Normal(ps.m, 4ps.s), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
+                 logpdf(Normal(log(2ps.s), 1), θ.a_λ)
             logitπ, logλ = fill(θ.a_π, nr), fill(θ.a_λ, nr)
             if dur
                 lp += logpdf(Normal(0, 1), θ.β_dur_π) + logpdf(Normal(0, 1), θ.β_dur_λ)
@@ -450,7 +462,7 @@ end
             if age
                 # career curve: random walk over age bins, constant and linear parts
                 # removed by weighted least squares (solved on √w-scaled rows)
-                lp += logpdf(H(0.25), θ.τ_age) + sum(logpdf.(Normal(), θ.e_age))
+                lp += logpdf(H(0.2ps.s), θ.τ_age) + sum(logpdf.(Normal(), θ.e_age))
                 fr = [0.0; cumsum(θ.τ_age .* θ.e_age)]
                 X = hcat(ones(length(fr)), Float64.(g.age_years)); w = sqrt.(g.age_rows)
                 fage = fr .- X * ((w .* X) \ (w .* fr))
@@ -458,7 +470,7 @@ end
             end
             if slp
                 # per-driver slopes, centred across drivers, times (age - driver's mean age) in decades
-                lp += logpdf(H(0.5), θ.τ_slope) + sum(logpdf.(Normal(), θ.u_slope))
+                lp += logpdf(H(0.5ps.s), θ.τ_slope) + sum(logpdf.(Normal(), θ.u_slope))
                 s = θ.τ_slope .* (θ.u_slope .- mean(θ.u_slope))
                 ages, comps = g.age_years[vcat(g.t_age, g.c_age)], vcat(g.t_comp, g.c_comp)
                 m = [any(comps .== d) ? mean(ages[comps .== d]) : 0.0 for d in 1:nc]
@@ -471,7 +483,7 @@ end
             if dev
                 # in-season development: trend per car (centred within season) times the race's
                 # season position (0 = first round, 1 = last) minus the car's mean position; not scaled by κ
-                lp += logpdf(H(1), θ.τ_dev) + sum(logpdf.(Normal(), θ.u_dev))
+                lp += logpdf(H(ps.s), θ.τ_dev) + sum(logpdf.(Normal(), θ.u_dev))
                 t = θ.τ_dev .* (θ.u_dev .- seasonmean(θ.u_dev))
                 rnd = Dict(r.race_key => r.round for r in eachrow(g.rows))
                 pos = zeros(nr)

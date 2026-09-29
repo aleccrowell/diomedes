@@ -646,10 +646,12 @@ effects are then comparable across eras.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
                                  loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis,
-                                 big_loss::Bool, career_rows, dev_rows, centred_drivers::Bool, driver_ν)
-    σ_comp ~ truncated(Normal(0, 2); lower = 0)
-    σ_mach ~ truncated(Normal(0, 2); lower = 0)
-    σ ~ truncated(Normal(0, 1); lower = 0)
+                                 big_loss::Bool, career_rows, dev_rows, centred_drivers::Bool, driver_ν, ps)
+    # priors on %-of-winner quantities are in units of the dataset's gap scale ps.s
+    # (#30; see PriorScale); unitless ones (probabilities, log/logit steps) are not
+    σ_comp ~ truncated(Normal(0, 2ps.s); lower = 0)
+    σ_mach ~ truncated(Normal(0, 2ps.s); lower = 0)
+    σ ~ truncated(Normal(0, ps.s); lower = 0)
     if centred_drivers      # (#28) driver effects in % units: a ~ N(0, σ_comp), as option B did for cars
         if driver_ν === nothing
             a_comp ~ filldist(Normal(0, σ_comp), length(g.competitors))
@@ -663,9 +665,9 @@ effects are then comparable across eras.
     if !pace_scale
         z_mach ~ filldist(Normal(), length(g.machines))
     end
-    γ ~ filldist(Normal(0, 5), length(g.races))
+    γ ~ filldist(Normal(ps.m, 4ps.s), length(g.races))
     a_π ~ Normal(-1.5, 1)
-    a_λ ~ Normal(log(2), 1)
+    a_λ ~ Normal(log(2ps.s), 1)
     θ = (; a_π, a_λ)
     if loss_duration
         β_dur_π ~ Normal(0, 1)
@@ -694,7 +696,7 @@ effects are then comparable across eras.
         b_mach ~ arraydist(Normal.(0, σ_mach .* κs[cov.mach_season]))     # centred car effects
         fage = nothing
         if age_basis !== nothing
-            τ_age ~ truncated(Normal(0, 0.25); lower = 0)
+            τ_age ~ truncated(Normal(0, 0.2ps.s); lower = 0)
             e_age ~ filldist(Normal(), length(g.age_years) - 1)
             fage = age_curve(τ_age, e_age, age_basis)
         end
@@ -704,13 +706,13 @@ effects are then comparable across eras.
         end
         slope = nothing
         if career_rows !== nothing && career_rows.slopes     # per-driver career slopes (#15 stage 2b)
-            τ_slope ~ truncated(Normal(0, 0.5); lower = 0)
+            τ_slope ~ truncated(Normal(0, 0.5ps.s); lower = 0)
             u_slope ~ filldist(Normal(), length(g.competitors))
             slope = career_slopes(τ_slope, u_slope)
         end
         hdrv = career_rows === nothing ? nothing : driver_offsets(career_rows.rows, fage, slope)
         if dev_rows !== nothing     # in-season car development (#14)
-            τ_dev ~ truncated(Normal(0, 1); lower = 0)
+            τ_dev ~ truncated(Normal(0, ps.s); lower = 0)
             u_dev ~ filldist(Normal(), length(g.machines))
             # the car part is not scaled by κ, but hdrv is: pass the car offset as offset/κ
             hcar = dev_trends(τ_dev, u_dev, g, season_counts)[dev_rows.mach] .* dev_rows.posc ./
@@ -733,7 +735,7 @@ end
 function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                           pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                           slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false,
-                          driver_ν = nothing)
+                          driver_ν = nothing, prior_scale = PriorScale(g))
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     cov = LossCovariates(g)
     (era === :rw || pace_scale) && cov.n_seasons < 2 &&
@@ -746,7 +748,7 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
                             age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, dev ? DevRows(g) : nothing,
-                            centred_drivers, driver_ν === nothing ? nothing : Float64(driver_ν))
+                            centred_drivers, driver_ν === nothing ? nothing : Float64(driver_ν), prior_scale)
 end
 
 """
@@ -769,13 +771,14 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
     cov = model.args.cov
     race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
-    scale() = 0.3 + 0.4 * rand(rng)
+    ps = model.args.ps
+    scale() = (0.3 + 0.4 * rand(rng)) * ps.s          # start scales at the dataset's gap scale (#30)
     function init()
         p = (; σ_comp = scale(), σ_mach = scale(), σ = scale(),
              z_comp = 0.1 .* randn(rng, length(g.competitors)),
              z_mach = 0.1 .* randn(rng, length(g.machines)),
              γ = race_mean .+ 0.1 .* randn(rng, length(race_mean)),
-             a_π = -1.5 + 0.1 * randn(rng), a_λ = log(2) + 0.1 * randn(rng))
+             a_π = -1.5 + 0.1 * randn(rng), a_λ = log(2ps.s) + 0.1 * randn(rng))
         loss_duration && (p = (; p..., β_dur_π = 0.1 * randn(rng), β_dur_λ = 0.1 * randn(rng)))
         if era === :decade || era === :regime
             k = era === :decade ? cov.n_decades : cov.n_regimes
