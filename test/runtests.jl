@@ -624,13 +624,17 @@ end
         @test cor([est["d$i"] for i in 1:n_comp], comp_eff .- mean(comp_eff)) > 0.8
         conv = convergence_summary(chain)
         @test conv.max_rhat < 1.1 && conv.min_ess > 20
+        # convergence of the identified quantities (#25): all groups present and mixing
+        ic = identified_convergence(chain, g, "pl")
+        @test Set(keys(ic)) ⊇ Set((:overall, :drivers, :cars, :races, :scalars))
+        @test ic.overall.max_rhat < 1.1 && ic.drivers.min_ess > 20
         # pointwise log-likelihoods from the chain: shape, and draw (1, 1) sums to the fused likelihood
         ll = pointwise_loglik(chain, g, "pl")
         @test size(ll) == (300, 2, length(g.y) + length(g.lo))
         θ = Diomedes.draw(chain, (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, :a_π, :a_λ), 1, 1)
         @test sum(ll[1, 1, :]) ≈ Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach,
             θ.σ, fill(1 / (1 + exp(-θ.a_π)), length(g.races)), fill(exp(θ.a_λ), length(g.races)),
-            g, Diomedes.season_counts(g))
+            nothing, g, Diomedes.season_counts(g))
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "gap_effects recovers simulated effects with censoring" begin

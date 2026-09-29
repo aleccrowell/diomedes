@@ -64,7 +64,15 @@ if spec.family === :pl
 end
 println("divergences: ", count(identity, chain[:numerical_error]),
         ", mean tree depth: ", round(mean(chain[:tree_depth]); digits = 2))
-println("convergence: ", convergence_summary(chain))
+println("convergence (raw sampled coordinates): ", convergence_summary(chain))
+# convergence of what the results use: centred effects, per-race loss/pace, scalars (#25)
+ic = identified_convergence(chain, g, model)
+println("convergence (identified quantities): max R-hat $(round(ic.overall.max_rhat; digits = 3)), ",
+        "min ESS $(round(ic.overall.min_ess; digits = 1))")
+for (k, v) in pairs(ic)
+    k === :overall && continue
+    println("  ", rpad(k, 8), " max R-hat $(round(v.max_rhat; digits = 3)), min ESS $(round(v.min_ess; digits = 1)) ($(v.worst))")
+end
 
 eff = gap_effects_table(chain, g)
 CSV.write("output/gap_$(mode)_$(model)_competitor_effects.csv", eff.competitors)
