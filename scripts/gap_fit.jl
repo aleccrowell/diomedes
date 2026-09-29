@@ -58,7 +58,7 @@ if spec.family === :pl
     for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]...,
               Diomedes.pace_param_names(spec.pace_scale)..., Diomedes.age_param_names(spec.age)...,
               Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)...)
-        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age, :u_slope) && continue
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :bx_mach, :e_age, :u_slope, :x_slope) && continue
         println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
     end
 end

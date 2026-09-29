@@ -196,18 +196,19 @@ with lapped finishers as interval-censored observations.
   a slow stop, a few laps down) inflated σ_y from 0.48% (timed rows only) to
   3.7% once lapped cars were included; Student-t(4) brings it to ~1.0%.
 """
-@model function gap_effects(g::GapData, season_counts::Vector{Int}, noise::Noise)
+@model function gap_effects(g::GapData, season_counts::Vector{Int}, noise::Noise, B)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ_y ~ truncated(Normal(0, 2); lower = 0)
-    z_comp ~ filldist(Normal(), length(g.competitors))
-    z_mach ~ filldist(Normal(), length(g.machines))
+    # sum-to-zero coordinates (#25): z = H·x has exactly the prior of centred N(0, 1) effects
+    x_comp ~ filldist(Normal(), size(B.comp, 2))
+    x_mach ~ filldist(Normal(), size(B.mach, 2))
     γ ~ filldist(Normal(0, 5), length(g.races))
-    @addlogprob! gap_loglik(γ, z_comp, σ_comp, z_mach, σ_mach, σ_y, g, season_counts, noise)
+    @addlogprob! gap_loglik(γ, B.comp * x_comp, σ_comp, B.mach * x_mach, σ_mach, σ_y, g, season_counts, noise)
 end
 
 season_counts(g::GapData) = [count(==(k), g.mach_season) for k in 1:maximum(g.mach_season)]
-gap_effects(g::GapData; noise::Noise = StudentTNoise(4)) = gap_effects(g, season_counts(g), noise)
+gap_effects(g::GapData; noise::Noise = StudentTNoise(4)) = gap_effects(g, season_counts(g), noise, ZeroSumBases(g))
 
 """
     gap_sampler()
@@ -241,8 +242,8 @@ function fit_gaps(g::GapData; noise::Noise = StudentTNoise(4), n_samples::Int = 
     end
     scale() = 0.3 + 0.4 * rand(rng)
     inits = [InitFromParams((; σ_comp = scale(), σ_mach = scale(), σ_y = scale(),
-                             z_comp = 0.1 .* randn(rng, length(g.competitors)),
-                             z_mach = 0.1 .* randn(rng, length(g.machines)),
+                             x_comp = 0.1 .* randn(rng, length(g.competitors) - 1),
+                             x_mach = 0.1 .* randn(rng, size(ZeroSumBases(g).mach, 2)),
                              γ = race_mean .+ 0.1 .* randn(rng, length(race_mean))))
              for _ in 1:n_chains]
     return run_nuts(gap_effects(g; noise), inits; n_samples, n_chains, ensemble, sampler, rng,
@@ -258,12 +259,16 @@ With a pace scale (#15), competitor effects are in average-season units and
 machine effects in their own season's units.
 """
 function gap_effects_table(chain, g::GapData)
+    names_in = Set(string.(Turing.FlexiChains.parameters(chain)))
+    B = ZeroSumBases(g)
+    # full-length vectors per draw; chains from before #25 store them directly
     draws(sym) = stack(vec(chain[sym]); dims = 1)
-    comp = mapslices(sum_to_zero, draws(:z_comp); dims = 2) .* vec(chain[:σ_comp])
+    full(sym, xsym, H) = string(xsym) in names_in ? draws(xsym) * H' : draws(sym)
+    comp = mapslices(sum_to_zero, full(:z_comp, :x_comp, B.comp); dims = 2) .* vec(chain[:σ_comp])
     counts = season_counts(g)
-    centred = any(vn -> string(vn) == "b_mach", Turing.FlexiChains.parameters(chain))   # #15 models
-    mach = centred ? mapslices(b -> sum_to_zero_by(b, g.mach_season, counts), draws(:b_mach); dims = 2) :
-        mapslices(z -> sum_to_zero_by(z, g.mach_season, counts), draws(:z_mach); dims = 2) .* vec(chain[:σ_mach])
+    centred = "b_mach" in names_in || "bx_mach" in names_in          # #15 models
+    mach = centred ? mapslices(b -> sum_to_zero_by(b, g.mach_season, counts), full(:b_mach, :bx_mach, B.mach); dims = 2) :
+        mapslices(z -> sum_to_zero_by(z, g.mach_season, counts), full(:z_mach, :x_mach, B.mach); dims = 2) .* vec(chain[:σ_mach])
     names = Dict(zip(g.rows.competitor_id, g.rows.competitor_name))
     all_comp = vcat(g.t_comp, g.c_comp)
     all_mach = vcat(g.t_mach, g.c_mach)

@@ -521,7 +521,7 @@ end
 career_slopes(τ_slope, u_slope) = τ_slope .* (u_slope .- mean(u_slope))
 
 "Names of the pace-scale parameters (#15), in sampling order (after the loss parameters)."
-pace_param_names(pace_scale::Bool) = pace_scale ? (:τ_κ, :e_κ, :b_mach) : ()
+pace_param_names(pace_scale::Bool) = pace_scale ? (:τ_κ, :e_κ, :bx_mach) : ()
 
 "Names of the age-curve parameters (#15 stage 2), in sampling order (after the pace scale)."
 age_param_names(age::Bool) = age ? (:τ_age, :e_age) : ()
@@ -530,7 +530,7 @@ age_param_names(age::Bool) = age ? (:τ_age, :e_age) : ()
 big_param_names(big::Bool) = big ? (:a_ρ, :δ_λ2) : ()
 
 "Names of the career-slope parameters (#15 stage 2b), in sampling order (after the big-loss component)."
-slope_param_names(slopes::Bool) = slopes ? (:τ_slope, :u_slope) : ()
+slope_param_names(slopes::Bool) = slopes ? (:τ_slope, :x_slope) : ()
 
 """
     race_pace_scale(θ, cov) -> Vector
@@ -581,13 +581,16 @@ effects are then comparable across eras.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
                                  loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis,
-                                 big_loss::Bool, career_rows)
+                                 big_loss::Bool, career_rows, B)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ ~ truncated(Normal(0, 1); lower = 0)
-    z_comp ~ filldist(Normal(), length(g.competitors))
+    # effects in sum-to-zero coordinates (#25; see ZeroSumBases): z = H·x
+    x_comp ~ filldist(Normal(), size(B.comp, 2))
+    z_comp = B.comp * x_comp
     if !pace_scale
-        z_mach ~ filldist(Normal(), length(g.machines))
+        x_mach ~ filldist(Normal(), size(B.mach, 2))
+        z_mach = B.mach * x_mach
     end
     γ ~ filldist(Normal(0, 5), length(g.races))
     a_π ~ Normal(-1.5, 1)
@@ -617,7 +620,9 @@ effects are then comparable across eras.
         τ_κ ~ truncated(Normal(0, 0.25); lower = 0)
         e_κ ~ filldist(TDist(3), cov.n_seasons - 1)
         κs = season_pace_scale((; τ_κ, e_κ))
-        b_mach ~ arraydist(Normal.(0, σ_mach .* κs[cov.mach_season]))     # centred car effects
+        # centred car effects, sum to zero within season: b = H·bx, bx ~ N(0, σ_mach·κ_season)
+        bx_mach ~ arraydist(Normal.(0, σ_mach .* κs[cov.mach_season[B.mach_rep]]))
+        b_mach = B.mach * bx_mach
         fage = nothing
         if age_basis !== nothing
             τ_age ~ truncated(Normal(0, 0.25); lower = 0)
@@ -631,8 +636,8 @@ effects are then comparable across eras.
         slope = nothing
         if career_rows !== nothing && career_rows.slopes     # per-driver career slopes (#15 stage 2b)
             τ_slope ~ truncated(Normal(0, 0.5); lower = 0)
-            u_slope ~ filldist(Normal(), length(g.competitors))
-            slope = career_slopes(τ_slope, u_slope)
+            x_slope ~ filldist(Normal(), size(B.comp, 2))
+            slope = career_slopes(τ_slope, B.comp * x_slope)
         end
         hdrv = career_rows === nothing ? nothing : driver_offsets(career_rows.rows, fage, slope)
         # each call matches a ReverseDiff binding of the fused rule (see paceloss_loglik_cc)
@@ -661,7 +666,7 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     age && length(g.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
-                            age ? AgeCurveBasis(g) : nothing, big_loss, career_rows)
+                            age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, ZeroSumBases(g))
 end
 
 """
@@ -684,10 +689,11 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
     race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
     scale() = 0.3 + 0.4 * rand(rng)
+    nx_comp, nx_mach = size(model.args.B.comp, 2), size(model.args.B.mach, 2)
     function init()
         p = (; σ_comp = scale(), σ_mach = scale(), σ = scale(),
-             z_comp = 0.1 .* randn(rng, length(g.competitors)),
-             z_mach = 0.1 .* randn(rng, length(g.machines)),
+             x_comp = 0.1 .* randn(rng, nx_comp),
+             x_mach = 0.1 .* randn(rng, nx_mach),
              γ = race_mean .+ 0.1 .* randn(rng, length(race_mean)),
              a_π = -1.5 + 0.1 * randn(rng), a_λ = log(2) + 0.1 * randn(rng))
         loss_duration && (p = (; p..., β_dur_π = 0.1 * randn(rng), β_dur_λ = 0.1 * randn(rng)))
@@ -699,14 +705,14 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
             p = (; p..., τ_π_rw = 0.05 + 0.05 * rand(rng), τ_λ_rw = 0.05 + 0.05 * rand(rng),
                  e_π_rw = 0.1 .* randn(rng, cov.n_seasons - 1), e_λ_rw = 0.1 .* randn(rng, cov.n_seasons - 1))
         end
-        if pace_scale      # centred car effects replace z_mach
-            p = (; (k => v for (k, v) in pairs(p) if k !== :z_mach)...,
+        if pace_scale      # centred car effects replace x_mach
+            p = (; (k => v for (k, v) in pairs(p) if k !== :x_mach)...,
                  τ_κ = 0.05 + 0.05 * rand(rng), e_κ = 0.1 .* randn(rng, cov.n_seasons - 1),
-                 b_mach = 0.1 .* randn(rng, length(g.machines)))
+                 bx_mach = 0.1 .* randn(rng, nx_mach))
         end
         age && (p = (; p..., τ_age = 0.05 + 0.05 * rand(rng), e_age = 0.1 .* randn(rng, length(g.age_years) - 1)))
         big_loss && (p = (; p..., a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)))
-        slopes && (p = (; p..., τ_slope = 0.05 + 0.05 * rand(rng), u_slope = 0.1 .* randn(rng, length(g.competitors))))
+        slopes && (p = (; p..., τ_slope = 0.05 + 0.05 * rand(rng), x_slope = 0.1 .* randn(rng, nx_comp)))
         return InitFromParams(p)
     end
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler,
