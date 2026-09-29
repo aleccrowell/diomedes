@@ -76,7 +76,8 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
     df.lo = Vector{Union{Missing,Float64}}(missing, nrow(df))
     df.hi = Vector{Union{Missing,Float64}}(missing, nrow(df))
     # racing time: official time minus any red-flag suspension (same for every car)
-    df.race_ms = df.time_ms .- coalesce.(df.suspended_ms, 0.0)
+    # (tables without the column, e.g. simulated ones, have no suspensions)
+    df.race_ms = hasproperty(df, :suspended_ms) ? df.time_ms .- coalesce.(df.suspended_ms, 0.0) : df.time_ms
     for g in groupby(df, [:series, :event_id, :stage_id])
         timed = findall(!ismissing, g.race_ms)
         isempty(timed) && continue
