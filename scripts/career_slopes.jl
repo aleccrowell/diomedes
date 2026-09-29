@@ -15,10 +15,7 @@ min_rows = parse(Int, get(ARGS, 2, "40"))
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
 chain = reduce(hcat, deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8])))
 ni, nc = size(chain[:τ_slope])
-H = ZeroSumBases(g).comp
-legacy = any(vn -> string(vn) == "u_slope", Diomedes.Turing.FlexiChains.parameters(chain))   # chains before #25
-u(i, c) = legacy ? chain[:u_slope][i, c] : H * chain[:x_slope][i, c]
-S = reduce(vcat, [career_slopes(chain[:τ_slope][i, c], u(i, c))' for c in 1:nc for i in 1:ni])
+S = reduce(vcat, [career_slopes(chain[:τ_slope][i, c], chain[:u_slope][i, c])' for c in 1:nc for i in 1:ni])
 
 comps = vcat(g.t_comp, g.c_comp)
 ages = [k == 0 ? missing : g.age_years[k] for k in vcat(g.t_age, g.c_age)]

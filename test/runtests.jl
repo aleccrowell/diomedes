@@ -5,7 +5,6 @@ using CSV
 using Random
 using Statistics
 using Test
-using LinearAlgebra: I
 using Turing: logjoint
 using Distributions: Normal, cdf, ccdf, logpdf
 using ADTypes: AutoForwardDiff, AutoReverseDiff
@@ -223,30 +222,6 @@ end
         @test driver_offsets(cr, f, s) ≈ f[vcat(g.t_age, g.c_age)] .+ s[comps] .* cr.agec
     end
 
-    @testset "sum-to-zero bases (#25)" begin
-        for n in (1, 2, 5, 40)
-            H = zerosum_basis(n)
-            @test size(H) == (n, n - 1)
-            @test H' * H ≈ I(n - 1) atol = 1e-12                      # orthonormal columns
-            @test all(abs.(sum(H; dims = 1)) .< 1e-12)                 # each sums to zero
-            n > 1 && @test H * H' ≈ I(n) - fill(1 / n, n, n) atol = 1e-12   # = covariance of centred N(0, I)
-        end
-        res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
-        res2 = copy(res); res2.season .= 2020; res2.event_id .= replace.(res2.event_id, "2019" => "2020")
-        g = prepare_gaps(vcat(res, res2))
-        B = ZeroSumBases(g)
-        nm = length(g.machines)
-        @test size(B.comp) == (length(g.competitors), length(g.competitors) - 1)
-        @test size(B.mach, 2) == nm - maximum(g.mach_season) && length(B.mach_rep) == size(B.mach, 2)
-        b = B.mach * randn(Xoshiro(4), size(B.mach, 2))
-        @test all(abs(sum(b[g.mach_season .== s])) < 1e-10 for s in 1:maximum(g.mach_season))
-        @test all(g.mach_season[B.mach_rep[j]] == g.mach_season[findfirst(!=(0), B.mach[:, j])] for j in axes(B.mach, 2))
-        θ = expand_effects((; x_comp = ones(size(B.comp, 2)), bx_mach = ones(size(B.mach, 2)), σ = 1.0), B)
-        @test θ.z_comp ≈ B.comp * ones(size(B.comp, 2)) && θ.b_mach ≈ B.mach * ones(size(B.mach, 2)) && θ.σ == 1.0
-        @test Diomedes.model_param_names(model_spec("pl_dur_rw_kappa_slope"))[4] === :x_comp
-        @test :b_mach in Diomedes.model_param_names(model_spec("pl_dur_rw_kappa"); legacy = true)
-    end
-
     @testset "logdiffΦ" begin
         for (a, b) in ((-1.0, 1.0), (2.0, 3.0), (8.0, 8.5), (-9.0, -8.0), (30.0, 31.0), (-0.5, 40.0),
                        (-31.0, -30.0), (0.0, 1e-3))
@@ -333,17 +308,14 @@ end
         res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
         g = prepare_gaps(res)
         nc, nm, nr = length(g.competitors), length(g.machines), length(g.races)
-        # effects in sum-to-zero coordinates (#25): z = H·x, one season in the fixture
-        θ = (; σ_comp = 0.7, σ_mach = 1.1, σ_y = 0.8, x_comp = randn(rng, nc - 1),
-             x_mach = randn(rng, nm - 1), γ = randn(rng, nr))
-        z_comp, z_mach = zerosum_basis(nc) * θ.x_comp, zerosum_basis(nm) * θ.x_mach
-        @test abs(sum(z_comp)) < 1e-10 && sum(abs2, z_comp) ≈ sum(abs2, θ.x_comp)   # orthonormal
+        θ = (; σ_comp = 0.7, σ_mach = 1.1, σ_y = 0.8, z_comp = randn(rng, nc),
+             z_mach = randn(rng, nm), γ = randn(rng, nr))
         # reference: plain loops with Distributions
-        a = θ.σ_comp .* z_comp
-        b = θ.σ_mach .* z_mach
+        a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
+        b = θ.σ_mach .* (θ.z_mach .- mean(θ.z_mach))     # one season in the fixture
         H = Turing.truncated(Normal(0, 2); lower = 0)
         lp = logpdf(H, θ.σ_comp) + logpdf(H, θ.σ_mach) + logpdf(H, θ.σ_y) +
-             sum(logpdf.(Normal(), θ.x_comp)) + sum(logpdf.(Normal(), θ.x_mach)) +
+             sum(logpdf.(Normal(), θ.z_comp)) + sum(logpdf.(Normal(), θ.z_mach)) +
              sum(logpdf.(Normal(0, 5), θ.γ))
         # race intercepts are relative to the field mean of a[comp] + b[mach] over the race's rows
         races = vcat(g.t_race, g.c_race)
@@ -412,8 +384,7 @@ end
                                                (true, :rw, true, true, false, false); (true, :rw, true, false, true, false);
                                                (true, :rw, true, true, true, false); (true, :rw, true, false, false, true);
                                                (true, :rw, true, true, true, true)]
-            B = ZeroSumBases(g)
-            θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, x_comp = randn(rng, nc - 1), x_mach = randn(rng, size(B.mach, 2)),
+            θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
             k = era === :decade ? cov.n_decades : cov.n_regimes
@@ -421,16 +392,16 @@ end
                                                z_π_era = randn(rng, k), z_λ_era = randn(rng, k)))
             era === :rw && (θ = (; θ..., τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1),
                                  e_λ_rw = randn(rng, cov.n_seasons - 1)))
-            # pace scale (#15): no x_mach; τ_κ, e_κ and centred car coordinates come last, in sampling order
-            kap && (θ = (; (k => v for (k, v) in pairs(θ) if k !== :x_mach)...,
-                         τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), bx_mach = randn(rng, size(B.mach, 2))))
+            # pace scale (#15): no z_mach; τ_κ, e_κ and centred b_mach come last, in sampling order
+            kap && (θ = (; (k => v for (k, v) in pairs(θ) if k !== :z_mach)...,
+                         τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm)))
             age && (θ = (; θ..., τ_age = 0.2, e_age = randn(rng, length(g.age_years) - 1)))
             big && (θ = (; θ..., a_ρ = -2.5, δ_λ2 = 2.0))
-            slp && (θ = (; θ..., τ_slope = 0.3, x_slope = randn(rng, nc - 1)))
+            slp && (θ = (; θ..., τ_slope = 0.3, u_slope = randn(rng, nc)))
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
             lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
-                 sum(logpdf.(Normal(), θ.x_comp)) + (kap ? 0.0 : sum(logpdf.(Normal(), θ.x_mach))) +
+                 sum(logpdf.(Normal(), θ.z_comp)) + (kap ? 0.0 : sum(logpdf.(Normal(), θ.z_mach))) +
                  sum(logpdf.(Normal(0, 5), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
                  logpdf(Normal(log(2), 1), θ.a_λ)
             logitπ, logλ = fill(θ.a_π, nr), fill(θ.a_λ, nr)
@@ -463,20 +434,19 @@ end
             rowint(lo, hi, r) = big ? Diomedes.pacebig_loginterval(lo, hi, θ.σ, π[r], λ[r], ρ, λ2) :
                                       Diomedes.paceloss_loginterval(lo, hi, θ.σ, π[r], λ[r])
             κ = ones(nr)
-            a = θ.σ_comp .* (B.comp * θ.x_comp)
+            a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
             seasonmean(v) = [mean(v[g.mach_season .== g.mach_season[j]]) for j in 1:nm]
             if kap
                 # κ scales drivers in the likelihood; car spread via the centred car prior
                 lp += logpdf(H(0.25), θ.τ_κ) + sum(logpdf.(Distributions.TDist(3), θ.e_κ))
                 lκ = [0.0; cumsum(θ.τ_κ .* θ.e_κ)]
                 κs = exp.(lκ .- mean(lκ))
-                lp += sum(logpdf.(Normal.(0, θ.σ_mach .* κs[cov.mach_season[B.mach_rep]]), θ.bx_mach))
+                lp += sum(logpdf.(Normal.(0, θ.σ_mach .* κs[cov.mach_season]), θ.b_mach))
                 κ = κs[cov.season]
-                b = B.mach * θ.bx_mach
-                @test b ≈ b .- seasonmean(b) atol = 1e-10          # sums to zero within season
+                b = θ.b_mach .- seasonmean(θ.b_mach)
                 kb = ones(nr)
             else
-                b = θ.σ_mach .* (B.mach * θ.x_mach)                   # sums to zero within season
+                b = θ.σ_mach .* (θ.z_mach .- seasonmean(θ.z_mach))   # centred within season
                 kb = κ
             end
             at, ac = a[g.t_comp], a[g.c_comp]
@@ -491,8 +461,8 @@ end
             end
             if slp
                 # per-driver slopes, centred across drivers, times (age - driver's mean age) in decades
-                lp += logpdf(H(0.5), θ.τ_slope) + sum(logpdf.(Normal(), θ.x_slope))
-                s = θ.τ_slope .* (B.comp * θ.x_slope)
+                lp += logpdf(H(0.5), θ.τ_slope) + sum(logpdf.(Normal(), θ.u_slope))
+                s = θ.τ_slope .* (θ.u_slope .- mean(θ.u_slope))
                 ages, comps = g.age_years[vcat(g.t_age, g.c_age)], vcat(g.t_comp, g.c_comp)
                 m = [any(comps .== d) ? mean(ages[comps .== d]) : 0.0 for d in 1:nc]
                 at = at .+ s[g.t_comp] .* (g.age_years[g.t_age] .- m[g.t_comp]) ./ 10
@@ -641,8 +611,7 @@ end
         # pointwise log-likelihoods from the chain: shape, and draw (1, 1) sums to the fused likelihood
         ll = pointwise_loglik(chain, g, "pl")
         @test size(ll) == (300, 2, length(g.y) + length(g.lo))
-        θ = expand_effects(Diomedes.draw(chain, (:σ_comp, :σ_mach, :σ, :x_comp, :x_mach, :γ, :a_π, :a_λ), 1, 1),
-                           ZeroSumBases(g))
+        θ = Diomedes.draw(chain, (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, :a_π, :a_λ), 1, 1)
         @test sum(ll[1, 1, :]) ≈ Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach,
             θ.σ, fill(1 / (1 + exp(-θ.a_π)), length(g.races)), fill(exp(θ.a_λ), length(g.races)),
             g, Diomedes.season_counts(g))
