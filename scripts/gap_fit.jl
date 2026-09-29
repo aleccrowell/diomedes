@@ -30,7 +30,7 @@ spec = model_spec(model)
 fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
-                 centred_drivers = spec.centred_drivers, kw...)
+                 centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν, kw...)
 
 wrc = match(r"^wrc(\d{4})-(\d{4})$", mode)
 if wrc === nothing

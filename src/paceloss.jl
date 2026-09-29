@@ -634,7 +634,9 @@ needs `pace_scale`) adds a linear in-season development trend per car-season,
 centred within season (see `DevRows`). `centred_drivers` (#28) samples driver
 effects in % units, a ~ N(0, σ_comp), instead of a = σ_comp·z with z ~ N(0, 1):
 it removes the funnel between σ_comp and the effects when most drivers are
-data-rich.
+data-rich. `driver_ν` (#28; `nothing` = Normal) gives driver effects a
+Student-t(ν) prior instead (scale σ_comp), so an outlier driver can sit far from
+the field without its results being explained as a string of incidents.
 
 `pace_scale` (#15) lets the spread of pace, in % terms, change by season
 with κ_season (see `race_pace_scale`): driver differences are scaled by κ in
@@ -644,15 +646,19 @@ effects are then comparable across eras.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
                                  loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis,
-                                 big_loss::Bool, career_rows, dev_rows, centred_drivers::Bool)
+                                 big_loss::Bool, career_rows, dev_rows, centred_drivers::Bool, driver_ν)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ ~ truncated(Normal(0, 1); lower = 0)
     if centred_drivers      # (#28) driver effects in % units: a ~ N(0, σ_comp), as option B did for cars
-        a_comp ~ filldist(Normal(0, σ_comp), length(g.competitors))
+        if driver_ν === nothing
+            a_comp ~ filldist(Normal(0, σ_comp), length(g.competitors))
+        else                # heavy-tailed drivers: a ~ σ_comp·t(ν)
+            a_comp ~ filldist(σ_comp * TDist(driver_ν), length(g.competitors))
+        end
         z_comp = a_comp ./ σ_comp       # the fused rules form σ_comp·(z - z̄) = a - ā
     else
-        z_comp ~ filldist(Normal(), length(g.competitors))
+        z_comp ~ filldist(driver_ν === nothing ? Normal() : TDist(driver_ν), length(g.competitors))
     end
     if !pace_scale
         z_mach ~ filldist(Normal(), length(g.machines))
@@ -726,7 +732,8 @@ end
 
 function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                           pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
-                          slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false)
+                          slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false,
+                          driver_ν = nothing)
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     cov = LossCovariates(g)
     (era === :rw || pace_scale) && cov.n_seasons < 2 &&
@@ -739,7 +746,7 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
                             age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, dev ? DevRows(g) : nothing,
-                            centred_drivers)
+                            centred_drivers, driver_ν === nothing ? nothing : Float64(driver_ν))
 end
 
 """
@@ -751,13 +758,14 @@ zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gap
 """
 function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
-                      slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
+                      slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false, driver_ν = nothing,
+                      n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
     adtype isa AutoReverseDiff && adtype.compile &&
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
-    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers)
+    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν)
     cov = model.args.cov
     race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
