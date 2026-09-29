@@ -72,15 +72,16 @@ end
 # effects `b` (per machine). With a per-race scale κ, κ multiplies the driver
 # part, and the car part too if `κ_cars` (otherwise car spread is scaled in the
 # car prior instead; see `paceloss_effects`). μᵢ = γ[r] + cᵢ - c̄[r].
-function row_means_ab(γ, a, b, g; κ = nothing, κ_cars::Bool = true, fage = nothing)
+function row_means_ab(γ, a, b, g; κ = nothing, κ_cars::Bool = true, hdrv = nothing)
     nr = length(γ)
     ka(r) = κ === nothing ? 1.0 : κ[r]
     kb(r) = (κ === nothing || !κ_cars) ? 1.0 : κ[r]
-    # driver part per row: effect + age curve (bin 0 = unknown age: no age term)
-    fa(bin) = (fage === nothing || bin == 0) ? 0.0 : fage[bin]
-    at = [a[g.t_comp[i]] + fa(g.t_age[i]) for i in eachindex(g.t_race)]
+    # driver part per row: effect + per-row offset (career terms; timed rows, then lapped)
+    nt = length(g.t_race)
+    h(i) = hdrv === nothing ? 0.0 : hdrv[i]
+    at = [a[g.t_comp[i]] + h(i) for i in eachindex(g.t_race)]
     bt = [b[g.t_mach[i]] for i in eachindex(g.t_race)]
-    ac = [a[g.c_comp[i]] + fa(g.c_age[i]) for i in eachindex(g.c_race)]
+    ac = [a[g.c_comp[i]] + h(nt + i) for i in eachindex(g.c_race)]
     bc = [b[g.c_mach[i]] for i in eachindex(g.c_race)]
     ct = [ka(g.t_race[i]) * at[i] + kb(g.t_race[i]) * bt[i] for i in eachindex(at)]
     cc = [ka(g.c_race[i]) * ac[i] + kb(g.c_race[i]) * bc[i] for i in eachindex(ac)]
@@ -93,10 +94,10 @@ function row_means_ab(γ, a, b, g; κ = nothing, κ_cars::Bool = true, fage = no
     return (; n, μt, μc, at, bt, ac, bc, na = length(a), nb = length(b))
 end
 
-# Given dℓ/dμ per row: gradients for γ, a, b, κ and (if `nage > 0`) the age
-# curve per bin. With dcᵢ = dμᵢ - dγ[r]/n[r] (race centring is self-adjoint),
-# da += κ·dc, dfage[bin] += κ·dc, db += κ·dc (or dc), dκ[r] = Σᵢ dcᵢ·(aᵢ [+ bᵢ]).
-function row_pullback_ab(dμt, dμc, st, g; κ = nothing, κ_cars::Bool = true, nage::Int = 0)
+# Given dℓ/dμ per row: gradients for γ, a, b, κ and (if `hdrv`) the per-row
+# driver offsets. With dcᵢ = dμᵢ - dγ[r]/n[r] (race centring is self-adjoint),
+# da += κ·dc, dhᵢ = κ·dc, db += κ·dc (or dc), dκ[r] = Σᵢ dcᵢ·(aᵢ [+ bᵢ]).
+function row_pullback_ab(dμt, dμc, st, g; κ = nothing, κ_cars::Bool = true, hdrv::Bool = false)
     nr = length(st.n)
     ka(r) = κ === nothing ? 1.0 : κ[r]
     kb(r) = (κ === nothing || !κ_cars) ? 1.0 : κ[r]
@@ -104,19 +105,19 @@ function row_pullback_ab(dμt, dμc, st, g; κ = nothing, κ_cars::Bool = true, 
     for i in eachindex(dμt); dγ[g.t_race[i]] += dμt[i]; end
     for i in eachindex(dμc); dγ[g.c_race[i]] += dμc[i]; end
     da, db = zeros(st.na), zeros(st.nb)
-    dfage = zeros(nage)
+    dh = hdrv ? zeros(length(dμt) + length(dμc)) : nothing
     dκ = κ === nothing ? nothing : zeros(nr)
-    for (dμ, race, comp, mach, age, av, bv) in ((dμt, g.t_race, g.t_comp, g.t_mach, g.t_age, st.at, st.bt),
-                                                (dμc, g.c_race, g.c_comp, g.c_mach, g.c_age, st.ac, st.bc))
+    for (dμ, off, race, comp, mach, av, bv) in ((dμt, 0, g.t_race, g.t_comp, g.t_mach, st.at, st.bt),
+                                                (dμc, length(dμt), g.c_race, g.c_comp, g.c_mach, st.ac, st.bc))
         for i in eachindex(dμ)
             r = race[i]; dc = dμ[i] - dγ[r] / st.n[r]
             da[comp[i]] += ka(r) * dc
-            nage > 0 && age[i] > 0 && (dfage[age[i]] += ka(r) * dc)
+            hdrv && (dh[off + i] = ka(r) * dc)
             db[mach[i]] += kb(r) * dc
             κ === nothing || (dκ[r] += dc * (av[i] + (κ_cars ? bv[i] : 0.0)))
         end
     end
-    return (; dγ, da, db, dκ, dfage)
+    return (; dγ, da, db, dκ, dh)
 end
 
 # Non-centred effects: a = σ_comp·(z_comp - mean), b = σ_mach·(z_mach - season mean).

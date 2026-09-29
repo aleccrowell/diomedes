@@ -7,18 +7,25 @@
 # and the tests check that the rows sum to the fused likelihood.
 
 # Centred effects and per-row means for one parameter draw (with the pace scale
-# κ if θ has one, see `race_pace_scale`).
-function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
+# κ if θ has one, see `race_pace_scale`). Effects in sum-to-zero coordinates
+# (#25) are expanded with `B` (built from `g` if not given).
+function _row_means(θ, g::GapData, sc, cov = LossCovariates(g); B = nothing)
+    if any(k -> haskey(θ, k), (:x_comp, :x_mach, :bx_mach, :x_slope))
+        θ = expand_effects(θ, something(B, ZeroSumBases(g)))
+    end
     a = θ.σ_comp .* sum_to_zero(θ.z_comp)
     centred = haskey(θ, :b_mach)          # pace-scale model (#15): centred cars, κ on drivers
     b = centred ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
     κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
     kb = centred ? ones(length(θ.γ)) : κ
     at, ac = a[g.t_comp], a[g.c_comp]
-    if haskey(θ, :τ_age)                  # career curve (#15 stage 2)
-        fage = age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g))
-        at = at .+ [k == 0 ? 0.0 : fage[k] for k in g.t_age]
-        ac = ac .+ [k == 0 ? 0.0 : fage[k] for k in g.c_age]
+    if haskey(θ, :τ_age) || haskey(θ, :τ_slope)     # career terms (#15 stage 2)
+        fage = haskey(θ, :τ_age) ? age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g)) : nothing
+        slope = haskey(θ, :τ_slope) ? career_slopes(θ.τ_slope, θ.u_slope) : nothing
+        h = driver_offsets(CareerRows(g), fage, slope)
+        nt = length(g.t_comp)
+        at = at .+ h[1:nt]
+        ac = ac .+ h[(nt + 1):end]
     end
     ct = κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach]
     cc = κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach]
@@ -30,8 +37,8 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
 end
 
 "Per-row log-likelihoods of `gap_effects` for parameter values `θ` (a NamedTuple)."
-function gap_rows(θ, g::GapData; noise::Noise = StudentTNoise(4), sc = season_counts(g))
-    μt, μc = _row_means(θ, g, sc)
+function gap_rows(θ, g::GapData; noise::Noise = StudentTNoise(4), sc = season_counts(g), B = nothing)
+    μt, μc = _row_means(θ, g, sc; B)
     σ = θ.σ_y
     timed = [logpdf_std(noise, (g.y[i] - μt[i]) / σ) - log(σ) for i in eachindex(μt)]
     lapped = [logdiffcdf_std(noise, (g.lo[i] - μc[i]) / σ, (g.hi[i] - μc[i]) / σ) for i in eachindex(μc)]
@@ -40,9 +47,17 @@ end
 
 "Per-row log-likelihoods of `paceloss_effects` for parameter values `θ` (a NamedTuple)."
 function paceloss_rows(θ, g::GapData; loss_duration::Bool = false, era::Symbol = :none,
-                       sc = season_counts(g), cov = LossCovariates(g))    # pace scale if θ has τ_κ
-    μt, μc = _row_means(θ, g, sc, cov)
+                       sc = season_counts(g), cov = LossCovariates(g),   # pace scale if θ has τ_κ
+                       B = nothing)
+    μt, μc = _row_means(θ, g, sc, cov; B)
     πr, λr = race_loss(θ, cov, loss_duration, era)
+    if haskey(θ, :a_ρ)                    # two-component incident loss (#16)
+        ρ, λ2 = logistic(θ.a_ρ), exp(θ.a_λ + θ.δ_λ2)
+        timed = [pacebig_logpdf(g.y[i] - μt[i], θ.σ, πr[g.t_race[i]], λr[g.t_race[i]], ρ, λ2) for i in eachindex(μt)]
+        lapped = [pacebig_loginterval(g.lo[i] - μc[i], g.hi[i] - μc[i], θ.σ, πr[g.c_race[i]], λr[g.c_race[i]], ρ, λ2)
+                  for i in eachindex(μc)]
+        return vcat(timed, lapped)
+    end
     timed = [paceloss_logpdf(g.y[i] - μt[i], θ.σ, πr[g.t_race[i]], λr[g.t_race[i]]) for i in eachindex(μt)]
     lapped = [paceloss_loginterval(g.lo[i] - μc[i], g.hi[i] - μc[i], θ.σ, πr[g.c_race[i]], λr[g.c_race[i]])
               for i in eachindex(μc)]
@@ -56,19 +71,21 @@ draw(chain, names, i, c) = NamedTuple{names}(Tuple(chain[n][i, c] for n in names
     model_spec(name) -> (; family, loss_duration, era)
 
 Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
-`pl[_dur][_<era>][_kappa][_age]` (`paceloss_effects`), e.g. `pl`, `pl_dur`,
-`pl_regime`, `pl_dur_rw_kappa_age`, with `<era>` one of `decade`, `regime`,
-`rw`, `_kappa` adding the pace scale and `_age` the career curve (#15).
+`pl[_dur][_<era>][_kappa][_age][_big][_slope]` (`paceloss_effects`), e.g. `pl`,
+`pl_dur`, `pl_regime`, `pl_dur_rw_kappa_age`, with `<era>` one of `decade`,
+`regime`, `rw`, `_kappa` adding the pace scale, `_age` the career curve and
+`_slope` per-driver career slopes (#15), and `_big` the big-loss component (#16).
 """
 function model_spec(name::AbstractString)
-    name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false)
+    name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
+                            big_loss = false, slopes = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
-    dur, kappa, age = "dur" in parts, "kappa" in parts, "age" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age")]
+    dur, kappa, age, big, slopes = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts, "slope" in parts
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa, age)
+            pace_scale = kappa, age, big_loss = big, slopes)
 end
 
 """
@@ -79,10 +96,10 @@ PosteriorStats' `loo` expects. `model` is a model name (see `model_spec`).
 """
 function pointwise_loglik(chain, g::GapData, model::AbstractString)
     spec = model_spec(model)
-    sc, cov = season_counts(g), LossCovariates(g)
-    names = model_param_names(spec)
-    rows(θ) = spec.family === :t4 ? gap_rows(θ, g; sc) :
-        paceloss_rows(θ, g; loss_duration = spec.loss_duration, era = spec.era, sc, cov)
+    sc, cov, B = season_counts(g), LossCovariates(g), ZeroSumBases(g)
+    names = chain_param_names(chain, spec)
+    rows(θ) = spec.family === :t4 ? gap_rows(θ, g; sc, B) :
+        paceloss_rows(θ, g; loss_duration = spec.loss_duration, era = spec.era, sc, cov, B)
     ni, nc = size(chain[:σ_comp])
     out = Array{Float64,3}(undef, ni, nc, length(g.y) + length(g.lo))
     for c in 1:nc, i in 1:ni
@@ -91,10 +108,24 @@ function pointwise_loglik(chain, g::GapData, model::AbstractString)
     return out
 end
 
-"Names of the parameters of a model variant (see `model_spec`) needed to evaluate it."
-function model_param_names(spec)
-    spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
-    cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
-    return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
-            pace_param_names(spec.pace_scale)..., age_param_names(spec.age)...)
+"""
+    model_param_names(spec; legacy = false)
+
+Names of the parameters of a model variant (see `model_spec`) needed to
+evaluate it. Effects are in sum-to-zero coordinates (`x_comp`, `x_mach`,
+`bx_mach`, `x_slope`; #25); `legacy = true` gives the full-vector names of
+chains saved before (`z_comp`, `z_mach`, `b_mach`, `u_slope`).
+"""
+function model_param_names(spec; legacy::Bool = false)
+    comp, zmach, bmach, slope = legacy ? (:z_comp, :z_mach, :b_mach, :u_slope) : (:x_comp, :x_mach, :bx_mach, :x_slope)
+    spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, comp, zmach, :γ)
+    cars = spec.pace_scale ? () : (zmach,)          # pace-scale models use centred car effects
+    rename(names) = map(n -> n === :bx_mach ? bmach : n === :x_slope ? slope : n, names)
+    return (:σ_comp, :σ_mach, :σ, comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
+            rename(pace_param_names(spec.pace_scale))..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
+            rename(slope_param_names(spec.slopes))...)
 end
+
+"Parameter names of `spec` as stored in `chain` (full vectors if it predates #25)."
+chain_param_names(chain, spec) =
+    model_param_names(spec; legacy = any(vn -> string(vn) == "z_comp", Turing.FlexiChains.parameters(chain)))
