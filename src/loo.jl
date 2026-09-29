@@ -111,3 +111,60 @@ function model_param_names(spec)
             pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
             slope_param_names(spec.slopes)...)
 end
+
+"""
+    identified_convergence(chain, g::GapData, model) -> NamedTuple
+
+R-hat and bulk ESS of the quantities the likelihood identifies, grouped:
+`drivers` (centred driver effects σ_comp·(z - z̄)), `cars` (centred within
+season), `slopes` (centred career slopes), `age` (the career curve), `races`
+(per-race incident probability, mean loss and pace scale), and `scalars` (every
+scalar parameter: scales, loss intercepts and slopes, step scales). Each group
+is `(; max_rhat, min_ess, worst)`, with `worst` naming the level with the
+lowest ESS; `overall` is the worst over groups.
+
+Unlike `convergence_summary`, which reports the raw sampled coordinates, this
+leaves out directions only the prior sees (the mean of z, of each season's car
+effects, of the slopes) and the standardised coordinates behind scaled effects
+(z = a/σ_comp inherits σ_comp's mixing), so it measures convergence of what the
+results use (#25).
+"""
+function identified_convergence(chain, g::GapData, model::AbstractString)
+    spec = model_spec(model)
+    sc, cov = season_counts(g), LossCovariates(g)
+    names = model_param_names(spec)
+    basis = spec.age ? AgeCurveBasis(g) : nothing
+    ni, nc = size(chain[:σ_comp])
+    scalar_names = [n for n in names if chain[n][1, 1] isa Real]
+    cols = Dict{Symbol,Array{Float64,3}}()
+    function put!(group, i, c, v)
+        A = get!(() -> Array{Float64,3}(undef, ni, nc, length(v)), cols, group)
+        A[i, c, :] = v
+    end
+    for c in 1:nc, i in 1:ni
+        θ = draw(chain, names, i, c)
+        put!(:drivers, i, c, θ.σ_comp .* sum_to_zero(θ.z_comp))
+        put!(:cars, i, c, haskey(θ, :b_mach) ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) :
+                          θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc))
+        haskey(θ, :τ_slope) && put!(:slopes, i, c, career_slopes(θ.τ_slope, θ.u_slope))
+        basis === nothing || put!(:age, i, c, age_curve(θ.τ_age, θ.e_age, basis))
+        if spec.family === :pl
+            πr, λr = race_loss(θ, cov, spec.loss_duration, spec.era)
+            put!(:races, i, c, vcat(πr, λr, haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : Float64[]))
+        end
+        put!(:scalars, i, c, Float64[θ[n] for n in scalar_names])
+    end
+    label(group, k) = group === :drivers ? g.competitors[k] : group === :cars ? g.machines[k] :
+        group === :slopes ? g.competitors[k] : group === :age ? "age $(g.age_years[k])" :
+        group === :scalars ? string(scalar_names[k]) :
+        (nr = length(g.races); k <= nr ? "π $(g.races[k])" : k <= 2nr ? "λ $(g.races[k - nr])" : "κ $(g.races[k - 2nr])")
+    groups = Dict{Symbol,Any}()
+    for (group, A) in cols
+        e, r = MCMCDiagnosticTools.ess(A), MCMCDiagnosticTools.rhat(A)
+        k = argmin(e)
+        groups[group] = (; max_rhat = maximum(r), min_ess = minimum(e), worst = label(group, k))
+    end
+    overall = (; max_rhat = maximum(v.max_rhat for v in values(groups)),
+               min_ess = minimum(v.min_ess for v in values(groups)))
+    return (; overall, NamedTuple(groups)...)
+end
