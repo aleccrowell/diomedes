@@ -58,6 +58,6 @@ export crossed_effects, fit_effects, effects_table, progress_logger,
        convergence_summary
 export GapData, prepare_gaps, gap_effects, fit_gaps, gap_effects_table, NormalNoise, StudentTNoise
 export paceloss_effects, fit_paceloss, LossCovariates, pointwise_loglik, identified_convergence, model_spec, REGIME_STARTS, race_pace_scale, AgeCurveBasis, age_curve,
-       CareerRows, driver_offsets, career_slopes
+       CareerRows, driver_offsets, career_slopes, DevRows, dev_trends
 
 end

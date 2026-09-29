@@ -9,7 +9,7 @@
 # Centred effects and per-row means for one parameter draw (with the pace scale
 # κ if θ has one, see `race_pace_scale`).
 function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
-    a = θ.σ_comp .* sum_to_zero(θ.z_comp)
+    a = haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp)   # centred drivers (#28)
     centred = haskey(θ, :b_mach)          # pace-scale model (#15): centred cars, κ on drivers
     b = centred ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
     κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
@@ -25,6 +25,13 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
     end
     ct = κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach]
     cc = κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach]
+    if haskey(θ, :τ_dev)                  # in-season car development (#14), not scaled by κ
+        dr = DevRows(g)
+        hcar = dev_trends(θ.τ_dev, θ.u_dev, g, sc)[dr.mach] .* dr.posc
+        nt = length(g.t_comp)
+        ct = ct .+ hcar[1:nt]
+        cc = cc .+ hcar[(nt + 1):end]
+    end
     csum, n = zeros(length(θ.γ)), zeros(Int, length(θ.γ))
     for (c, r) in zip(ct, g.t_race); csum[r] += c; n[r] += 1; end
     for (c, r) in zip(cc, g.c_race); csum[r] += c; n[r] += 1; end
@@ -73,14 +80,16 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
-                            big_loss = false, slopes = false)
+                            big_loss = false, slopes = false, dev = false, centred_drivers = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
-    dur, kappa, age, big, slopes = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts, "slope" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope")]
+    dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
+                                        "slope" in parts, "dev" in parts
+    cdrv = "cdrv" in parts
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa, age, big_loss = big, slopes)
+            pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv)
 end
 
 """
@@ -107,9 +116,10 @@ end
 function model_param_names(spec)
     spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
-    return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
+    comp = spec.centred_drivers ? :a_comp : :z_comp        # centred drivers (#28)
+    return (:σ_comp, :σ_mach, :σ, comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
             pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
-            slope_param_names(spec.slopes)...)
+            slope_param_names(spec.slopes)..., dev_param_names(spec.dev)...)
 end
 
 """
@@ -117,7 +127,8 @@ end
 
 R-hat and bulk ESS of the quantities the likelihood identifies, grouped:
 `drivers` (centred driver effects σ_comp·(z - z̄)), `cars` (centred within
-season), `slopes` (centred career slopes), `age` (the career curve), `races`
+season), `slopes` (centred career slopes), `dev` (in-season development trends, #14),
+`age` (the career curve), `races`
 (per-race incident probability, mean loss and pace scale), and `scalars` (every
 scalar parameter: scales, loss intercepts and slopes, step scales). Each group
 is `(; max_rhat, min_ess, worst)`, with `worst` naming the level with the
@@ -143,10 +154,11 @@ function identified_convergence(chain, g::GapData, model::AbstractString)
     end
     for c in 1:nc, i in 1:ni
         θ = draw(chain, names, i, c)
-        put!(:drivers, i, c, θ.σ_comp .* sum_to_zero(θ.z_comp))
+        put!(:drivers, i, c, haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp))
         put!(:cars, i, c, haskey(θ, :b_mach) ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) :
                           θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc))
         haskey(θ, :τ_slope) && put!(:slopes, i, c, career_slopes(θ.τ_slope, θ.u_slope))
+        haskey(θ, :τ_dev) && put!(:dev, i, c, dev_trends(θ.τ_dev, θ.u_dev, g, sc))
         basis === nothing || put!(:age, i, c, age_curve(θ.τ_age, θ.e_age, basis))
         if spec.family === :pl
             πr, λr = race_loss(θ, cov, spec.loss_duration, spec.era)
@@ -154,7 +166,7 @@ function identified_convergence(chain, g::GapData, model::AbstractString)
         end
         put!(:scalars, i, c, Float64[θ[n] for n in scalar_names])
     end
-    label(group, k) = group === :drivers ? g.competitors[k] : group === :cars ? g.machines[k] :
+    label(group, k) = group === :drivers ? g.competitors[k] : group in (:cars, :dev) ? g.machines[k] :
         group === :slopes ? g.competitors[k] : group === :age ? "age $(g.age_years[k])" :
         group === :scalars ? string(scalar_names[k]) :
         (nr = length(g.races); k <= nr ? "π $(g.races[k])" : k <= 2nr ? "λ $(g.races[k - nr])" : "κ $(g.races[k - 2nr])")
