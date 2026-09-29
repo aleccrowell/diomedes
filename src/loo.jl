@@ -9,7 +9,7 @@
 # Centred effects and per-row means for one parameter draw (with the pace scale
 # κ if θ has one, see `race_pace_scale`).
 function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
-    a = θ.σ_comp .* sum_to_zero(θ.z_comp)
+    a = haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp)   # centred drivers (#28)
     centred = haskey(θ, :b_mach)          # pace-scale model (#15): centred cars, κ on drivers
     b = centred ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
     κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
@@ -80,15 +80,16 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
-                            big_loss = false, slopes = false, dev = false)
+                            big_loss = false, slopes = false, dev = false, centred_drivers = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
     dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
                                         "slope" in parts, "dev" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev")]
+    cdrv = "cdrv" in parts
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa, age, big_loss = big, slopes, dev)
+            pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv)
 end
 
 """
@@ -115,7 +116,8 @@ end
 function model_param_names(spec)
     spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
-    return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
+    comp = spec.centred_drivers ? :a_comp : :z_comp        # centred drivers (#28)
+    return (:σ_comp, :σ_mach, :σ, comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
             pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
             slope_param_names(spec.slopes)..., dev_param_names(spec.dev)...)
 end
@@ -152,7 +154,7 @@ function identified_convergence(chain, g::GapData, model::AbstractString)
     end
     for c in 1:nc, i in 1:ni
         θ = draw(chain, names, i, c)
-        put!(:drivers, i, c, θ.σ_comp .* sum_to_zero(θ.z_comp))
+        put!(:drivers, i, c, haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp))
         put!(:cars, i, c, haskey(θ, :b_mach) ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) :
                           θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc))
         haskey(θ, :τ_slope) && put!(:slopes, i, c, career_slopes(θ.τ_slope, θ.u_slope))

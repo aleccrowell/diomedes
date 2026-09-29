@@ -26,7 +26,8 @@ chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
 spec = model_spec(model)
 fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
-                 age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev, kw...)
+                 age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
+                 centred_drivers = spec.centred_drivers, kw...)
 
 res = fetch_results(ErgastCSV(data_dir), 1950:2100)
 g = prepare_gaps(res; include_lapped = mode == "all")

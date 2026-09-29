@@ -363,13 +363,16 @@ end
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
         H(s) = Turing.truncated(Normal(0, s); lower = 0)
-        for (dur, era, kap, age, big, slp, dev) in [[(d, e, false, false, false, false, false) for d in (false, true)
-                                                     for e in (:none, :decade, :regime, :rw)];
-                                                    (true, :rw, true, false, false, false, false); (false, :none, true, false, false, false, false);
-                                                    (true, :rw, true, true, false, false, false); (true, :rw, true, false, true, false, false);
-                                                    (true, :rw, true, true, true, false, false); (true, :rw, true, false, false, true, false);
-                                                    (true, :rw, true, true, true, true, false); (true, :rw, true, false, false, false, true);
-                                                    (true, :rw, true, true, true, true, true)]
+        combos = [[(d, e, false, false, false, false, false) for d in (false, true) for e in (:none, :decade, :regime, :rw)];
+                  (true, :rw, true, false, false, false, false); (false, :none, true, false, false, false, false);
+                  (true, :rw, true, true, false, false, false); (true, :rw, true, false, true, false, false);
+                  (true, :rw, true, true, true, false, false); (true, :rw, true, false, false, true, false);
+                  (true, :rw, true, true, true, true, false); (true, :rw, true, false, false, false, true);
+                  (true, :rw, true, true, true, true, true)]
+        # centred driver effects (#28): with and without the pace scale, and with every term on
+        cases = [[(c, false) for c in combos]; ((true, :rw, false, false, false, false, false), true);
+                 ((true, :rw, true, false, false, false, false), true); ((true, :rw, true, true, true, true, true), true)]
+        for ((dur, era, kap, age, big, slp, dev), cdrv) in cases
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
@@ -385,10 +388,13 @@ end
             big && (θ = (; θ..., a_ρ = -2.5, δ_λ2 = 2.0))
             slp && (θ = (; θ..., τ_slope = 0.3, u_slope = randn(rng, nc)))
             dev && (θ = (; θ..., τ_dev = 0.4, u_dev = randn(rng, nm)))
+            # centred drivers: a_comp (in % units) replaces z_comp, in the same sampling position
+            cdrv && (θ = NamedTuple(k === :z_comp ? (:a_comp => θ.σ_comp .* v) : (k => v) for (k, v) in pairs(θ)))
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
             lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
-                 sum(logpdf.(Normal(), θ.z_comp)) + (kap ? 0.0 : sum(logpdf.(Normal(), θ.z_mach))) +
+                 (cdrv ? sum(logpdf.(Normal(0, θ.σ_comp), θ.a_comp)) : sum(logpdf.(Normal(), θ.z_comp))) +
+                 (kap ? 0.0 : sum(logpdf.(Normal(), θ.z_mach))) +
                  sum(logpdf.(Normal(0, 5), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
                  logpdf(Normal(log(2), 1), θ.a_λ)
             logitπ, logλ = fill(θ.a_π, nr), fill(θ.a_λ, nr)
@@ -421,7 +427,7 @@ end
             rowint(lo, hi, r) = big ? Diomedes.pacebig_loginterval(lo, hi, θ.σ, π[r], λ[r], ρ, λ2) :
                                       Diomedes.paceloss_loginterval(lo, hi, θ.σ, π[r], λ[r])
             κ = ones(nr)
-            a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
+            a = cdrv ? θ.a_comp .- mean(θ.a_comp) : θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
             seasonmean(v) = [mean(v[g.mach_season .== g.mach_season[j]]) for j in 1:nm]
             if kap
                 # κ scales drivers in the likelihood; car spread via the centred car prior
@@ -484,7 +490,8 @@ end
                 r = g.c_race[i]; μ = θ.γ[r] + cs[nt + i] - cbar[r]
                 lp += rowint(g.lo[i] - μ, g.hi[i] - μ, r)
             end
-            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big, slopes = slp, dev)
+            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big, slopes = slp, dev,
+                                     centred_drivers = cdrv)
             @test logjoint(model, θ) ≈ lp
             # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
             # in constrained space: positive-valued parameters are set positive by name
@@ -508,11 +515,15 @@ end
         @test_throws ArgumentError paceloss_effects(prepare_gaps(res); era = :rw)   # one season
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
         @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
-                                          big_loss = false, slopes = false, dev = false)
+                                          big_loss = false, slopes = false, dev = false,
+                                          centred_drivers = false)
         @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
-                                                big_loss = false, slopes = false, dev = false)
+                                                big_loss = false, slopes = false, dev = false,
+                                          centred_drivers = false)
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
         @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
+        @test model_spec("pl_dur_rw_kappa_cdrv").centred_drivers
+        @test Diomedes.model_param_names(model_spec("pl_dur_rw_kappa_cdrv"))[4] === :a_comp
         @test_throws ArgumentError paceloss_effects(g; dev = true)             # needs pace_scale
         @test_throws ArgumentError paceloss_effects(g; slopes = true)          # needs pace_scale
         @test model_spec("pl_dur_rw_kappa_age").age
