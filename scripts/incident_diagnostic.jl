@@ -27,7 +27,7 @@ g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950
 chain = reduce(hcat, deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8])))
 sc, cov = season_counts(g), LossCovariates(g)
 spec = model_spec(model)
-names = Diomedes.model_param_names(spec)
+names = Diomedes.chain_param_names(chain, spec)
 
 # Mean of Exponential(λ) truncated to (a, b), 0 ≤ a < b ≤ Inf.
 function trunc_exp_mean(a, b, λ)
