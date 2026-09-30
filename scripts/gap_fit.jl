@@ -5,6 +5,9 @@
 #   julia --project scripts/gap_fit.jl <timed|all> <model> combine [n=4]    # combine saved chains 1..n
 #
 # `timed`: lead-lap finishers only; `all`: plus lapped cars as intervals.
+# `wrc<first>-<last>` (e.g. wrc2023-2025): WRC stage times in the top two tiers
+# (Rally1 incl. WRC, Rally2 incl. R5; see `wrc_top_tiers`), each special stage
+# a "race", cars grouped by manufacturer × tier × season (#10).
 # <model>: `t4` (Student-t(4) noise) or pace + loss noise `pl[_dur][_<era>]`:
 # `_dur` adds race duration to the loss size, `<era>` (decade, regime, rw) adds
 # era effects to incident probability and loss size, `_kappa` a pace scale by
@@ -29,8 +32,14 @@ fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                  centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν, kw...)
 
-res = fetch_results(ErgastCSV(data_dir), 1950:2100)
-g = prepare_gaps(res; include_lapped = mode == "all")
+wrc = match(r"^wrc(\d{4})-(\d{4})$", mode)
+if wrc === nothing
+    res = fetch_results(ErgastCSV(data_dir), 1950:2100)
+    g = prepare_gaps(res; include_lapped = mode == "all")
+else
+    res = wrc_top_tiers(fetch_results(WRCTiming(), parse(Int, wrc[1]):parse(Int, wrc[2])))
+    g = prepare_gaps(res; machine_key = wrc_machine_key)
+end
 println(g); flush(stdout)
 mkpath("output")
 

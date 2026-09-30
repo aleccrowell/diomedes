@@ -109,6 +109,8 @@ function jolpica_row(race, r)
         codriver_id = missing,
         machine_id = String(r.Constructor.constructorId),
         class = missing,
+        manufacturer = missing,
+        entrant = missing,
         time_ms = time === nothing ? missing : maybefloat(get(time, :millis, nothing)),
         suspended_ms = missing,                # filled per race in jolpica_season
         position = classified ? maybeint(r.position) : missing,
