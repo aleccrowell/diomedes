@@ -30,7 +30,8 @@ spec = model_spec(model)
 fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
-                 centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν, kw...)
+                 centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
+                 race_hier = spec.race_hier, race_mean = spec.race_mean, kw...)
 
 wrc = match(r"^wrc(\d{4})-(\d{4})$", mode)
 if wrc === nothing
@@ -52,7 +53,7 @@ if action == "chain"
     exit()
 elseif action == "combine"
     n = parse(Int, get(ARGS, 4, "4"))
-    chain = reduce(hcat, [deserialize(chain_path(k)) for k in 1:n])
+    chain = reduce(hcat, [rehash_chain!(deserialize(chain_path(k))) for k in 1:n])
 else
     t = @elapsed chain = fit(; n_chains = 4, progress = false, progress_log = stdout)
     println("fit: $(round(t / 60; digits = 1)) min")

@@ -12,7 +12,7 @@ using Diomedes, CSV, DataFrames, Serialization, Statistics
 
 model = get(ARGS, 1, "pl_dur_rw_kappa_age")
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
-chain = reduce(hcat, deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8])))
+chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))
 B = AgeCurveBasis(g)
 ni, nc = size(chain[:τ_age])
 F = reduce(vcat, [age_curve(chain[:τ_age][i, c], chain[:e_age][i, c], B)' for c in 1:nc for i in 1:ni])

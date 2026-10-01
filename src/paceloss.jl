@@ -637,6 +637,14 @@ it removes the funnel between σ_comp and the effects when most drivers are
 data-rich. `driver_ν` (#28; `nothing` = Normal) gives driver effects a
 Student-t(ν) prior instead (scale σ_comp), so an outlier driver can sit far from
 the field without its results being explained as a string of incidents.
+`race_hier` (#32) gives the race intercepts a learned common level and spread,
+γ ~ N(μ_γ, τ_γ), instead of the fixed N(m, 4s). With fixed priors, shifting
+every intercept together trades against the routine incident loss (σ vs π, λ)
+at almost no likelihood cost, and the summed prior over ~1,000 races then
+chose the split; a learned μ_γ removes that pull. Learning τ_γ as well
+shrinks the intercepts (F1: sd 0.81 → 0.41, right tail from 7% to 2.3%), which
+pushes race-level gaps into the loss component. `race_mean` (#32) learns only the
+common level, γ ~ N(μ_γ, 4s), keeping the default spread.
 
 `pace_scale` (#15) lets the spread of pace, in % terms, change by season
 with κ_season (see `race_pace_scale`): driver differences are scaled by κ in
@@ -646,7 +654,8 @@ effects are then comparable across eras.
 """
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
                                  loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis,
-                                 big_loss::Bool, career_rows, dev_rows, centred_drivers::Bool, driver_ν, ps)
+                                 big_loss::Bool, career_rows, dev_rows, centred_drivers::Bool, driver_ν,
+                                 race_hier::Bool, race_mean::Bool, ps)
     # priors on %-of-winner quantities are in units of the dataset's gap scale ps.s
     # (#30; see PriorScale); unitless ones (probabilities, log/logit steps) are not
     σ_comp ~ truncated(Normal(0, 2ps.s); lower = 0)
@@ -665,7 +674,16 @@ effects are then comparable across eras.
     if !pace_scale
         z_mach ~ filldist(Normal(), length(g.machines))
     end
-    γ ~ filldist(Normal(ps.m, 4ps.s), length(g.races))
+    if race_hier            # (#32) hierarchical race intercepts: the common level is learned
+        μ_γ ~ Normal(ps.m, 4ps.s)
+        τ_γ ~ truncated(Normal(0, 4ps.s); lower = 0)
+        γ ~ filldist(Normal(μ_γ, τ_γ), length(g.races))
+    elseif race_mean        # (#32) learned common level only, spread fixed as in the default prior
+        μ_γ ~ Normal(ps.m, 4ps.s)
+        γ ~ filldist(Normal(μ_γ, 4ps.s), length(g.races))
+    else
+        γ ~ filldist(Normal(ps.m, 4ps.s), length(g.races))
+    end
     a_π ~ Normal(-1.5, 1)
     a_λ ~ Normal(log(2ps.s), 1)
     θ = (; a_π, a_λ)
@@ -735,8 +753,10 @@ end
 function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                           pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                           slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false,
-                          driver_ν = nothing, prior_scale = PriorScale(g))
+                          driver_ν = nothing, race_hier::Bool = false, race_mean::Bool = false,
+                          prior_scale = PriorScale(g))
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
+    race_hier && race_mean && throw(ArgumentError("race_hier and race_mean are alternatives"))
     cov = LossCovariates(g)
     (era === :rw || pace_scale) && cov.n_seasons < 2 &&
         throw(ArgumentError("random walks over seasons need at least 2 seasons"))
@@ -748,7 +768,7 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
                             age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, dev ? DevRows(g) : nothing,
-                            centred_drivers, driver_ν === nothing ? nothing : Float64(driver_ν), prior_scale)
+                            centred_drivers, driver_ν === nothing ? nothing : Float64(driver_ν), race_hier, race_mean, prior_scale)
 end
 
 """
@@ -761,15 +781,16 @@ zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gap
 function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                       slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false, driver_ν = nothing,
-                      n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
+                      race_hier::Bool = false, race_mean::Bool = false, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
     adtype isa AutoReverseDiff && adtype.compile &&
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
-    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν)
+    model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν,
+                             race_hier, race_mean)
     cov = model.args.cov
-    race_mean = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
+    race_gap = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
     ps = model.args.ps
     scale() = (0.3 + 0.4 * rand(rng)) * ps.s          # start scales at the dataset's gap scale (#30)
@@ -777,7 +798,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         p = (; σ_comp = scale(), σ_mach = scale(), σ = scale(),
              z_comp = 0.1 .* randn(rng, length(g.competitors)),
              z_mach = 0.1 .* randn(rng, length(g.machines)),
-             γ = race_mean .+ 0.1 .* randn(rng, length(race_mean)),
+             γ = race_gap .+ 0.1 .* randn(rng, length(race_gap)),
              a_π = -1.5 + 0.1 * randn(rng), a_λ = log(2ps.s) + 0.1 * randn(rng))
         loss_duration && (p = (; p..., β_dur_π = 0.1 * randn(rng), β_dur_λ = 0.1 * randn(rng)))
         if era === :decade || era === :regime
@@ -797,6 +818,8 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         big_loss && (p = (; p..., a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)))
         slopes && (p = (; p..., τ_slope = 0.05 + 0.05 * rand(rng), u_slope = 0.1 .* randn(rng, length(g.competitors))))
         dev && (p = (; p..., τ_dev = 0.05 + 0.05 * rand(rng), u_dev = 0.1 .* randn(rng, length(g.machines))))
+        race_hier && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng), τ_γ = std(race_gap) * (0.9 + 0.2 * rand(rng))))
+        race_mean && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng)))
         centred_drivers && (p = (; (k => v for (k, v) in pairs(p) if k !== :z_comp)...,
                                  a_comp = 0.05 .* randn(rng, length(g.competitors))))
         return InitFromParams(p)
