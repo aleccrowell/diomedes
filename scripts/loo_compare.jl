@@ -22,7 +22,7 @@ println(g)
 results = Dict{Symbol,Any}()
 for m in models
     paths = filter(isfile, ["output/gap_all_$(m)_chain$(k).jls" for k in 1:8])
-    chain = reduce(hcat, deserialize.(paths))
+    chain = reduce(hcat, rehash_chain!.(deserialize.(paths)))
     t = @elapsed ll = pointwise_loglik(chain, g, m)
     r = loo(ll)
     k = r.psis_result.pareto_shape
@@ -35,6 +35,6 @@ end
 
 if length(results) > 1
     println("\n== comparison")
-    show(stdout, MIME"text/plain"(), compare(NamedTuple(results)))
+    show(IOContext(stdout, :displaysize => (100, 250)), MIME"text/plain"(), compare(NamedTuple(results)))   # all columns
     println()
 end

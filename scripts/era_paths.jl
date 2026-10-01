@@ -18,7 +18,7 @@ spec = model_spec(model)
 spec.era === :rw || error("era_paths needs a random-walk model (pl[_dur]_rw)")
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
 cov = LossCovariates(g)
-chain = reduce(hcat, deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8])))
+chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))
 names = Diomedes.model_param_names(spec)
 
 function paths(chain, names, cov, pace_scale)

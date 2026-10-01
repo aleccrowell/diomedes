@@ -66,6 +66,22 @@ function paceloss_rows(θ, g::GapData; loss_duration::Bool = false, era::Symbol 
     return vcat(timed, lapped)
 end
 
+"""
+    rehash_chain!(chain) -> chain
+
+Rebuild the key index of a chain read back with `deserialize`. A FlexiChain
+stores its parameters in a hash table keyed by VarNames, and the hashes saved
+with it can differ from those of the reading process (e.g. after packages are
+recompiled). Lookups then fail (`KeyError`), and `hcat` of such chains silently
+yields `missing` for every key it cannot match. Call this on each chain before
+using it: `chain = reduce(hcat, rehash_chain!.(deserialize.(paths)))`.
+"""
+function rehash_chain!(chain)
+    d = getfield(chain, :_data)
+    parentmodule(typeof(d)).rehash!(d)
+    return chain
+end
+
 # The parameter values of draw (i, c) of a chain, as a NamedTuple.
 draw(chain, names, i, c) = NamedTuple{names}(Tuple(chain[n][i, c] for n in names))
 
@@ -78,12 +94,12 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 `regime`, `rw`, `_kappa` adding the pace scale, `_age` the career curve and
 `_slope` per-driver career slopes (#15), `_big` the big-loss component (#16),
 `_dev` in-season development (#14), `_cdrv`/`_tdrv` centred/Student-t drivers
-(#28), and `_hgam` hierarchical race intercepts (#32).
+(#28), and `_hgam` hierarchical race intercepts or `_mgam` a learned common race level (#32).
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
                             big_loss = false, slopes = false, dev = false, centred_drivers = false,
-                            driver_ν = nothing, race_hier = false)
+                            driver_ν = nothing, race_hier = false, race_mean = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
     dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
@@ -91,11 +107,12 @@ function model_spec(name::AbstractString)
     cdrv = "cdrv" in parts
     tdrv = "tdrv" in parts          # Student-t(3) driver prior (#28)
     hgam = "hgam" in parts          # hierarchical race intercepts (#32)
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv", "hgam")]
+    mgam = "mgam" in parts          # learned common race level only (#32)
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv", "hgam", "mgam")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
             pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
-            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam)
+            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = mgam)
 end
 
 """
@@ -123,7 +140,7 @@ function model_param_names(spec)
     spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
     comp = spec.centred_drivers ? :a_comp : :z_comp        # centred drivers (#28)
-    races = spec.race_hier ? (:μ_γ, :τ_γ, :γ) : (:γ,)      # hierarchical race intercepts (#32)
+    races = spec.race_hier ? (:μ_γ, :τ_γ, :γ) : spec.race_mean ? (:μ_γ, :γ) : (:γ,)   # race intercepts (#32)
     return (:σ_comp, :σ_mach, :σ, comp, cars..., races..., loss_param_names(spec.loss_duration, spec.era)...,
             pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
             slope_param_names(spec.slopes)..., dev_param_names(spec.dev)...)
