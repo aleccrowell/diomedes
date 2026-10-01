@@ -76,23 +76,26 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 `pl[_dur][_<era>][_kappa][_age][_big][_slope]` (`paceloss_effects`), e.g. `pl`,
 `pl_dur`, `pl_regime`, `pl_dur_rw_kappa_age`, with `<era>` one of `decade`,
 `regime`, `rw`, `_kappa` adding the pace scale, `_age` the career curve and
-`_slope` per-driver career slopes (#15), and `_big` the big-loss component (#16).
+`_slope` per-driver career slopes (#15), `_big` the big-loss component (#16),
+`_dev` in-season development (#14), `_cdrv`/`_tdrv` centred/Student-t drivers
+(#28), and `_hgam` hierarchical race intercepts (#32).
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
                             big_loss = false, slopes = false, dev = false, centred_drivers = false,
-                            driver_ν = nothing)
+                            driver_ν = nothing, race_hier = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
     dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
                                         "slope" in parts, "dev" in parts
     cdrv = "cdrv" in parts
     tdrv = "tdrv" in parts          # Student-t(3) driver prior (#28)
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv")]
+    hgam = "hgam" in parts          # hierarchical race intercepts (#32)
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv", "hgam")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
             pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
-            driver_ν = tdrv ? 3.0 : nothing)
+            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam)
 end
 
 """
@@ -120,7 +123,8 @@ function model_param_names(spec)
     spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
     comp = spec.centred_drivers ? :a_comp : :z_comp        # centred drivers (#28)
-    return (:σ_comp, :σ_mach, :σ, comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
+    races = spec.race_hier ? (:μ_γ, :τ_γ, :γ) : (:γ,)      # hierarchical race intercepts (#32)
+    return (:σ_comp, :σ_mach, :σ, comp, cars..., races..., loss_param_names(spec.loss_duration, spec.era)...,
             pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
             slope_param_names(spec.slopes)..., dev_param_names(spec.dev)...)
 end

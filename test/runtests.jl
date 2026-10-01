@@ -401,7 +401,10 @@ end
                  ((true, :rw, true, false, false, false, false), true, false); ((true, :rw, true, true, true, true, true), true, false);
                  ((true, :rw, true, false, false, false, false), true, true); ((true, :rw, true, false, false, false, false), false, true);
                  ((true, :rw, true, true, true, true, true), true, true)]
-        for ((dur, era, kap, age, big, slp, dev), cdrv, tdrv) in cases
+        # hierarchical race intercepts (#32): with every term on, and on the plain pace + loss model
+        cases = [[(c..., false) for c in cases]; ((true, :rw, true, true, true, true, true), false, false, true);
+                 ((false, :none, false, false, false, false, false), false, false, true)]
+        for ((dur, era, kap, age, big, slp, dev), cdrv, tdrv, hg) in cases
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
@@ -419,6 +422,9 @@ end
             dev && (θ = (; θ..., τ_dev = 0.4, u_dev = randn(rng, nm)))
             # centred drivers: a_comp (in % units) replaces z_comp, in the same sampling position
             cdrv && (θ = NamedTuple(k === :z_comp ? (:a_comp => θ.σ_comp .* v) : (k => v) for (k, v) in pairs(θ)))
+            # hierarchical race intercepts: μ_γ and τ_γ sampled just before γ
+            hg && (θ = NamedTuple(Iterators.flatten(k === :γ ? ((:μ_γ => 1.8), (:τ_γ => 1.3), (k => v)) : ((k => v),)
+                                                    for (k, v) in pairs(θ))))
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
             ps = PriorScale(g)                          # priors in the dataset's gap units (#30)
@@ -426,7 +432,8 @@ end
                  (cdrv ? sum(logpdf.(tdrv ? θ.σ_comp * Distributions.TDist(3) : Normal(0, θ.σ_comp), θ.a_comp)) :
                          sum(logpdf.(tdrv ? Distributions.TDist(3) : Normal(), θ.z_comp))) +
                  (kap ? 0.0 : sum(logpdf.(Normal(), θ.z_mach))) +
-                 sum(logpdf.(Normal(ps.m, 4ps.s), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
+                 (hg ? logpdf(Normal(ps.m, 4ps.s), θ.μ_γ) + logpdf(H(4ps.s), θ.τ_γ) + sum(logpdf.(Normal(θ.μ_γ, θ.τ_γ), θ.γ)) :
+                       sum(logpdf.(Normal(ps.m, 4ps.s), θ.γ))) + logpdf(Normal(-1.5, 1), θ.a_π) +
                  logpdf(Normal(log(2ps.s), 1), θ.a_λ)
             logitπ, logλ = fill(θ.a_π, nr), fill(θ.a_λ, nr)
             if dur
@@ -522,7 +529,7 @@ end
                 lp += rowint(g.lo[i] - μ, g.hi[i] - μ, r)
             end
             model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big, slopes = slp, dev,
-                                     centred_drivers = cdrv, driver_ν = tdrv ? 3 : nothing)
+                                     centred_drivers = cdrv, driver_ν = tdrv ? 3 : nothing, race_hier = hg)
             @test logjoint(model, θ) ≈ lp
             # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
             # in constrained space: positive-valued parameters are set positive by name
@@ -547,15 +554,18 @@ end
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
         @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
                                           big_loss = false, slopes = false, dev = false,
-                                          centred_drivers = false, driver_ν = nothing)
+                                          centred_drivers = false, driver_ν = nothing, race_hier = false)
         @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
                                                 big_loss = false, slopes = false, dev = false,
-                                          centred_drivers = false, driver_ν = nothing)
+                                          centred_drivers = false, driver_ν = nothing, race_hier = false)
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
         @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
         @test model_spec("pl_dur_rw_kappa_cdrv").centred_drivers
         @test model_spec("pl_dur_rw_kappa_cdrv_tdrv").driver_ν == 3
         @test Diomedes.model_param_names(model_spec("pl_dur_rw_kappa_cdrv"))[4] === :a_comp
+        @test model_spec("pl_dur_rw_kappa_age_big_slope_dev_hgam").race_hier
+        @test model_spec("pl_dur_rw_kappa_age_big_slope_dev_hgam").era === :rw
+        @test Diomedes.model_param_names(model_spec("pl_hgam"))[6:8] == (:μ_γ, :τ_γ, :γ)
         @test_throws ArgumentError paceloss_effects(g; dev = true)             # needs pace_scale
         @test_throws ArgumentError paceloss_effects(g; slopes = true)          # needs pace_scale
         @test model_spec("pl_dur_rw_kappa_age").age
