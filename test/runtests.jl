@@ -15,6 +15,41 @@ import Distributions
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
 
+# Simulated circuit-racing results for the retirement model (#13): per season,
+# `n_car` cars with two drivers each race `n_race` races of `L` laps. Retirement
+# hazards per race distance: mechanical exp(a[1] + car), incident exp(a[2] + driver),
+# collision exp(a[3] + β_col·driver), plus first-lap jumps exp(b1). Returns the
+# results table (and the true effects as a second value with `truth = true`).
+function sim_retirements(rng; n_season = 3, n_race = 6, n_car = 6, L = 50, a = [-1.0, -2.0, -2.5],
+                         b1 = [-3.0, -2.0, -1.5], σ_car = 0.6, σ_drv = 0.5, β_col = 0.5, truth = false)
+    n_drv = 2n_car + 4
+    drv = σ_drv .* randn(rng, n_drv)
+    car = Dict{String,Float64}()
+    rows = DataFrame()
+    for s in 1:n_season
+        seats = shuffle(rng, 1:n_drv)[1:2n_car]        # drivers change seats between seasons
+        for c in 1:n_car
+            car["c$(c)_$(2000 + s)"] = σ_car * randn(rng)
+        end
+        for r in 1:n_race, (j, dv) in enumerate(seats)
+            c = cld(j, 2)
+            η = [a[1] + car["c$(c)_$(2000 + s)"], a[2] + drv[dv], a[3] + β_col * drv[dv]]
+            n, status = L, "Finished"
+            for lap in 1:L
+                h = exp.(η) .* (exp.(b1) .* (lap == 1) .+ 1 / L)
+                if rand(rng) < 1 - exp(-sum(h))
+                    k = findfirst(cumsum(h) ./ sum(h) .> rand(rng))
+                    n, status = lap - 1, ("Engine", "Accident", "Collision")[k]
+                    break
+                end
+            end
+            push!(rows, (series = "sim", season = 2000 + s, event_id = "$(2000 + s)-$r", stage_id = "race",
+                         competitor_id = "d$dv", machine_id = "c$c", laps = n, status = status))
+        end
+    end
+    return truth ? (rows, (; drv, car)) : rows
+end
+
 # log(Φ(b) - Φ(a)) at high precision, using whichever tail keeps the difference representable.
 refdiff(a, b) = setprecision(BigFloat, 2048) do
     Float64(a > 0 ? log(ccdf(Normal(), big(a)) - ccdf(Normal(), big(b))) :
@@ -683,6 +718,65 @@ end
         # elpd per row: log mean likelihood over draws
         ll = randn(rng, 7, 3, 4)
         @test elpd_rows(ll) ≈ [log(mean(exp.(ll[:, :, j]))) for j in 1:4]
+    end
+
+    @testset "retirement model (#13)" begin
+        @test retirement_cause("Finished", 58) === :finish
+        @test retirement_cause("+2 Laps", 56) === :finish
+        @test retirement_cause("Not classified", 40) === :finish
+        @test retirement_cause("Engine", 12) === :mech
+        @test retirement_cause("Spun off", 3) === :incident
+        @test retirement_cause("Collision damage", 0) === :collision
+        @test retirement_cause("Did not qualify", 0) === :nonstart
+        @test retirement_cause("Withdrew", 0) === :nonstart
+        @test retirement_cause("Withdrew", 10) === :other
+        @test retirement_cause("Disqualified", 58) === :other
+        # every outcome of one start (retire in lap 1..L from each cause, or finish) sums to 1
+        for (L, η, b) in ((5, (-1.0, -2.0, -2.5), (-1.0, -0.5, 0.3)), (70, (0.4, -1.0, -3.0), (-3.0, -2.0, -1.0)))
+            p = exp(Diomedes.retire_row(η..., b..., L, L, 0))
+            for n in 0:(L - 1), k in 1:3
+                p += exp(Diomedes.retire_row(η..., b..., n, L, k))
+            end
+            @test p ≈ 1
+        end
+        # fixture: 2019 rounds 1-2
+        d1 = prepare_retirements(fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019))
+        @test length(d1.n) == 40 && length(d1.races) == 2
+        @test [count(==(k), d1.cause) for k in 1:3] == [3, 0, 2]      # Engine, Wheel; Damage, Collision damage
+        @test all(d1.n .< d1.L .|| d1.cause .== 0)
+        @test_throws ArgumentError retirement_effects(d1)              # one season
+        # log density and fused gradient on a small simulated table (3 seasons)
+        rng = Xoshiro(13)
+        d = prepare_retirements(sim_retirements(rng; n_season = 3, n_race = 3))
+        mc, rc = Diomedes.retire_counts(d)
+        S, nm, nc, nr = length(d.seasons), length(d.machines), length(d.competitors), length(d.races)
+        θ = (; a = [-1.0, -2.0, -2.5], τ_rw = [0.2, 0.1, 0.3], e_m = randn(rng, S - 1), e_i = randn(rng, S - 1),
+             e_c = randn(rng, S - 1), b1 = [-2.0, -1.0, -0.5], σ_car = 0.6, σ_drv = 0.4, β_col = 0.7,
+             σ_race = [0.2, 0.3, 0.4], z_car = randn(rng, nm), z_drv = randn(rng, nc), u_m = randn(rng, nr),
+             u_i = randn(rng, nr), u_c = randn(rng, nr))
+        car = θ.σ_car .* Diomedes.sum_to_zero_by(θ.z_car, d.mach_season, mc)
+        drv = θ.σ_drv .* (θ.z_drv .- mean(θ.z_drv))
+        path(τ, e) = (p = [0; cumsum(τ .* e)]; p .- mean(p))
+        α = [θ.a[1] .+ path(θ.τ_rw[1], θ.e_m), θ.a[2] .+ path(θ.τ_rw[2], θ.e_i), θ.a[3] .+ path(θ.τ_rw[3], θ.e_c)]
+        race = [θ.σ_race[k] .* Diomedes.sum_to_zero_by(u, d.race_season, rc) for (k, u) in enumerate((θ.u_m, θ.u_i, θ.u_c))]
+        ll = sum(Diomedes.retire_row(α[1][d.season[j]] + car[d.mach[j]] + race[1][d.race[j]],
+                                     α[2][d.season[j]] + drv[d.comp[j]] + race[2][d.race[j]],
+                                     α[3][d.season[j]] + θ.β_col * drv[d.comp[j]] + race[3][d.race[j]],
+                                     θ.b1..., d.n[j], d.L[j], d.cause[j]) for j in eachindex(d.n))
+        model = retirement_effects(d)
+        @test Turing.DynamicPPL.loglikelihood(model, θ) ≈ ll
+        LDF = Turing.DynamicPPL.LogDensityFunction
+        LDP = Turing.DynamicPPL.LogDensityProblems
+        rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
+        fd = LDF(model; adtype = AutoForwardDiff())
+        pos = (:τ_rw, :σ_car, :σ_drv, :σ_race)
+        for _ in 1:3
+            x = reduce(vcat, [k in pos ? 0.1 .+ rand(rng, length(v)) : 0.5 .* randn(rng, length(v)) for (k, v) in pairs(θ)])
+            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+        end
+        # the likelihood reaches ReverseDiff through the fused rule (not a traced per-start loop)
+        x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θ)])
+        @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(model), z), x).tape) < 1000
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
