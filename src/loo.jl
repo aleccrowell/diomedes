@@ -102,7 +102,9 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 `regime`, `rw`, `_kappa` adding the pace scale, `_age` the career curve and
 `_slope` per-driver career slopes (#15), `_big` the big-loss component (#16),
 `_dev` in-season development (#14), `_cdrv`/`_tdrv` centred/Student-t drivers
-(#28), and `_hgam` hierarchical race intercepts or `_mgam` a learned common race level (#32).
+(#28), and `_hgam` hierarchical race intercepts or `_fgam` the fixed race-intercept
+prior (#32). By default the common race level is learned (`race_mean`, #36);
+`_mgam` names that default explicitly and is accepted for older names.
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
@@ -115,12 +117,14 @@ function model_spec(name::AbstractString)
     cdrv = "cdrv" in parts
     tdrv = "tdrv" in parts          # Student-t(3) driver prior (#28)
     hgam = "hgam" in parts          # hierarchical race intercepts (#32)
-    mgam = "mgam" in parts          # learned common race level only (#32)
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv", "hgam", "mgam")]
+    fgam = "fgam" in parts          # fixed race-intercept prior; the learned common level is the default (#36)
+    count(in(parts), ("hgam", "mgam", "fgam")) <= 1 || throw(ArgumentError("_hgam, _mgam and _fgam are alternatives: $name"))
+    eras = [Symbol(p) for p in parts[2:end]
+            if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
             pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
-            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = mgam)
+            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam)
 end
 
 """

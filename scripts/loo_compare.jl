@@ -9,10 +9,13 @@
 
 using Diomedes, PosteriorStats, Serialization, Statistics
 
-const ALL = ("t4", "pl", "pl_dur", "pl_decade", "pl_regime", "pl_rw", "pl_dur_regime", "pl_dur_rw",
-             "pl_rw_kappa", "pl_dur_rw_kappa", "pl_dur_rw_kappa_age", "pl_dur_rw_kappa_big",
-             "pl_dur_rw_kappa_age_big", "pl_dur_rw_kappa_age_slope", "pl_dur_rw_kappa_age_big_slope",
-             "pl_dur_rw_kappa_age_big_slope_dev")
+# `_fgam`: the fixed race-intercept prior used before #36; bare names learn the common race level
+const ALL = ("t4", "pl_fgam", "pl_dur_fgam", "pl_decade_fgam", "pl_regime_fgam", "pl_rw_fgam",
+             "pl_dur_regime_fgam", "pl_dur_rw_fgam", "pl_rw_kappa_fgam", "pl_dur_rw_kappa_fgam",
+             "pl_dur_rw_kappa_age_fgam", "pl_dur_rw_kappa_big_fgam", "pl_dur_rw_kappa_age_big_fgam",
+             "pl_dur_rw_kappa_age_slope_fgam", "pl_dur_rw_kappa_age_big_slope_fgam",
+             "pl_dur_rw_kappa_age_big_slope_dev_fgam", "pl_dur_rw_kappa_age_big_slope_dev",
+             "pl_dur_rw_kappa_age_big_slope_dev_hgam")
 data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 models = isempty(ARGS) ? [m for m in ALL if isfile("output/gap_all_$(m)_chain1.jls")] : ARGS
 
