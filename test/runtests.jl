@@ -830,7 +830,10 @@ end
         res = fetch_results(JolpicaF1(; cache_dir = mktempdir()), 2011)
         can = res[res.event_name .== "Canadian Grand Prix", :]
         @test first(can.suspended_ms) ≈ 123 * 60_000 rtol = 0.02
-        @test count(>(0), coalesce.(unique(res[:, [:event_id, :suspended_ms]]).suspended_ms, 0.0)) == 1
+        # the only other 2011 suspension: Monaco, ~20 min after Petrov's crash (#17)
+        susp = filter(r -> coalesce(r.suspended_ms, 0.0) > 0, unique(res[:, [:event_name, :suspended_ms]]))
+        @test sort(susp.event_name) == ["Canadian Grand Prix", "Monaco Grand Prix"]
+        @test only(susp[susp.event_name .== "Monaco Grand Prix", :suspended_ms]) ≈ 20 * 60_000 rtol = 0.05
     end
 
     opt_in("DIOMEDES_NETWORK_TESTS") && @testset "network: WRCTiming" begin
