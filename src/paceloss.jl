@@ -491,13 +491,16 @@ struct CareerRows
     comp::Vector{Int}
     agec::Vector{Float64}
 end
-function CareerRows(g::GapData)
+function CareerRows(g::GapData; train = nothing)     # driver mean ages over `train` rows only, if given
     bins = vcat(g.t_age, g.c_age)
     comp = vcat(g.t_comp, g.c_comp)
     known = Float64.(bins .> 0)
     yrs = [k == 0 ? 0.0 : Float64(g.age_years[k]) for k in bins]
     s, n = zeros(length(g.competitors)), zeros(length(g.competitors))
-    for i in eachindex(bins); s[comp[i]] += known[i] * yrs[i]; n[comp[i]] += known[i]; end
+    for i in eachindex(bins)
+        (train === nothing || train[i]) || continue
+        s[comp[i]] += known[i] * yrs[i]; n[comp[i]] += known[i]
+    end
     m = s ./ max.(n, 1)
     agec = [known[i] * (yrs[i] - m[comp[i]]) / 10 for i in eachindex(bins)]
     return CareerRows(max.(bins, 1), known, comp, agec)
@@ -535,7 +538,7 @@ end
 ReverseDiff.@grad_from_chainrules center_by(u::ReverseDiff.TrackedArray, group::Vector{Int}, counts::Vector{Int})
 
 """
-    DevRows(g::GapData)
+    DevRows(g::GapData; train = nothing)
 
 Per-row data for in-season car development (#14), rows in GapData order (timed,
 then lapped): the machine level of each row (`mach`) and the race's position
@@ -551,7 +554,7 @@ struct DevRows
     mach::Vector{Int}
     posc::Vector{Float64}
 end
-function DevRows(g::GapData)
+function DevRows(g::GapData; train = nothing)     # car mean positions over `train` rows only, if given
     races = vcat(g.t_race, g.c_race)
     mach = vcat(g.t_mach, g.c_mach)
     # each race's round, then its position among its season's rounds
@@ -568,7 +571,10 @@ function DevRows(g::GapData)
     end
     p = pos[races]
     s, n = zeros(length(g.machines)), zeros(length(g.machines))
-    for i in eachindex(p); s[mach[i]] += p[i]; n[mach[i]] += 1; end
+    for i in eachindex(p)
+        (train === nothing || train[i]) || continue
+        s[mach[i]] += p[i]; n[mach[i]] += 1
+    end
     return DevRows(mach, p .- (s ./ max.(n, 1))[mach])
 end
 

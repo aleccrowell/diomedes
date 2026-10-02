@@ -639,6 +639,43 @@ end
                                           1 / (1 + exp(-θb.a_ρ)), exp(θb.a_λ + θb.δ_λ2), g, sc)
     end
 
+    @testset "K-fold CV (#18)" begin
+        rng = Xoshiro(51)
+        g = prepare_gaps(fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019))
+        nc, nm, nr = length(g.competitors), length(g.machines), length(g.races)
+        n = length(g.y) + length(g.lo)
+        K = 5
+        folds = kfold_folds(g, K; rng)
+        @test length(folds) == n && all(in(1:K), folds)
+        races = vcat(g.t_race, g.c_race)
+        @test all(count(==(k), folds[races .== r]) <= cld(count(==(r), races), K) for r in 1:nr, k in 1:K)
+        # keeping every row reproduces g
+        gall = subset_gaps(g, trues(n))
+        @test gall.y == g.y && gall.lo == g.lo && gall.age_rows == g.age_rows && nrow(gall.rows) == nrow(g.rows)
+        train = folds .!= 1
+        gt = subset_gaps(g, train)
+        @test length(gt.y) + length(gt.lo) == count(train) == nrow(gt.rows)
+        @test sum(gt.age_rows) == count(train)
+        @test gt.y == g.y[train[1:length(g.y)]]
+        # rows in the training subset score the same whether evaluated on the subset
+        # or on the full data with the training mask, so held-out rows get the
+        # predictions of the model fitted to the subset
+        cov = LossCovariates(g)
+        θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), γ = randn(rng, nr),
+             a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
+             τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm),
+             τ_age = 0.2, e_age = randn(rng, length(g.age_years) - 1), a_ρ = -2.5, δ_λ2 = 2.0,
+             τ_slope = 0.3, u_slope = randn(rng, nc))
+        sub = Diomedes.paceloss_rows(θ, gt; loss_duration = true)
+        full = Diomedes.paceloss_rows(θ, g; loss_duration = true, train, age_basis = AgeCurveBasis(gt))
+        @test full[train] ≈ sub
+        # held-out rows differ from an evaluation that also centres on them
+        @test !(full[.!train] ≈ Diomedes.paceloss_rows(θ, g; loss_duration = true)[.!train])
+        # elpd per row: log mean likelihood over draws
+        ll = randn(rng, 7, 3, 4)
+        @test elpd_rows(ll) ≈ [log(mean(exp.(ll[:, :, j]))) for j in 1:4]
+    end
+
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
         rng = Xoshiro(31)
         n_comp, n_season, cars_per_season, n_race_per_season = 24, 3, 6, 8

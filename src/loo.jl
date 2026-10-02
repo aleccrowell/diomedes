@@ -8,7 +8,12 @@
 
 # Centred effects and per-row means for one parameter draw (with the pace scale
 # κ if θ has one, see `race_pace_scale`).
-function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
+#
+# For held-out rows (K-fold CV, #18), `train` marks the rows (timed, then lapped)
+# the model was fitted to: race centring and each driver's mean age use only
+# those rows, and the age curve's projection comes from `age_basis` (built from
+# the training data), so a held-out row's mean is what the fitted model predicts.
+function _row_means(θ, g::GapData, sc, cov = LossCovariates(g); train = nothing, age_basis = nothing)
     a = haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp)   # centred drivers (#28)
     centred = haskey(θ, :b_mach)          # pace-scale model (#15): centred cars, κ on drivers
     b = centred ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
@@ -16,9 +21,9 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
     kb = centred ? ones(length(θ.γ)) : κ
     at, ac = a[g.t_comp], a[g.c_comp]
     if haskey(θ, :τ_age) || haskey(θ, :τ_slope)     # career terms (#15 stage 2)
-        fage = haskey(θ, :τ_age) ? age_curve(θ.τ_age, θ.e_age, AgeCurveBasis(g)) : nothing
+        fage = haskey(θ, :τ_age) ? age_curve(θ.τ_age, θ.e_age, something(age_basis, AgeCurveBasis(g))) : nothing
         slope = haskey(θ, :τ_slope) ? career_slopes(θ.τ_slope, θ.u_slope) : nothing
-        h = driver_offsets(CareerRows(g), fage, slope)
+        h = driver_offsets(CareerRows(g; train), fage, slope)
         nt = length(g.t_comp)
         at = at .+ h[1:nt]
         ac = ac .+ h[(nt + 1):end]
@@ -26,22 +31,24 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g))
     ct = κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach]
     cc = κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach]
     if haskey(θ, :τ_dev)                  # in-season car development (#14), not scaled by κ
-        dr = DevRows(g)
+        dr = DevRows(g; train)
         hcar = dev_trends(θ.τ_dev, θ.u_dev, g, sc)[dr.mach] .* dr.posc
         nt = length(g.t_comp)
         ct = ct .+ hcar[1:nt]
         cc = cc .+ hcar[(nt + 1):end]
     end
     csum, n = zeros(length(θ.γ)), zeros(Int, length(θ.γ))
-    for (c, r) in zip(ct, g.t_race); csum[r] += c; n[r] += 1; end
-    for (c, r) in zip(cc, g.c_race); csum[r] += c; n[r] += 1; end
+    nt = length(ct)
+    use(i) = train === nothing || train[i]
+    for (i, (c, r)) in enumerate(zip(ct, g.t_race)); use(i) && (csum[r] += c; n[r] += 1); end
+    for (i, (c, r)) in enumerate(zip(cc, g.c_race)); use(nt + i) && (csum[r] += c; n[r] += 1); end
     cbar = csum ./ max.(n, 1)
     return θ.γ[g.t_race] .+ ct .- cbar[g.t_race], θ.γ[g.c_race] .+ cc .- cbar[g.c_race]
 end
 
 "Per-row log-likelihoods of `gap_effects` for parameter values `θ` (a NamedTuple)."
-function gap_rows(θ, g::GapData; noise::Noise = StudentTNoise(4), sc = season_counts(g))
-    μt, μc = _row_means(θ, g, sc)
+function gap_rows(θ, g::GapData; noise::Noise = StudentTNoise(4), sc = season_counts(g), train = nothing)
+    μt, μc = _row_means(θ, g, sc; train)
     σ = θ.σ_y
     timed = [logpdf_std(noise, (g.y[i] - μt[i]) / σ) - log(σ) for i in eachindex(μt)]
     lapped = [logdiffcdf_std(noise, (g.lo[i] - μc[i]) / σ, (g.hi[i] - μc[i]) / σ) for i in eachindex(μc)]
@@ -50,8 +57,9 @@ end
 
 "Per-row log-likelihoods of `paceloss_effects` for parameter values `θ` (a NamedTuple)."
 function paceloss_rows(θ, g::GapData; loss_duration::Bool = false, era::Symbol = :none,
-                       sc = season_counts(g), cov = LossCovariates(g))    # pace scale if θ has τ_κ
-    μt, μc = _row_means(θ, g, sc, cov)
+                       sc = season_counts(g), cov = LossCovariates(g),   # pace scale if θ has τ_κ
+                       train = nothing, age_basis = nothing)             # held-out rows: see _row_means
+    μt, μc = _row_means(θ, g, sc, cov; train, age_basis)
     πr, λr = race_loss(θ, cov, loss_duration, era)
     if haskey(θ, :a_ρ)                    # two-component incident loss (#16)
         ρ, λ2 = logistic(θ.a_ρ), exp(θ.a_λ + θ.δ_λ2)

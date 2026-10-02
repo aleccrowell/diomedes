@@ -25,7 +25,7 @@ using Dates
 using HTTP
 using JSON3
 using LinearAlgebra
-using LogExpFunctions: log1mexp, logaddexp, logistic
+using LogExpFunctions: log1mexp, logaddexp, logistic, logsumexp
 import MCMCDiagnosticTools
 using Random
 using Unicode
@@ -50,6 +50,7 @@ include("gap_model.jl")
 include("paceloss.jl")
 include("likelihoods.jl")
 include("loo.jl")
+include("kfold.jl")
 
 export RESULT_SCHEMA, empty_results, validate_results
 export DataSource, fetch_results, ErgastCSV, JolpicaF1, WRCTiming, wrc_top_tiers, wrc_tier, wrc_machine_key
@@ -59,5 +60,6 @@ export crossed_effects, fit_effects, effects_table, progress_logger,
 export GapData, prepare_gaps, gap_effects, fit_gaps, gap_effects_table, NormalNoise, StudentTNoise, PriorScale
 export paceloss_effects, fit_paceloss, LossCovariates, pointwise_loglik, identified_convergence, model_spec, REGIME_STARTS, race_pace_scale, AgeCurveBasis, age_curve,
        CareerRows, driver_offsets, career_slopes, DevRows, dev_trends, rehash_chain!
+export kfold_folds, subset_gaps, heldout_loglik, elpd_rows
 
 end
