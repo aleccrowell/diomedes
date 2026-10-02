@@ -1,5 +1,8 @@
 # diomedes
 
+[![CI](https://github.com/aleccrowell/diomedes/actions/workflows/CI.yml/badge.svg)](https://github.com/aleccrowell/diomedes/actions/workflows/CI.yml)
+[![Slow tests](https://github.com/aleccrowell/diomedes/actions/workflows/Slow.yml/badge.svg)](https://github.com/aleccrowell/diomedes/actions/workflows/Slow.yml)
+
 Bayesian models of driver vs machine performance in motorsport, in Julia with
 [Turing.jl](https://turinglang.org).
 
@@ -101,6 +104,16 @@ DIOMEDES_NETWORK_TESTS=1 julia --project test/runtests.jl     # + live APIs
 Running `test/runtests.jl` directly rather than `Pkg.test()` reuses the normal
 precompile cache; `Pkg.test()` forces `--check-bounds=yes`, which needs a
 separate, full recompile of the dependency tree. `Pkg.test()` still works (CI).
+
+GitHub Actions runs the fast suite on every push (`CI.yml`), and the slow and
+network groups weekly and on demand (`Slow.yml`).
+
+## Releases
+
+To release, bump `version` in `Project.toml` in a PR. When CI passes on the
+merge commit to master, `Release.yml` tags it `vX.Y.Z` and creates a GitHub
+Release with notes generated from the merged PRs. A version that is already
+tagged is skipped, so other merges don't release.
 
 ## Data sources
 
