@@ -11,7 +11,8 @@
 # <model>: `t4` (Student-t(4) noise) or pace + loss noise `pl[_dur][_<era>]`:
 # `_dur` adds race duration to the loss size, `<era>` (decade, regime, rw) adds
 # era effects to incident probability and loss size, `_kappa` a pace scale by
-# season (#15) (see `model_spec`).
+# season (#15). The common race level is learned by default (#36); `_fgam` uses
+# the fixed race-intercept prior, `_hgam` hierarchical intercepts (see `model_spec`).
 # 1000 draws per chain after 500 warm-up iterations.
 #
 # On a Raspberry Pi 5, running the chains as separate processes (`chain k`, one

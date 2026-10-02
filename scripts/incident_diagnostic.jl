@@ -21,7 +21,7 @@ using Diomedes: _row_means, season_counts, LossCovariates, draw, logdiffΦ, race
                 loss_param_names, paceloss_logpdf, paceloss_loginterval
 using StatsFuns: normlogpdf, normlogcdf
 
-model = get(ARGS, 1, "pl")
+model = get(ARGS, 1, "pl_fgam")
 n_draws = parse(Int, get(ARGS, 2, "200"))
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
 chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))

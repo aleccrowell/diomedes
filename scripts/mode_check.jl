@@ -3,12 +3,12 @@
 #   julia --project scripts/mode_check.jl <model> <A|B> <seed>
 #
 # Starts one chain of <model> on F1 data (all rows) from the last draw of a
-# saved fit of `pl_dur_rw_kappa_age_big_slope_dev`, then samples 500 warm-up +
+# saved fit of `pl_dur_rw_kappa_age_big_slope_dev_fgam` (fixed race-intercept prior), then samples 500 warm-up +
 # 1000 draws, keeping the warm-up so the path away from the start is visible:
 #   A: output/pre_priors/ (the old-priors fit, σ ≈ 0.36, a_π ≈ 0.9)
 #   B: output/            (the scaled-priors fit, σ ≈ 0.41, a_π ≈ 0.27)
 # Parameters the start fit lacks are set from it: μ_γ, τ_γ (`_hgam`) from the
-# mean and sd of its race intercepts (μ_γ only for `_mgam`). Saves the full chain to
+# mean and sd of its race intercepts (μ_γ only for the default learned level). Saves the full chain to
 # output/modecheck_<model>_<start><seed>_full.jls and the kept draws to
 # output/gap_all_<model>_chain<seed>.jls (for `loo_compare.jl`); prints σ and a_π
 # by block.
@@ -16,7 +16,7 @@
 using Diomedes, Random, Serialization, Statistics, Turing
 
 model, start, seed = ARGS[1], ARGS[2], parse(Int, ARGS[3])
-base = "pl_dur_rw_kappa_age_big_slope_dev"
+base = "pl_dur_rw_kappa_age_big_slope_dev_fgam"
 src = start == "A" ? "output/pre_priors/gap_all_$(base)_chain1.jls" : "output/gap_all_$(base)_chain1.jls"
 ch0 = rehash_chain!(deserialize(src))
 θ0 = Diomedes.draw(ch0, Diomedes.model_param_names(model_spec(base)), size(ch0[:σ], 1), 1)

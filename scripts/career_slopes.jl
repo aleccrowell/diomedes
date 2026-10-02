@@ -1,6 +1,6 @@
 # Per-driver career slopes from a pace + loss fit with `_slope` (#15 stage 2b).
 #
-#   julia --project scripts/career_slopes.jl [model=pl_dur_rw_kappa_age_slope] [min_rows=40]
+#   julia --project scripts/career_slopes.jl [model=pl_dur_rw_kappa_age_slope_fgam] [min_rows=40]
 #
 # Prints the drivers whose pace changed most over their careers relative to
 # the average driver, in % of race time per decade of age (average-season
@@ -10,7 +10,7 @@
 
 using Diomedes, CSV, DataFrames, Serialization, Statistics
 
-model = get(ARGS, 1, "pl_dur_rw_kappa_age_slope")
+model = get(ARGS, 1, "pl_dur_rw_kappa_age_slope_fgam")
 min_rows = parse(Int, get(ARGS, 2, "40"))
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
 chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))

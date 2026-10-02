@@ -559,10 +559,10 @@ end
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
         @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
                                           big_loss = false, slopes = false, dev = false,
-                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = false)
+                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true)
         @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
                                                 big_loss = false, slopes = false, dev = false,
-                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = false)
+                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true)
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
         @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
         @test model_spec("pl_dur_rw_kappa_cdrv").centred_drivers
@@ -573,6 +573,15 @@ end
         @test Diomedes.model_param_names(model_spec("pl_hgam"))[6:8] == (:μ_γ, :τ_γ, :γ)
         @test Diomedes.model_param_names(model_spec("pl_mgam"))[6:7] == (:μ_γ, :γ)
         @test_throws ArgumentError paceloss_effects(g; race_hier = true, race_mean = true)
+        # the learned common race level is the default (#36); _fgam is the fixed prior, _mgam an alias
+        @test !model_spec("pl_dur_rw_fgam").race_mean && !model_spec("pl_dur_rw_fgam").race_hier
+        @test model_spec("pl_dur_rw_mgam") == model_spec("pl_dur_rw")
+        @test !model_spec("pl_hgam").race_mean
+        @test Diomedes.model_param_names(model_spec("pl_fgam"))[6] === :γ
+        @test_throws ArgumentError model_spec("pl_mgam_fgam")
+        @test_throws ArgumentError model_spec("pl_hgam_fgam")
+        @test paceloss_effects(g).args.race_mean && !paceloss_effects(g; race_hier = true).args.race_mean
+        @test !paceloss_effects(g; race_mean = false).args.race_mean
         @test_throws ArgumentError paceloss_effects(g; dev = true)             # needs pace_scale
         @test_throws ArgumentError paceloss_effects(g; slopes = true)          # needs pace_scale
         @test model_spec("pl_dur_rw_kappa_age").age

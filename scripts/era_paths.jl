@@ -13,7 +13,7 @@ using Diomedes, CSV, DataFrames, Serialization, Statistics
 using Diomedes: rw_path, draw, loss_param_names
 using LogExpFunctions: logistic
 
-model = get(ARGS, 1, "pl_rw")
+model = get(ARGS, 1, "pl_rw_fgam")
 spec = model_spec(model)
 spec.era === :rw || error("era_paths needs a random-walk model (pl[_dur]_rw)")
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))

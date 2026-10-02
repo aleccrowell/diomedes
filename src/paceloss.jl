@@ -644,7 +644,8 @@ at almost no likelihood cost, and the summed prior over ~1,000 races then
 chose the split; a learned μ_γ removes that pull. Learning τ_γ as well
 shrinks the intercepts (F1: sd 0.81 → 0.41, right tail from 7% to 2.3%), which
 pushes race-level gaps into the loss component. `race_mean` (#32) learns only the
-common level, γ ~ N(μ_γ, 4s), keeping the default spread.
+common level, γ ~ N(μ_γ, 4s), keeping the fixed spread; it is the default (#36),
+and `race_mean = false` (with `race_hier = false`) restores the fixed N(m, 4s).
 
 `pace_scale` (#15) lets the spread of pace, in % terms, change by season
 with κ_season (see `race_pace_scale`): driver differences are scaled by κ in
@@ -753,7 +754,7 @@ end
 function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                           pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                           slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false,
-                          driver_ν = nothing, race_hier::Bool = false, race_mean::Bool = false,
+                          driver_ν = nothing, race_hier::Bool = false, race_mean::Bool = !race_hier,
                           prior_scale = PriorScale(g))
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     race_hier && race_mean && throw(ArgumentError("race_hier and race_mean are alternatives"))
@@ -781,7 +782,7 @@ zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gap
 function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                       slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false, driver_ν = nothing,
-                      race_hier::Bool = false, race_mean::Bool = false, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
+                      race_hier::Bool = false, race_mean::Bool = !race_hier, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing

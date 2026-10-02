@@ -1,6 +1,6 @@
 # Population career curve from a pace + loss fit with `_age` (#15 stage 2).
 #
-#   julia --project scripts/age_curve.jl [model=pl_dur_rw_kappa_age]
+#   julia --project scripts/age_curve.jl [model=pl_dur_rw_kappa_age_fgam]
 #
 # Prints the curve per age (% of race time, in average-season units; negative
 # = faster) with 90% intervals and rows per age. Only the shape up to a linear
@@ -10,7 +10,7 @@
 
 using Diomedes, CSV, DataFrames, Serialization, Statistics
 
-model = get(ARGS, 1, "pl_dur_rw_kappa_age")
+model = get(ARGS, 1, "pl_dur_rw_kappa_age_fgam")
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
 chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))
 B = AgeCurveBasis(g)
