@@ -24,7 +24,7 @@ using StatsFuns: normlogpdf, normlogcdf
 model = get(ARGS, 1, "pl")
 n_draws = parse(Int, get(ARGS, 2, "200"))
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
-chain = reduce(hcat, deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8])))
+chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))
 sc, cov = season_counts(g), LossCovariates(g)
 spec = model_spec(model)
 names = Diomedes.model_param_names(spec)

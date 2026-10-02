@@ -14,7 +14,7 @@
 # those rows, and the age curve's projection comes from `age_basis` (built from
 # the training data), so a held-out row's mean is what the fitted model predicts.
 function _row_means(θ, g::GapData, sc, cov = LossCovariates(g); train = nothing, age_basis = nothing)
-    a = θ.σ_comp .* sum_to_zero(θ.z_comp)
+    a = haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp)   # centred drivers (#28)
     centred = haskey(θ, :b_mach)          # pace-scale model (#15): centred cars, κ on drivers
     b = centred ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
     κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
@@ -30,6 +30,13 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g); train = nothing
     end
     ct = κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach]
     cc = κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach]
+    if haskey(θ, :τ_dev)                  # in-season car development (#14), not scaled by κ
+        dr = DevRows(g; train)
+        hcar = dev_trends(θ.τ_dev, θ.u_dev, g, sc)[dr.mach] .* dr.posc
+        nt = length(g.t_comp)
+        ct = ct .+ hcar[1:nt]
+        cc = cc .+ hcar[(nt + 1):end]
+    end
     csum, n = zeros(length(θ.γ)), zeros(Int, length(θ.γ))
     nt = length(ct)
     use(i) = train === nothing || train[i]
@@ -67,6 +74,22 @@ function paceloss_rows(θ, g::GapData; loss_duration::Bool = false, era::Symbol 
     return vcat(timed, lapped)
 end
 
+"""
+    rehash_chain!(chain) -> chain
+
+Rebuild the key index of a chain read back with `deserialize`. A FlexiChain
+stores its parameters in a hash table keyed by VarNames, and the hashes saved
+with it can differ from those of the reading process (e.g. after packages are
+recompiled). Lookups then fail (`KeyError`), and `hcat` of such chains silently
+yields `missing` for every key it cannot match. Call this on each chain before
+using it: `chain = reduce(hcat, rehash_chain!.(deserialize.(paths)))`.
+"""
+function rehash_chain!(chain)
+    d = getfield(chain, :_data)
+    parentmodule(typeof(d)).rehash!(d)
+    return chain
+end
+
 # The parameter values of draw (i, c) of a chain, as a NamedTuple.
 draw(chain, names, i, c) = NamedTuple{names}(Tuple(chain[n][i, c] for n in names))
 
@@ -77,18 +100,27 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 `pl[_dur][_<era>][_kappa][_age][_big][_slope]` (`paceloss_effects`), e.g. `pl`,
 `pl_dur`, `pl_regime`, `pl_dur_rw_kappa_age`, with `<era>` one of `decade`,
 `regime`, `rw`, `_kappa` adding the pace scale, `_age` the career curve and
-`_slope` per-driver career slopes (#15), and `_big` the big-loss component (#16).
+`_slope` per-driver career slopes (#15), `_big` the big-loss component (#16),
+`_dev` in-season development (#14), `_cdrv`/`_tdrv` centred/Student-t drivers
+(#28), and `_hgam` hierarchical race intercepts or `_mgam` a learned common race level (#32).
 """
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
-                            big_loss = false, slopes = false)
+                            big_loss = false, slopes = false, dev = false, centred_drivers = false,
+                            driver_ν = nothing, race_hier = false, race_mean = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
-    dur, kappa, age, big, slopes = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts, "slope" in parts
-    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope")]
+    dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
+                                        "slope" in parts, "dev" in parts
+    cdrv = "cdrv" in parts
+    tdrv = "tdrv" in parts          # Student-t(3) driver prior (#28)
+    hgam = "hgam" in parts          # hierarchical race intercepts (#32)
+    mgam = "mgam" in parts          # learned common race level only (#32)
+    eras = [Symbol(p) for p in parts[2:end] if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv", "hgam", "mgam")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
-            pace_scale = kappa, age, big_loss = big, slopes)
+            pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
+            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = mgam)
 end
 
 """
@@ -115,7 +147,68 @@ end
 function model_param_names(spec)
     spec.family === :t4 && return (:σ_comp, :σ_mach, :σ_y, :z_comp, :z_mach, :γ)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
-    return (:σ_comp, :σ_mach, :σ, :z_comp, cars..., :γ, loss_param_names(spec.loss_duration, spec.era)...,
+    comp = spec.centred_drivers ? :a_comp : :z_comp        # centred drivers (#28)
+    races = spec.race_hier ? (:μ_γ, :τ_γ, :γ) : spec.race_mean ? (:μ_γ, :γ) : (:γ,)   # race intercepts (#32)
+    return (:σ_comp, :σ_mach, :σ, comp, cars..., races..., loss_param_names(spec.loss_duration, spec.era)...,
             pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
-            slope_param_names(spec.slopes)...)
+            slope_param_names(spec.slopes)..., dev_param_names(spec.dev)...)
+end
+
+"""
+    identified_convergence(chain, g::GapData, model) -> NamedTuple
+
+R-hat and bulk ESS of the quantities the likelihood identifies, grouped:
+`drivers` (centred driver effects σ_comp·(z - z̄)), `cars` (centred within
+season), `slopes` (centred career slopes), `dev` (in-season development trends, #14),
+`age` (the career curve), `races`
+(per-race incident probability, mean loss and pace scale), and `scalars` (every
+scalar parameter: scales, loss intercepts and slopes, step scales). Each group
+is `(; max_rhat, min_ess, worst)`, with `worst` naming the level with the
+lowest ESS; `overall` is the worst over groups.
+
+Unlike `convergence_summary`, which reports the raw sampled coordinates, this
+leaves out directions only the prior sees (the mean of z, of each season's car
+effects, of the slopes) and the standardised coordinates behind scaled effects
+(z = a/σ_comp inherits σ_comp's mixing), so it measures convergence of what the
+results use (#25).
+"""
+function identified_convergence(chain, g::GapData, model::AbstractString)
+    spec = model_spec(model)
+    sc, cov = season_counts(g), LossCovariates(g)
+    names = model_param_names(spec)
+    basis = spec.age ? AgeCurveBasis(g) : nothing
+    ni, nc = size(chain[:σ_comp])
+    scalar_names = [n for n in names if chain[n][1, 1] isa Real]
+    cols = Dict{Symbol,Array{Float64,3}}()
+    function put!(group, i, c, v)
+        A = get!(() -> Array{Float64,3}(undef, ni, nc, length(v)), cols, group)
+        A[i, c, :] = v
+    end
+    for c in 1:nc, i in 1:ni
+        θ = draw(chain, names, i, c)
+        put!(:drivers, i, c, haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp))
+        put!(:cars, i, c, haskey(θ, :b_mach) ? sum_to_zero_by(θ.b_mach, g.mach_season, sc) :
+                          θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc))
+        haskey(θ, :τ_slope) && put!(:slopes, i, c, career_slopes(θ.τ_slope, θ.u_slope))
+        haskey(θ, :τ_dev) && put!(:dev, i, c, dev_trends(θ.τ_dev, θ.u_dev, g, sc))
+        basis === nothing || put!(:age, i, c, age_curve(θ.τ_age, θ.e_age, basis))
+        if spec.family === :pl
+            πr, λr = race_loss(θ, cov, spec.loss_duration, spec.era)
+            put!(:races, i, c, vcat(πr, λr, haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : Float64[]))
+        end
+        put!(:scalars, i, c, Float64[θ[n] for n in scalar_names])
+    end
+    label(group, k) = group === :drivers ? g.competitors[k] : group in (:cars, :dev) ? g.machines[k] :
+        group === :slopes ? g.competitors[k] : group === :age ? "age $(g.age_years[k])" :
+        group === :scalars ? string(scalar_names[k]) :
+        (nr = length(g.races); k <= nr ? "π $(g.races[k])" : k <= 2nr ? "λ $(g.races[k - nr])" : "κ $(g.races[k - 2nr])")
+    groups = Dict{Symbol,Any}()
+    for (group, A) in cols
+        e, r = MCMCDiagnosticTools.ess(A), MCMCDiagnosticTools.rhat(A)
+        k = argmin(e)
+        groups[group] = (; max_rhat = maximum(r), min_ess = minimum(e), worst = label(group, k))
+    end
+    overall = (; max_rhat = maximum(v.max_rhat for v in values(groups)),
+               min_ess = minimum(v.min_ess for v in values(groups)))
+    return (; overall, NamedTuple(groups)...)
 end

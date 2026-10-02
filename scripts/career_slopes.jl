@@ -13,7 +13,7 @@ using Diomedes, CSV, DataFrames, Serialization, Statistics
 model = get(ARGS, 1, "pl_dur_rw_kappa_age_slope")
 min_rows = parse(Int, get(ARGS, 2, "40"))
 g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
-chain = reduce(hcat, deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8])))
+chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))
 ni, nc = size(chain[:τ_slope])
 S = reduce(vcat, [career_slopes(chain[:τ_slope][i, c], chain[:u_slope][i, c])' for c in 1:nc for i in 1:ni])
 

@@ -5,6 +5,7 @@ using CSV
 using Random
 using Statistics
 using Test
+using Serialization: serialize, deserialize
 using Turing: logjoint
 using Distributions: Normal, cdf, ccdf, logpdf
 using ADTypes: AutoForwardDiff, AutoReverseDiff
@@ -84,6 +85,21 @@ end
               Set(["2019-01", "2019-02"])
     end
 
+    @testset "WRC vehicle model normalisation" begin
+        nm = Diomedes.normalise_model
+        @test nm(" i20 Coupé  WRC ") == nm("I20 COUPE WRC") == "I20 COUPE WRC"
+        @test nm("Puma Rally 1") == "PUMA RALLY1"
+        @test nm("Fiesta Rally 3") == nm("FIESTA RALLY3")
+        @test nm("Rally 12x") == "RALLY 12X"  # only a single-digit class number is joined
+        # top two tiers, predecessor class names included
+        @test wrc_tier("WRC") == wrc_tier("Rally1") == "Rally1" && wrc_tier("R5") == wrc_tier("Rally2") == "Rally2"
+        @test ismissing(wrc_tier("Rally3")) && ismissing(wrc_tier(missing))
+        df = DataFrame(season = [2021, 2022, 2022, 2022, 2019], class = ["WRC", "WRC", "Rally1", "Rally3", "R5"],
+                       manufacturer = ["Ford", "Ford", "Toyota", "Ford", "Skoda"])
+        top = wrc_top_tiers(df)
+        @test top.class == ["WRC", "Rally1", "R5"]
+        @test wrc_machine_key.(eachrow(top)) == ["Ford Rally1_2021", "Toyota Rally1_2022", "Skoda Rally2_2019"]
+    end
     @testset "red-flag suspensions" begin
         @test Diomedes.laptime_ms("1:16.956") ≈ 76_956
         @test Diomedes.laptime_ms("16.956") ≈ 16_956
@@ -191,6 +207,16 @@ end
         h = findfirst(r -> r.competitor_id == "hamilton" && r.event_id == "2019-01", eachrow(g.rows))
         @test g.age_years[g.rows.age_bin[h]] == 34
         @test sum(g.age_rows) == nrow(g.rows) && all(>(0), vcat(g.t_age, g.c_age))
+        # prior scale (#30): MAD of all rows about their race median, lapped rows at interval midpoints
+        ps = PriorScale(g)
+        yall, rall = vcat(g.y, (g.lo .+ g.hi) ./ 2), vcat(g.t_race, g.c_race)
+        med = [median(yall[rall .== r]) for r in eachindex(g.races)]
+        @test ps.s ≈ median(abs.(yall .- med[rall])) && ps.m ≈ median(med)
+        # it scales with the data's units: every gap × 3 gives s × 3 and m × 3
+        g3 = GapData(3 .* g.y, g.t_comp, g.t_mach, g.t_race, 3 .* g.lo, 3 .* g.hi, g.c_comp, g.c_mach, g.c_race,
+                     g.mach_season, g.race_season, g.race_minutes, g.t_age, g.c_age, g.age_years, g.age_rows,
+                     g.competitors, g.machines, g.races, g.rows)
+        @test PriorScale(g3).s ≈ 3ps.s && PriorScale(g3).m ≈ 3ps.m
         # the career curve has no constant or linear part (weighted by rows per bin)
         B = AgeCurveBasis(g)
         f = age_curve(0.3, randn(Xoshiro(2), length(g.age_years) - 1), B)
@@ -298,10 +324,11 @@ end
         # reference: plain loops with Distributions
         a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
         b = θ.σ_mach .* (θ.z_mach .- mean(θ.z_mach))     # one season in the fixture
-        H = Turing.truncated(Normal(0, 2); lower = 0)
+        ps = PriorScale(g)                              # priors in the dataset's gap units (#30)
+        H = Turing.truncated(Normal(0, 2ps.s); lower = 0)
         lp = logpdf(H, θ.σ_comp) + logpdf(H, θ.σ_mach) + logpdf(H, θ.σ_y) +
              sum(logpdf.(Normal(), θ.z_comp)) + sum(logpdf.(Normal(), θ.z_mach)) +
-             sum(logpdf.(Normal(0, 5), θ.γ))
+             sum(logpdf.(Normal(ps.m, 4ps.s), θ.γ))
         # race intercepts are relative to the field mean of a[comp] + b[mach] over the race's rows
         races = vcat(g.t_race, g.c_race)
         cs = vcat(a[g.t_comp] .+ b[g.t_mach], a[g.c_comp] .+ b[g.c_mach])
@@ -363,12 +390,24 @@ end
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
         H(s) = Turing.truncated(Normal(0, s); lower = 0)
-        for (dur, era, kap, age, big, slp) in [[(d, e, false, false, false, false) for d in (false, true)
-                                                for e in (:none, :decade, :regime, :rw)];
-                                               (true, :rw, true, false, false, false); (false, :none, true, false, false, false);
-                                               (true, :rw, true, true, false, false); (true, :rw, true, false, true, false);
-                                               (true, :rw, true, true, true, false); (true, :rw, true, false, false, true);
-                                               (true, :rw, true, true, true, true)]
+        combos = [[(d, e, false, false, false, false, false) for d in (false, true) for e in (:none, :decade, :regime, :rw)];
+                  (true, :rw, true, false, false, false, false); (false, :none, true, false, false, false, false);
+                  (true, :rw, true, true, false, false, false); (true, :rw, true, false, true, false, false);
+                  (true, :rw, true, true, true, false, false); (true, :rw, true, false, false, true, false);
+                  (true, :rw, true, true, true, true, false); (true, :rw, true, false, false, false, true);
+                  (true, :rw, true, true, true, true, true)]
+        # centred driver effects (#28): with and without the pace scale, and with every term on
+        # and Student-t(3) drivers, centred and not (tdrv)
+        cases = [[(c, false, false) for c in combos]; ((true, :rw, false, false, false, false, false), true, false);
+                 ((true, :rw, true, false, false, false, false), true, false); ((true, :rw, true, true, true, true, true), true, false);
+                 ((true, :rw, true, false, false, false, false), true, true); ((true, :rw, true, false, false, false, false), false, true);
+                 ((true, :rw, true, true, true, true, true), true, true)]
+        # hierarchical race intercepts (#32): with every term on, and on the plain pace + loss model
+        cases = [[(c..., false) for c in cases]; ((true, :rw, true, true, true, true, true), false, false, true);
+                 ((false, :none, false, false, false, false, false), false, false, true)]
+        # learned common race level only (race_mean, #32)
+        cases = [[(c..., false) for c in cases]; ((true, :rw, true, true, true, true, true), false, false, false, true)]
+        for ((dur, era, kap, age, big, slp, dev), cdrv, tdrv, hg, mg) in cases
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
@@ -383,12 +422,24 @@ end
             age && (θ = (; θ..., τ_age = 0.2, e_age = randn(rng, length(g.age_years) - 1)))
             big && (θ = (; θ..., a_ρ = -2.5, δ_λ2 = 2.0))
             slp && (θ = (; θ..., τ_slope = 0.3, u_slope = randn(rng, nc)))
+            dev && (θ = (; θ..., τ_dev = 0.4, u_dev = randn(rng, nm)))
+            # centred drivers: a_comp (in % units) replaces z_comp, in the same sampling position
+            cdrv && (θ = NamedTuple(k === :z_comp ? (:a_comp => θ.σ_comp .* v) : (k => v) for (k, v) in pairs(θ)))
+            # hierarchical race intercepts: μ_γ and τ_γ sampled just before γ
+            hg && (θ = NamedTuple(Iterators.flatten(k === :γ ? ((:μ_γ => 1.8), (:τ_γ => 1.3), (k => v)) : ((k => v),)
+                                                    for (k, v) in pairs(θ))))
+            mg && (θ = NamedTuple(Iterators.flatten(k === :γ ? ((:μ_γ => 1.8), (k => v)) : ((k => v),) for (k, v) in pairs(θ))))
             # reference: priors from Distributions, per-race loss written out by hand,
             # per-row terms in plain loops
-            lp = logpdf(H(2), θ.σ_comp) + logpdf(H(2), θ.σ_mach) + logpdf(H(1), θ.σ) +
-                 sum(logpdf.(Normal(), θ.z_comp)) + (kap ? 0.0 : sum(logpdf.(Normal(), θ.z_mach))) +
-                 sum(logpdf.(Normal(0, 5), θ.γ)) + logpdf(Normal(-1.5, 1), θ.a_π) +
-                 logpdf(Normal(log(2), 1), θ.a_λ)
+            ps = PriorScale(g)                          # priors in the dataset's gap units (#30)
+            lp = logpdf(H(2ps.s), θ.σ_comp) + logpdf(H(2ps.s), θ.σ_mach) + logpdf(H(ps.s), θ.σ) +
+                 (cdrv ? sum(logpdf.(tdrv ? θ.σ_comp * Distributions.TDist(3) : Normal(0, θ.σ_comp), θ.a_comp)) :
+                         sum(logpdf.(tdrv ? Distributions.TDist(3) : Normal(), θ.z_comp))) +
+                 (kap ? 0.0 : sum(logpdf.(Normal(), θ.z_mach))) +
+                 (hg ? logpdf(Normal(ps.m, 4ps.s), θ.μ_γ) + logpdf(H(4ps.s), θ.τ_γ) + sum(logpdf.(Normal(θ.μ_γ, θ.τ_γ), θ.γ)) :
+                  mg ? logpdf(Normal(ps.m, 4ps.s), θ.μ_γ) + sum(logpdf.(Normal(θ.μ_γ, 4ps.s), θ.γ)) :
+                       sum(logpdf.(Normal(ps.m, 4ps.s), θ.γ))) + logpdf(Normal(-1.5, 1), θ.a_π) +
+                 logpdf(Normal(log(2ps.s), 1), θ.a_λ)
             logitπ, logλ = fill(θ.a_π, nr), fill(θ.a_λ, nr)
             if dur
                 lp += logpdf(Normal(0, 1), θ.β_dur_π) + logpdf(Normal(0, 1), θ.β_dur_λ)
@@ -419,7 +470,7 @@ end
             rowint(lo, hi, r) = big ? Diomedes.pacebig_loginterval(lo, hi, θ.σ, π[r], λ[r], ρ, λ2) :
                                       Diomedes.paceloss_loginterval(lo, hi, θ.σ, π[r], λ[r])
             κ = ones(nr)
-            a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
+            a = cdrv ? θ.a_comp .- mean(θ.a_comp) : θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
             seasonmean(v) = [mean(v[g.mach_season .== g.mach_season[j]]) for j in 1:nm]
             if kap
                 # κ scales drivers in the likelihood; car spread via the centred car prior
@@ -438,7 +489,7 @@ end
             if age
                 # career curve: random walk over age bins, constant and linear parts
                 # removed by weighted least squares (solved on √w-scaled rows)
-                lp += logpdf(H(0.25), θ.τ_age) + sum(logpdf.(Normal(), θ.e_age))
+                lp += logpdf(H(0.2ps.s), θ.τ_age) + sum(logpdf.(Normal(), θ.e_age))
                 fr = [0.0; cumsum(θ.τ_age .* θ.e_age)]
                 X = hcat(ones(length(fr)), Float64.(g.age_years)); w = sqrt.(g.age_rows)
                 fage = fr .- X * ((w .* X) \ (w .* fr))
@@ -446,7 +497,7 @@ end
             end
             if slp
                 # per-driver slopes, centred across drivers, times (age - driver's mean age) in decades
-                lp += logpdf(H(0.5), θ.τ_slope) + sum(logpdf.(Normal(), θ.u_slope))
+                lp += logpdf(H(0.5ps.s), θ.τ_slope) + sum(logpdf.(Normal(), θ.u_slope))
                 s = θ.τ_slope .* (θ.u_slope .- mean(θ.u_slope))
                 ages, comps = g.age_years[vcat(g.t_age, g.c_age)], vcat(g.t_comp, g.c_comp)
                 m = [any(comps .== d) ? mean(ages[comps .== d]) : 0.0 for d in 1:nc]
@@ -456,6 +507,22 @@ end
             races = vcat(g.t_race, g.c_race)
             cs = vcat(κ[g.t_race] .* at .+ kb[g.t_race] .* b[g.t_mach],
                       κ[g.c_race] .* ac .+ kb[g.c_race] .* b[g.c_mach])
+            if dev
+                # in-season development: trend per car (centred within season) times the race's
+                # season position (0 = first round, 1 = last) minus the car's mean position; not scaled by κ
+                lp += logpdf(H(ps.s), θ.τ_dev) + sum(logpdf.(Normal(), θ.u_dev))
+                t = θ.τ_dev .* (θ.u_dev .- seasonmean(θ.u_dev))
+                rnd = Dict(r.race_key => r.round for r in eachrow(g.rows))
+                pos = zeros(nr)
+                for s in unique(g.race_season)
+                    idx = findall(==(s), g.race_season)
+                    rs = sort(unique([rnd[g.races[r]] for r in idx]))
+                    for r in idx; pos[r] = (findfirst(==(rnd[g.races[r]]), rs) - 1) / (length(rs) - 1); end
+                end
+                machs = vcat(g.t_mach, g.c_mach)
+                pm = [mean(pos[races[machs .== j]]) for j in 1:nm]
+                cs = cs .+ t[machs] .* (pos[races] .- pm[machs])
+            end
             cbar = [mean(cs[races .== r]) for r in 1:nr]
             nt = length(g.y)
             for i in eachindex(g.y)
@@ -466,7 +533,8 @@ end
                 r = g.c_race[i]; μ = θ.γ[r] + cs[nt + i] - cbar[r]
                 lp += rowint(g.lo[i] - μ, g.hi[i] - μ, r)
             end
-            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big, slopes = slp)
+            model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big, slopes = slp, dev,
+                                     centred_drivers = cdrv, driver_ν = tdrv ? 3 : nothing, race_hier = hg, race_mean = mg)
             @test logjoint(model, θ) ≈ lp
             # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
             # in constrained space: positive-valued parameters are set positive by name
@@ -490,10 +558,22 @@ end
         @test_throws ArgumentError paceloss_effects(prepare_gaps(res); era = :rw)   # one season
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
         @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
-                                          big_loss = false, slopes = false)
+                                          big_loss = false, slopes = false, dev = false,
+                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = false)
         @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
-                                                big_loss = false, slopes = false)
+                                                big_loss = false, slopes = false, dev = false,
+                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = false)
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
+        @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
+        @test model_spec("pl_dur_rw_kappa_cdrv").centred_drivers
+        @test model_spec("pl_dur_rw_kappa_cdrv_tdrv").driver_ν == 3
+        @test Diomedes.model_param_names(model_spec("pl_dur_rw_kappa_cdrv"))[4] === :a_comp
+        @test model_spec("pl_dur_rw_kappa_age_big_slope_dev_hgam").race_hier
+        @test model_spec("pl_dur_rw_kappa_age_big_slope_dev_hgam").era === :rw
+        @test Diomedes.model_param_names(model_spec("pl_hgam"))[6:8] == (:μ_γ, :τ_γ, :γ)
+        @test Diomedes.model_param_names(model_spec("pl_mgam"))[6:7] == (:μ_γ, :γ)
+        @test_throws ArgumentError paceloss_effects(g; race_hier = true, race_mean = true)
+        @test_throws ArgumentError paceloss_effects(g; dev = true)             # needs pace_scale
         @test_throws ArgumentError paceloss_effects(g; slopes = true)          # needs pace_scale
         @test model_spec("pl_dur_rw_kappa_age").age
         @test model_spec("pl_dur_rw_kappa_big").big_loss
@@ -537,6 +617,17 @@ end
                                                              nothing, g, sc) :
                   Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach, θ.σ, πr, λr, nothing, g, sc))
         end
+        # in-season development (#14): rows vs the fused rule, the car offset passed as offset/κ
+        θd = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
+              τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1),
+              τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm), τ_dev = 0.5, u_dev = randn(rng, nm))
+        πr, λr = Diomedes.race_loss(θd, cov, true, :rw)
+        κr = race_pace_scale(θd, cov)
+        dr = DevRows(g)
+        hd = dev_trends(θd.τ_dev, θd.u_dev, g, sc)[dr.mach] .* dr.posc ./ κr[vcat(g.t_race, g.c_race)]
+        @test sum(Diomedes.paceloss_rows(θd, g; loss_duration = true, era = :rw)) ≈
+              Diomedes.paceloss_loglik_cc(θd.γ, θd.z_comp, θd.σ_comp, θd.b_mach, θd.σ, πr, λr, κr, hd, g, sc)
+        @test all(abs(sum(dev_trends(1.0, randn(rng, nm), g, sc)[g.mach_season .== s])) < 1e-10 for s in 1:maximum(g.mach_season))
         # two-component incident loss (#16)
         θb = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
               τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1),
@@ -625,18 +716,26 @@ end
         est_λ = mean(exp.(vec(chain[:a_λ])))
         @test 0.1 < est_π < 0.35
         @test 1.5 < est_λ < 5.0
+        # a chain read back from disk keeps working after its key index is rebuilt (#32)
+        io = IOBuffer(); serialize(io, chain); seekstart(io)
+        back = rehash_chain!(deserialize(io))
+        @test vec(back[:a_π]) == vec(chain[:a_π])
         eff = gap_effects_table(chain, g)
         est = Dict(zip(eff.competitors.label, eff.competitors.mean))
         @test cor([est["d$i"] for i in 1:n_comp], comp_eff .- mean(comp_eff)) > 0.8
         conv = convergence_summary(chain)
         @test conv.max_rhat < 1.1 && conv.min_ess > 20
+        # convergence of the identified quantities (#25): all groups present and mixing
+        ic = identified_convergence(chain, g, "pl")
+        @test Set(keys(ic)) ⊇ Set((:overall, :drivers, :cars, :races, :scalars))
+        @test ic.overall.max_rhat < 1.1 && ic.drivers.min_ess > 20
         # pointwise log-likelihoods from the chain: shape, and draw (1, 1) sums to the fused likelihood
         ll = pointwise_loglik(chain, g, "pl")
         @test size(ll) == (300, 2, length(g.y) + length(g.lo))
         θ = Diomedes.draw(chain, (:σ_comp, :σ_mach, :σ, :z_comp, :z_mach, :γ, :a_π, :a_λ), 1, 1)
         @test sum(ll[1, 1, :]) ≈ Diomedes.paceloss_loglik(θ.γ, θ.z_comp, θ.σ_comp, θ.z_mach, θ.σ_mach,
             θ.σ, fill(1 / (1 + exp(-θ.a_π)), length(g.races)), fill(exp(θ.a_λ), length(g.races)),
-            g, Diomedes.season_counts(g))
+            nothing, g, Diomedes.season_counts(g))
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "gap_effects recovers simulated effects with censoring" begin

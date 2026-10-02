@@ -9,8 +9,11 @@ Coverage: WRC 2018 onwards and the European Rally Championship 2022 onwards
 (`WRCTiming(championship = "European Rally Championship", series = "erc")`).
 
 Each completed special stage is one `stage_id`. `machine_id` is the vehicle model
-(e.g. "GR Yaris Rally1") and `class` is the entry group (Rally1, Rally2, ...), so
-factory and customer cars of the same model share a machine effect. Stage times
+as typed by the organisers, normalised (`normalise_model`: "i20 Coupé  WRC " →
+"I20 COUPE WRC"); `class` is the entry group (Rally1, Rally2, ...). The cleaner
+identifiers are `manufacturer` (e.g. "Toyota") and `entrant` (works team or
+privateer), so a machine grouping such as manufacturer × class × season can be
+built with `prepare_gaps(...; machine_key)`. Stage times
 exclude penalties. Only stages with status "Completed" are included; cancelled
 and interrupted stages (which get notional times) are skipped.
 
@@ -77,8 +80,10 @@ function wrc_event(src::WRCTiming, season, round, event_id; refresh = src.refres
                 competitor_name = String(e.driver.fullName),
                 competitor_birth = missing,
                 codriver_id = maybestring(get(e, :codriverId, nothing)),
-                machine_id = something(maybestring(get(e, :vehicleModel, nothing)), "unknown"),
+                machine_id = normalise_model(something(maybestring(get(e, :vehicleModel, nothing)), "unknown")),
                 class = e.group === nothing ? missing : String(e.group.name),
+                manufacturer = named(get(e, :manufacturer, nothing)),
+                entrant = named(get(e, :entrant, nothing)),
                 time_ms = t.status == "Completed" ? maybefloat(t.elapsedDurationMs) : missing,
                 suspended_ms = missing,
                 position = t.status == "Completed" ? maybeint(t.position) : missing,
@@ -90,3 +95,37 @@ function wrc_event(src::WRCTiming, season, round, event_id; refresh = src.refres
     end
     return rows
 end
+
+"""
+    normalise_model(s)
+
+Canonical form of a free-text vehicle model: accents stripped, upper case, runs
+of spaces collapsed, and "RALLY 1" written "RALLY1".
+"""
+function normalise_model(s::AbstractString)
+    t = uppercase(Unicode.normalize(String(s); stripmark = true))
+    t = replace(strip(t), r"\s+" => " ")
+    return replace(t, r"\bRALLY (\d)\b" => s"RALLY\1")
+end
+
+named(x) = x === nothing || get(x, :name, nothing) === nothing ? missing : String(strip(x.name))
+
+# Entry class -> tier, with predecessor class names mapped to their successors:
+# WRC cars (to 2021) -> Rally1, R5 (to 2019) -> Rally2.
+const WRC_TIERS = Dict("Rally1" => "Rally1", "WRC" => "Rally1", "Rally2" => "Rally2", "R5" => "Rally2")
+
+"Tier of a WRC entry class (`missing` outside the top two tiers; see `wrc_top_tiers`)."
+wrc_tier(class) = ismissing(class) ? missing : get(WRC_TIERS, class, missing)
+
+"""
+    wrc_top_tiers(results) -> DataFrame
+
+The rows of WRC results in the top two tiers: Rally1 (WRC cars before 2022)
+and Rally2 (R5 before 2020). WRC-class cars entered after Rally1 replaced them
+(2022 on) are dropped: they are old cars, not a tier of their own.
+"""
+wrc_top_tiers(df::AbstractDataFrame) =
+    df[[!ismissing(wrc_tier(r.class)) && !(r.class == "WRC" && r.season >= 2022) for r in eachrow(df)], :]
+
+"Machine grouping for WRC fits: manufacturer × tier × season (e.g. \"Toyota Rally1_2024\")."
+wrc_machine_key(r) = string(coalesce(r.manufacturer, "unknown"), " ", coalesce(wrc_tier(r.class), "other"), "_", r.season)

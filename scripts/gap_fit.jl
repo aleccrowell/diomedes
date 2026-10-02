@@ -5,6 +5,9 @@
 #   julia --project scripts/gap_fit.jl <timed|all> <model> combine [n=4]    # combine saved chains 1..n
 #
 # `timed`: lead-lap finishers only; `all`: plus lapped cars as intervals.
+# `wrc<first>-<last>` (e.g. wrc2023-2025): WRC stage times in the top two tiers
+# (Rally1 incl. WRC, Rally2 incl. R5; see `wrc_top_tiers`), each special stage
+# a "race", cars grouped by manufacturer × tier × season (#10).
 # <model>: `t4` (Student-t(4) noise) or pace + loss noise `pl[_dur][_<era>]`:
 # `_dur` adds race duration to the loss size, `<era>` (decade, regime, rw) adds
 # era effects to incident probability and loss size, `_kappa` a pace scale by
@@ -26,10 +29,18 @@ chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
 spec = model_spec(model)
 fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
-                 age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, kw...)
+                 age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
+                 centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
+                 race_hier = spec.race_hier, race_mean = spec.race_mean, kw...)
 
-res = fetch_results(ErgastCSV(data_dir), 1950:2100)
-g = prepare_gaps(res; include_lapped = mode == "all")
+wrc = match(r"^wrc(\d{4})-(\d{4})$", mode)
+if wrc === nothing
+    res = fetch_results(ErgastCSV(data_dir), 1950:2100)
+    g = prepare_gaps(res; include_lapped = mode == "all")
+else
+    res = wrc_top_tiers(fetch_results(WRCTiming(), parse(Int, wrc[1]):parse(Int, wrc[2])))
+    g = prepare_gaps(res; machine_key = wrc_machine_key)
+end
 println(g); flush(stdout)
 mkpath("output")
 
@@ -42,7 +53,7 @@ if action == "chain"
     exit()
 elseif action == "combine"
     n = parse(Int, get(ARGS, 4, "4"))
-    chain = reduce(hcat, [deserialize(chain_path(k)) for k in 1:n])
+    chain = reduce(hcat, [rehash_chain!(deserialize(chain_path(k))) for k in 1:n])
 else
     t = @elapsed chain = fit(; n_chains = 4, progress = false, progress_log = stdout)
     println("fit: $(round(t / 60; digits = 1)) min")
@@ -57,14 +68,22 @@ if spec.family === :pl
             "baseline mean loss exp(a_λ) ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
     for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]...,
               Diomedes.pace_param_names(spec.pace_scale)..., Diomedes.age_param_names(spec.age)...,
-              Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)...)
-        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age, :u_slope) && continue
+              Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)..., Diomedes.dev_param_names(spec.dev)...)
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age, :u_slope, :u_dev) && continue
         println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
     end
 end
 println("divergences: ", count(identity, chain[:numerical_error]),
         ", mean tree depth: ", round(mean(chain[:tree_depth]); digits = 2))
-println("convergence: ", convergence_summary(chain))
+println("convergence (raw sampled coordinates): ", convergence_summary(chain))
+# convergence of what the results use: centred effects, per-race loss/pace, scalars (#25)
+ic = identified_convergence(chain, g, model)
+println("convergence (identified quantities): max R-hat $(round(ic.overall.max_rhat; digits = 3)), ",
+        "min ESS $(round(ic.overall.min_ess; digits = 1))")
+for (k, v) in pairs(ic)
+    k === :overall && continue
+    println("  ", rpad(k, 8), " max R-hat $(round(v.max_rhat; digits = 3)), min ESS $(round(v.min_ess; digits = 1)) ($(v.worst))")
+end
 
 eff = gap_effects_table(chain, g)
 CSV.write("output/gap_$(mode)_$(model)_competitor_effects.csv", eff.competitors)
