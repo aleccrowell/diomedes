@@ -2,7 +2,7 @@
 #
 #   julia --project scripts/retire_fit.jl chain <k>          # one chain (seed k), saved to output/;
 #                                                            # rerun after a kill to resume from saved blocks
-#   julia --project scripts/retire_fit.jl combine [n=4]      # combine saved chains 1..n, write tables
+#   julia --project scripts/retire_fit.jl combine [n=4]      # combine saved chains 1..n (or a list: 2,3,4), write tables
 #
 # 1000 draws per chain after 500 warm-up iterations. Run the chains as separate
 # processes (one per core), then `combine`. Writes, under output/:
@@ -34,8 +34,10 @@ if action == "chain"
     exit()
 end
 
-n = parse(Int, get(ARGS, 2, "4"))
-chain = reduce(hcat, [rehash_chain!(deserialize(chain_path(k))) for k in 1:n])
+# chains 1..n, or a comma-separated list (e.g. 2,3,4)
+arg = get(ARGS, 2, "4")
+ks = occursin(",", arg) ? parse.(Int, split(arg, ",")) : 1:parse(Int, arg)
+chain = reduce(hcat, [rehash_chain!(deserialize(chain_path(k))) for k in ks])
 ni, nc = size(chain[:σ_car])
 mc, rc = retire_counts(d)
 S = length(d.seasons)
