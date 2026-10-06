@@ -199,6 +199,48 @@ function run_nuts(model, inits; n_samples, n_chains, ensemble, sampler, rng, pro
 end
 
 """
+    run_nuts_checkpointed(model, init, path; n_samples, n_adapts = 500, δ = 0.8, block = 100,
+                          seed = 1, progress_log = nothing, log_every = 100) -> chain
+
+One NUTS chain sampled in blocks, each saved to `"\$(path)_block<j>.jls"` with
+the sampler's final state, so a run that is killed can be resumed by calling
+this again: saved blocks are loaded and sampling continues from the last one.
+
+Block 1 holds the `n_adapts` warm-up iterations (discarded) and the first
+`block` draws. Later blocks resume from the saved state (step size and mass
+matrix as adapted) with adaptation off. Block j uses `Xoshiro(seed + j)`, so a
+resumed run gives the same draws as an uninterrupted one. A kill loses at most
+the block in progress (the warm-up, if it is in block 1). The sampler uses
+uncompiled ReverseDiff (see `gap_sampler`). Returns the blocks concatenated.
+"""
+function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int, n_adapts::Int = 500,
+                               δ::Real = 0.8, block::Int = 100, seed::Int = 1,
+                               progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100)
+    adtype = gap_sampler().adtype
+    chains, state = [], nothing
+    for j in 1:cld(n_samples, block)
+        file = "$(path)_block$(j).jls"
+        if isfile(file)
+            ch = rehash_chain!(deserialize(file))
+            progress_log === nothing || (println(progress_log, "block $j: loaded from $file"); flush(progress_log))
+        else
+            nj = min(block, n_samples - (j - 1) * block)
+            first = state === nothing
+            ch = run_nuts(model, first ? [init] : nothing; n_samples = nj, n_chains = 1, ensemble = MCMCSerial(),
+                          sampler = NUTS(first ? n_adapts : 0, δ; adtype), rng = Xoshiro(seed + j), progress = false,
+                          progress_log, log_every, save_state = true,
+                          (first ? (;) : (; initial_state = state))...)
+            serialize(file * ".tmp", ch)
+            mv(file * ".tmp", file; force = true)      # a kill mid-write leaves no partial block
+            progress_log === nothing || (println(progress_log, "block $j: saved $file"); flush(progress_log))
+        end
+        push!(chains, ch)
+        state = only(Turing.loadstate(ch))
+    end
+    return reduce(vcat, chains)
+end
+
+"""
     near_prior_centre(rng, d; σ_y, intercept)
 
 Initial values near the prior centre, jittered per chain so that R-hat still

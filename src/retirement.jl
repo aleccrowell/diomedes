@@ -262,10 +262,14 @@ end
 Sample `retirement_effects`, starting near the prior centre with each cause's
 level at its observed rate (jittered per chain). Sampler, progress and ensemble
 options as in `fit_gaps` (uncompiled ReverseDiff: the likelihood has a fused rule).
+With `checkpoint` (a path prefix), one chain is sampled in saved blocks and
+resumed from them if rerun (see `run_nuts_checkpointed`; `seed` sets its RNGs,
+and `rng` is used only for the initial values).
 """
 function fit_retirement(d::RetireData; n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                         sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
-                        progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
+                        progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
+                        checkpoint::Union{Nothing,AbstractString} = nothing, seed::Int = 1, kwargs...)
     model = retirement_effects(d)
     S = length(d.seasons)
     # observed events per race distance of exposure, per cause
@@ -280,6 +284,10 @@ function fit_retirement(d::RetireData; n_samples::Int = 1000, n_chains::Int = 1,
                              z_drv = 0.1 .* randn(rng, length(d.competitors)),
                              u_m = 0.1 .* randn(rng, length(d.races)), u_i = 0.1 .* randn(rng, length(d.races)),
                              u_c = 0.1 .* randn(rng, length(d.races))))
+    if checkpoint !== nothing         # one chain, saved in blocks (see run_nuts_checkpointed)
+        n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
+        return run_nuts_checkpointed(model, init(), checkpoint; n_samples, seed, progress_log, log_every, kwargs...)
+    end
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler, rng,
                     progress, progress_log, log_every, kwargs...)
 end

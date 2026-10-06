@@ -31,6 +31,7 @@ using Random
 using Unicode
 using ReverseDiff
 using SHA
+using Serialization: serialize, deserialize
 using SpecialFunctions: erf, erfcx, loggamma
 using Statistics
 using StatsFuns: normlogcdf, normlogpdf, tdistcdf, tdistlogccdf

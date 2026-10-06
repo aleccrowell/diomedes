@@ -1,6 +1,7 @@
 # Fit the retirement (DNF) model (#13) on F1 data and write rankings.
 #
-#   julia --project scripts/retire_fit.jl chain <k>          # one chain (seed k), saved to output/
+#   julia --project scripts/retire_fit.jl chain <k>          # one chain (seed k), saved to output/;
+#                                                            # rerun after a kill to resume from saved blocks
 #   julia --project scripts/retire_fit.jl combine [n=4]      # combine saved chains 1..n, write tables
 #
 # 1000 draws per chain after 500 warm-up iterations. Run the chains as separate
@@ -23,7 +24,9 @@ mkpath("output")
 
 if action == "chain"
     k = parse(Int, ARGS[2])
-    t = @elapsed chain = fit_retirement(d; rng = Xoshiro(k), progress = false, progress_log = stdout)
+    # saved in blocks of 100 draws (output/retire_chain<k>_block<j>.jls); rerun to resume after a kill
+    t = @elapsed chain = fit_retirement(d; rng = Xoshiro(k), checkpoint = "output/retire_chain$(k)", seed = 1000k,
+                                        progress_log = stdout)
     serialize(chain_path(k), chain)
     println("chain $k: $(round(t / 60; digits = 1)) min, mean leapfrog steps per draw ",
             round(mean(chain[:n_steps]); digits = 1), ", step size ", round(mean(chain[:step_size]); digits = 4),

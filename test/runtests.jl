@@ -777,6 +777,17 @@ end
         # the likelihood reaches ReverseDiff through the fused rule (not a traced per-start loop)
         x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θ)])
         @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(model), z), x).tape) < 1000
+        # checkpointed sampling: a run stopped after 2 blocks and resumed gives the same draws as one run
+        dir = mktempdir()
+        fit(prefix, n) = fit_retirement(d; rng = Xoshiro(5), checkpoint = joinpath(dir, prefix), seed = 7,
+                                        n_samples = n, block = 5, n_adapts = 10)
+        fit("a", 10)
+        @test isfile(joinpath(dir, "a_block2.jls")) && !isfile(joinpath(dir, "a_block3.jls"))
+        resumed, whole = fit("a", 15), fit("b", 15)
+        @test size(resumed[:σ_car]) == (15, 1)
+        @test resumed[:σ_car] == whole[:σ_car] && resumed[:z_drv] == whole[:z_drv]
+        @test all(==(resumed[:step_size][6]), resumed[:step_size][6:end])     # adaptation off after block 1
+        @test_throws ArgumentError fit_retirement(d; checkpoint = joinpath(dir, "c"), n_chains = 2)
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
@@ -885,6 +896,24 @@ end
         @test cor([est["d$i"] for i in 1:n_comp], truth) > 0.8
         conv = convergence_summary(chain)
         @test conv.max_rhat < 1.1 && conv.min_ess > 20
+    end
+
+    opt_in("DIOMEDES_SLOW_TESTS") && @testset "retirement model recovers simulated effects (#13)" begin
+        rng = Xoshiro(13)
+        rows, truth = sim_retirements(rng; n_season = 4, n_race = 12, n_car = 8, σ_car = 0.8, σ_drv = 0.6,
+                                      β_col = 0.8, truth = true)
+        d = prepare_retirements(rows)
+        chain = fit_retirement(d; n_samples = 500, n_chains = 1, rng, progress = false)
+        mc, _ = Diomedes.retire_counts(d)
+        draws(f) = reduce(hcat, [f(i) for i in 1:size(chain[:σ_car], 1)])
+        car = vec(mean(draws(i -> chain[:σ_car][i, 1] .* Diomedes.sum_to_zero_by(chain[:z_car][i, 1], d.mach_season, mc)); dims = 2))
+        drv = vec(mean(draws(i -> chain[:σ_drv][i, 1] .* Diomedes.sum_to_zero(chain[:z_drv][i, 1])); dims = 2))
+        true_car = [truth.car[m] for m in d.machines]
+        true_drv = [truth.drv[parse(Int, c[2:end])] for c in d.competitors]
+        @test cor(car, true_car) > 0.6
+        @test cor(drv, true_drv) > 0.5
+        @test abs(mean(chain[:β_col]) - 0.8) < 0.6
+        @test abs(mean(chain[:a][i, 1][1] for i in 1:500) - (-1.0)) < 0.4
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "crossed_effects recovers simulated effects" begin
