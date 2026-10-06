@@ -9,9 +9,10 @@
 #     driver incident-proneness effect,
 #   - collision: contact with another car; the driver effect enters with a
 #     learned loading β_col, since a collision is not one driver's alone,
-#   - other (disqualified, out of fuel, puncture, driver unwell, "Retired", ...):
-#     treated as censoring at the laps completed (non-informative).
-# Non-starters (did not (pre)qualify, withdrew before the start) are dropped.
+#   - other (out of fuel, puncture, driver unwell, "Retired", ...): treated as
+#     censoring at the laps completed (non-informative).
+# Non-starters (did not (pre)qualify, withdrew before the start) and
+# disqualified starts (the outcome is hidden) are dropped.
 #
 # Time is measured in fractions of the race distance L (the winner's laps), so
 # hazards are per race, comparable between short and long laps. Every cause k
@@ -39,6 +40,10 @@ const MECH_STATUS = Set([
     "Seat", "Safety belt"])
 const INCIDENT_STATUS = Set(["Accident", "Spun off", "Fatal accident"])
 const COLLISION_STATUS = Set(["Collision", "Collision damage", "Broken wing", "Damage"])
+# A disqualification hides how the race ended: Tyrrell's whole 1984 season is
+# "Disqualified" (excluded after the fact) with the laps actually completed, so
+# censoring would turn its retirements into survival. Such starts are dropped.
+const EXCLUDED_STATUS = Set(["Disqualified", "Excluded", "Underweight"])
 const NONSTART_STATUS = Set(["Did not qualify", "Did not prequalify", "107% Rule", "Did not start",
                              "Not restarted"])
 
@@ -47,11 +52,13 @@ const NONSTART_STATUS = Set(["Did not qualify", "Did not prequalify", "107% Rule
 
 Cause of a start's end, from the source status: `:finish` (ran to the end,
 classified or not), one of `RETIRE_CAUSES`, `:other` (retired, cause not
-attributable: censored), or `:nonstart`. A withdrawal with no laps is a non-start.
+attributable: censored), `:nonstart`, or `:excluded` (disqualified: how the race
+ended is unknown, dropped). A withdrawal with no laps is a non-start.
 """
 function retirement_cause(status::AbstractString, laps)
     (status == "Finished" || is_lapped_status(status) || status == "Not classified") && return :finish
     status in NONSTART_STATUS && return :nonstart
+    status in EXCLUDED_STATUS && return :excluded
     status == "Withdrew" && return coalesce(laps, 0) == 0 ? :nonstart : :other
     status in MECH_STATUS && return :mech
     status in INCIDENT_STATUS && return :incident
@@ -101,7 +108,7 @@ function prepare_retirements(results::AbstractDataFrame; machine_key = r -> stri
     df = DataFrame(results)
     df = df[.!ismissing.(df.laps), :]
     df.cause = [retirement_cause(r.status, r.laps) for r in eachrow(df)]
-    df = df[df.cause .!= :nonstart, :]
+    df = df[(df.cause .!= :nonstart) .& (df.cause .!= :excluded), :]
     df.race_key = string.(df.series, "/", df.event_id, "/", df.stage_id)
     df.L = zeros(Int, nrow(df))
     for g in groupby(df, :race_key)

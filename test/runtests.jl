@@ -730,7 +730,8 @@ end
         @test retirement_cause("Did not qualify", 0) === :nonstart
         @test retirement_cause("Withdrew", 0) === :nonstart
         @test retirement_cause("Withdrew", 10) === :other
-        @test retirement_cause("Disqualified", 58) === :other
+        @test retirement_cause("Disqualified", 58) === :excluded
+        @test retirement_cause("Out of fuel", 50) === :other
         # every outcome of one start (retire in lap 1..L from each cause, or finish) sums to 1
         for (L, η, b) in ((5, (-1.0, -2.0, -2.5), (-1.0, -0.5, 0.3)), (70, (0.4, -1.0, -3.0), (-3.0, -2.0, -1.0)))
             p = exp(Diomedes.retire_row(η..., b..., L, L, 0))
