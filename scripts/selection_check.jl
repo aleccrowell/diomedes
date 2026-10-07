@@ -89,6 +89,13 @@ function run_nuts_loaded(prefix)
 end
 
 ca, cb = loadchain("a"), loadchain("b")
+println("\nconvergence of identified quantities (max R-hat, min bulk ESS, worst group):")
+for (v, ch, data) in (("a", ca, subset_gaps(g, train)), ("b", cb, g))
+    ic = identified_convergence(ch, data, MODEL)
+    worst = first(sort([k for k in keys(ic) if k !== :overall], by = k -> ic[k].min_ess))
+    println("  fit $v: ", round(ic.overall.max_rhat; digits = 3), ", ", round(Int, ic.overall.min_ess), " (", worst,
+            "); divergences ", count(ch[:numerical_error] .> 0))
+end
 names = model_param_names(spec)
 sc, cov = season_counts(g), LossCovariates(g)
 basis_a = AgeCurveBasis(subset_gaps(g, train))
