@@ -81,7 +81,10 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
     for g in groupby(df, [:series, :event_id, :stage_id])
         timed = findall(!ismissing, g.race_ms)
         isempty(timed) && continue
-        w = timed[argmin(g.race_ms[timed])]
+        # the winner is a real finisher: partial-gap rows (#13, see with_partial_rows) can be faster
+        cand = hasproperty(g, :partial) ? filter(i -> !g.partial[i], timed) : timed
+        isempty(cand) && continue
+        w = cand[argmin(g.race_ms[cand])]
         T_w = g.race_ms[w]
         g.winner_ms .= T_w
         for i in timed
