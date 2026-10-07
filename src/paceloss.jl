@@ -784,16 +784,20 @@ end
 Sample `paceloss_effects`, starting chains with race intercepts at each race's
 mean timed gap and the loss parameters at their prior centres, era effects near
 zero (jittered per chain). Sampler, progress and ensemble options as in `fit_gaps`.
+With `checkpoint` (a path prefix), one chain is sampled in saved, resumable
+blocks (see `run_nuts_checkpointed`; `seed` sets its RNGs).
 """
 function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :none,
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                       slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false, driver_ν = nothing,
                       race_hier::Bool = false, race_mean::Bool = !race_hier, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
-                      progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100, kwargs...)
+                      progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
+                      checkpoint::Union{Nothing,AbstractString} = nothing, seed::Int = 1, kwargs...)
     adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
     adtype isa AutoReverseDiff && adtype.compile &&
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
+    checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν,
                              race_hier, race_mean)
     cov = model.args.cov
@@ -831,6 +835,9 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
                                  a_comp = 0.05 .* randn(rng, length(g.competitors))))
         return InitFromParams(p)
     end
+    # one chain saved in blocks, resumable (see run_nuts_checkpointed)
+    checkpoint === nothing ||
+        return run_nuts_checkpointed(model, init(), checkpoint; n_samples, seed, progress_log, log_every, kwargs...)
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler,
                     rng, progress, progress_log, log_every, kwargs...)
 end
