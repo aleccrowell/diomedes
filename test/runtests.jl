@@ -791,6 +791,34 @@ end
         @test_throws ArgumentError fit_retirement(d; checkpoint = joinpath(dir, "c"), n_chains = 2)
     end
 
+    @testset "partial-distance gaps of retirements (#13)" begin
+        # one 4-lap race: winner w, finishers f1 (losing time late) and f2, retirements
+        cum = Dict(("2000-01", "w") => [100.0, 200, 300, 400], ("2000-01", "f1") => [101.0, 202, 302, 402],
+                   ("2000-01", "f2") => [102.0, 204, 306, 408], ("2000-01", "r") => [103.0, 206],
+                   ("2000-01", "early") => [110.0], ("2000-01", "dq") => [100.0, 201])
+        rows = DataFrame(series = "f1", season = 2000, event_id = "2000-01", stage_id = "race",
+                         competitor_id = ["w", "f1", "f2", "r", "early", "dq"], machine_id = ["m1", "m1", "m2", "m2", "m3", "m3"],
+                         time_ms = Union{Missing,Float64}[400, 402, 408, missing, missing, missing],
+                         suspended_ms = Union{Missing,Float64}[missing for _ in 1:6],
+                         laps = Union{Missing,Int}[4, 4, 4, 2, 1, 2],
+                         status = ["Finished", "Finished", "Finished", "Engine", "Accident", "Disqualified"])
+        pg = partial_gaps(rows, cum)
+        @test pg.competitor_id == ["r"]      # "early" did 1 lap (< 2), the disqualification is dropped
+        y(C, n) = 100 * log(C[n] / cum[("2000-01", "w")][n])
+        f1, f2, r = cum[("2000-01", "f1")], cum[("2000-01", "f2")], cum[("2000-01", "r")]
+        shift = median([y(f1, 4) - y(f1, 2), y(f2, 4) - y(f2, 2)])
+        @test only(pg.y_n) ≈ y(r, 2) && only(pg.shift) ≈ shift && only(pg.y_hat) ≈ y(r, 2) + shift
+        @test only(pg.n_ref) == 2
+        # as a timed row at y_hat; finishers and the winner unchanged, even if the partial row is faster
+        g = prepare_gaps(with_partial_rows(rows, pg))
+        m = partial_mask(g)
+        @test count(m) == 1 && g.y[findfirst(m)] ≈ only(pg.y_hat)
+        @test sort(g.y[.!m[1:length(g.y)]]) ≈ sort(prepare_gaps(rows).y)
+        fast = copy(pg); fast.y_hat .= -1.0
+        g2 = prepare_gaps(with_partial_rows(rows, fast))
+        @test minimum(g2.y[.!partial_mask(g2)[1:length(g2.y)]]) == 0.0 && g2.y[findfirst(partial_mask(g2))] ≈ -1.0
+    end
+
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
         rng = Xoshiro(31)
         n_comp, n_season, cars_per_season, n_race_per_season = 24, 3, 6, 8
