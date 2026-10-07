@@ -49,8 +49,8 @@ function collect3(f)
     for c in 1:nc, i in 1:ni; A[i, c, :] = f(i, c); end
     return A
 end
-drv = collect3((i, c) -> chain[:σ_comp][i, c] .* sum_to_zero(chain[:z_comp][i, c]))
-car = collect3((i, c) -> chain[:σ_mach][i, c] .* sum_to_zero_by(chain[:z_mach][i, c], d.mach_season, mc))
+drv = collect3((i, c) -> sum_to_zero(chain[:a_comp][i, c]))
+car = collect3((i, c) -> sum_to_zero_by(chain[:b_mach][i, c], d.mach_season, mc))
 scal_names = (:σ_comp, :σ_mach, :σ, :μ_γ, :μ_δ, :τ_δ, :a_π, :a_λ)
 scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], chain[:β][i, c]))
 println("\nconvergence (max R-hat, min bulk ESS):")

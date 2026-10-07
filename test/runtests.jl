@@ -859,12 +859,15 @@ end
         end
         d = prepare_laps(lt2, rows2; pits = :inferred)
         nc, nm, nr = length(d.competitors), length(d.machines), length(d.races)
-        θ = (; σ_comp = 0.5, σ_mach = 0.7, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm), μ_γ = 0.1,
+        θ = (; σ_comp = 0.5, σ_mach = 0.7, σ = 0.4, a_comp = randn(rng, nc), b_mach = randn(rng, nm), μ_γ = 0.1,
              γ = 0.2 .* randn(rng, nr), μ_δ = -1.0, τ_δ = 0.3, δ = randn(rng, nr), β = [0.02, 0.01], a_π = -1.2, a_λ = 0.3)
-        a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
-        b = θ.σ_mach .* Diomedes.sum_to_zero_by(θ.z_mach, d.mach_season, Diomedes.lap_mach_counts(d))
-        ll = sum(Diomedes.paceloss_logpdf(d.y[j] - (θ.γ[d.race[j]] + θ.δ[d.race[j]] * d.frac[j] + a[d.comp[j]] +
-                                                     b[d.mach[j]] + θ.β[1] * d.stint[j] + θ.β[2] * d.stint[j]^2 / 10),
+        a = θ.a_comp .- mean(θ.a_comp)
+        b = Diomedes.sum_to_zero_by(θ.b_mach, d.mach_season, Diomedes.lap_mach_counts(d))
+        h = [a[d.comp[j]] + b[d.mach[j]] + θ.β[1] * d.stint[j] / 10 + θ.β[2] * (d.stint[j] / 10)^2 for j in eachindex(d.y)]
+        hbar = [mean(h[d.race .== r]) for r in 1:nr]
+        fbar = [mean(d.frac[d.race .== r]) for r in 1:nr]
+        ll = sum(Diomedes.paceloss_logpdf(d.y[j] - (θ.γ[d.race[j]] + θ.δ[d.race[j]] * (d.frac[j] - fbar[d.race[j]]) +
+                                                     h[j] - hbar[d.race[j]]),
                                           θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d.y))
         model = lap_effects(d)
         @test Turing.DynamicPPL.loglikelihood(model, θ) ≈ ll

@@ -62,6 +62,7 @@ struct LapData
     mach::Vector{Int}
     race::Vector{Int}
     frac::Vector{Float64}
+    fracc::Vector{Float64}        # frac minus its mean over the race's laps
     stint::Vector{Float64}
     mach_season::Vector{Int}      # season index of each machine level
     race_season::Vector{Int}      # season index of each race
@@ -69,6 +70,7 @@ struct LapData
     competitors::Vector{String}
     machines::Vector{String}
     races::Vector{String}
+    race_n::Vector{Int}           # laps per race
     rows::DataFrame               # laps used
     excluded::Dict{Symbol,Int}    # laps dropped, by reason
 end
@@ -147,9 +149,14 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
         mach_season[mi[r.machine_key]] = si[r.season]
         race_season[ri[r.event_id]] = si[r.season]
     end
+    race = [ri[e] for e in keep.event_id]
+    race_n = [count(==(r), race) for r in eachindex(races)]
+    fbar = zeros(length(races))
+    for (r, f) in zip(race, keep.frac); fbar[r] += f; end
+    fbar ./= race_n
     return LapData(keep.y, [ci[c] for c in keep.competitor_id], [mi[m] for m in keep.machine_key],
-                   [ri[e] for e in keep.event_id], keep.frac, Float64.(keep.stint), mach_season, race_season,
-                   seasons, comps, machs, races, keep, excl)
+                   race, keep.frac, keep.frac .- fbar[race], Float64.(keep.stint), mach_season, race_season,
+                   seasons, comps, machs, races, race_n, keep, excl)
 end
 
 """
@@ -158,32 +165,62 @@ end
 Log-likelihood of the laps in `d` under pace + loss noise (`paceloss_logpdf`),
 with per-lap mean
 
-    μ = γ[race] + δ[race]·frac + a[driver] + b[machine] + β[1]·stint + β[2]·stint²/10
+    μ = γ[race] + δ[race]·(frac - mean frac of the race) + h - (mean h of the race),
+    h = a[driver] + b[machine] + β[1]·s + β[2]·s²,   s = stint/10
 
-(stint age in laps). Has a fused reverse rule: per-lap derivatives from
+(stint age in tens of laps, which keeps β's two terms on similar scales). As in
+the race-time model, centring within each race makes γ the race's mean lap, so
+the intercepts are not correlated with the slopes and effects: with ~1,000 laps
+per race the uncentred form had near-degenerate directions that kept NUTS at
+its maximum tree depth. Has a fused reverse rule: per-lap derivatives from
 ForwardDiff duals, scattered into the parameter vectors.
 """
 function lap_loglik(γ, δ, a, b, β, σ, π, λ, d::LapData)
+    h, hbar = lap_h(a, b, β, d)
     s = 0.0
     for j in eachindex(d.y)
-        r, st = d.race[j], d.stint[j]
-        μ = γ[r] + δ[r] * d.frac[j] + a[d.comp[j]] + b[d.mach[j]] + β[1] * st + β[2] * st^2 / 10
+        r = d.race[j]
+        μ = γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r]
         s += paceloss_logpdf(d.y[j] - μ, σ, π, λ)
     end
     return s
 end
 
+# Per-lap h = driver + car + tyre terms, and its mean per race.
+function lap_h(a, b, β, d::LapData)
+    T = promote_type(eltype(a), eltype(b), eltype(β))
+    h = Vector{T}(undef, length(d.y))
+    hbar = zeros(T, length(d.races))
+    for j in eachindex(d.y)
+        st = d.stint[j] / 10
+        h[j] = a[d.comp[j]] + b[d.mach[j]] + β[1] * st + β[2] * st^2
+        hbar[d.race[j]] += h[j]
+    end
+    hbar ./= d.race_n
+    return h, hbar
+end
+
 function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, σ, π, λ, d::LapData)
+    h, hbar = lap_h(a, b, β, d)
+    N = length(d.y)
+    gμ = zeros(N)
     gγ, gδ, ga, gb, gβ = zeros(length(γ)), zeros(length(δ)), zeros(length(a)), zeros(length(b)), zeros(2)
     gσ, gπ, gλ, val = 0.0, 0.0, 0.0, 0.0
-    for j in eachindex(d.y)
-        r, st, f, y = d.race[j], d.stint[j], d.frac[j], d.y[j]
-        μ = γ[r] + δ[r] * f + a[d.comp[j]] + b[d.mach[j]] + β[1] * st + β[2] * st^2 / 10
+    for j in 1:N
+        r, y = d.race[j], d.y[j]
+        μ = γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r]
         v, p = value_grad4((m, s, q, l) -> paceloss_logpdf(y - m, s, q, l), μ, σ, π, λ)
         val += v
-        gγ[r] += p[1]; gδ[r] += p[1] * f; ga[d.comp[j]] += p[1]; gb[d.mach[j]] += p[1]
-        gβ[1] += p[1] * st; gβ[2] += p[1] * st^2 / 10
+        gμ[j] = p[1]
+        gγ[r] += p[1]; gδ[r] += p[1] * d.fracc[j]
         gσ += p[2]; gπ += p[3]; gλ += p[4]
+    end
+    # h enters every lap of its race through the race mean: dμ_k/dh_j = [k = j] - 1/n_race
+    for j in 1:N
+        gh = gμ[j] - gγ[d.race[j]] / d.race_n[d.race[j]]
+        st = d.stint[j] / 10
+        ga[d.comp[j]] += gh; gb[d.mach[j]] += gh
+        gβ[1] += gh * st; gβ[2] += gh * st^2
     end
     pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* gδ, Δ .* ga, Δ .* gb, Δ .* gβ, Δ * gσ, Δ * gπ, Δ * gλ, NoTangent())
     return val, pullback
@@ -199,13 +236,15 @@ ReverseDiff.@grad_from_chainrules lap_loglik(γ::ReverseDiff.TrackedArray, δ::R
 Lap time (% of the race's median clean lap) = race intercept + race slope·frac
 + driver + car-season + tyre(stint age) + pace noise + incident loss.
 
-- Driver effects `σ_comp·z` sum to zero; car-season effects `σ_mach·z` sum to
-  zero within each season (with race intercepts only within-season car
-  differences are identified), as in `gap_effects`.
-- Race intercepts γ ~ N(μ_γ, 2), with μ_γ learned; race slopes δ ~ N(μ_δ, τ_δ):
-  the change in lap time from the start to the end of a race (fuel burn, track
-  evolution), partially pooled.
-- Tyres: β[1]·stint + β[2]·stint²/10, in % per lap of stint age.
+- Driver effects `a_comp ~ N(0, σ_comp)` and car-season effects
+  `b_mach ~ N(0, σ_mach)`, centred (see the model body); in the likelihood the
+  drivers sum to zero and the cars sum to zero within each season (with race
+  intercepts only within-season car differences are identified), as in `gap_effects`.
+- Race intercepts γ ~ N(μ_γ, 2), with μ_γ learned: each race's mean lap (the
+  other terms are centred within the race, see `lap_loglik`). Race slopes
+  δ ~ N(μ_δ, τ_δ): the change in lap time from the start to the end of a race
+  (fuel burn, track evolution), partially pooled.
+- Tyres: β[1]·s + β[2]·s² with s = stint age / 10 laps, in %.
 - Noise: pace + loss (`paceloss_logpdf`) with one σ, incident probability π
   and mean loss λ: traffic, mistakes and damage are losses, as in the race model.
 """
@@ -213,8 +252,10 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
     σ_mach ~ truncated(Normal(0, 2); lower = 0)
     σ ~ truncated(Normal(0, 1); lower = 0)
-    z_comp ~ filldist(Normal(), length(d.competitors))
-    z_mach ~ filldist(Normal(), length(d.machines))
+    # centred effects (as `_cdrv`, #28): each driver and car has thousands of laps,
+    # so the non-centred form a = σ·z would tie σ to every z (a funnel)
+    a_comp ~ filldist(Normal(0, σ_comp), length(d.competitors))
+    b_mach ~ filldist(Normal(0, σ_mach), length(d.machines))
     μ_γ ~ Normal(0, 2)
     γ ~ filldist(Normal(μ_γ, 2), length(d.races))
     μ_δ ~ Normal(0, 2)
@@ -223,8 +264,8 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     β ~ filldist(Normal(0, 1), 2)
     a_π ~ Normal(-1.5, 1)
     a_λ ~ Normal(0, 1)
-    a = σ_comp .* sum_to_zero(z_comp)
-    b = σ_mach .* center_by(z_mach, d.mach_season, mach_counts)
+    a = sum_to_zero(a_comp)
+    b = center_by(b_mach, d.mach_season, mach_counts)
     @addlogprob! lap_loglik(γ, δ, a, b, β, σ, logistic(a_π), exp(a_λ), d)
 end
 
@@ -248,17 +289,26 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
     γ0, δ0 = zeros(length(d.races)), zeros(length(d.races))
     for r in eachindex(d.races)
         sel = d.race .== r
-        f, y = d.frac[sel], d.y[sel]
+        f, y = d.fracc[sel], d.y[sel]
         δ0[r] = var(f) > 0 ? cov(f, y) / var(f) : 0.0
-        γ0[r] = mean(y) - δ0[r] * mean(f)
+        γ0[r] = mean(y)
     end
+    # stint terms and pace noise from the residuals of those lines (a large dataset
+    # concentrates the posterior: generic starting values put NUTS's initial step
+    # size at ~1e-4 and every iteration at maximum tree depth)
+    res0 = d.y .- γ0[d.race] .- δ0[d.race] .* d.fracc
+    sv = d.stint ./ 10
+    X = hcat(sv, sv .^ 2)
+    β0 = (X' * X) \ (X' * res0)
+    e0 = res0 .- X * β0
+    σ0 = 1.4826 * median(abs.(e0 .- median(e0)))
     init() = InitFromParams((; σ_comp = 0.3 + 0.4 * rand(rng), σ_mach = 0.3 + 0.4 * rand(rng),
-                             σ = 0.3 + 0.4 * rand(rng),
-                             z_comp = 0.1 .* randn(rng, length(d.competitors)),
-                             z_mach = 0.1 .* randn(rng, length(d.machines)),
+                             σ = σ0 * (0.9 + 0.2 * rand(rng)),
+                             a_comp = 0.05 .* randn(rng, length(d.competitors)),
+                             b_mach = 0.05 .* randn(rng, length(d.machines)),
                              μ_γ = mean(γ0), γ = γ0 .+ 0.05 .* randn(rng, length(γ0)),
                              μ_δ = mean(δ0), τ_δ = std(δ0) * (0.9 + 0.2 * rand(rng)),
-                             δ = δ0 .+ 0.05 .* randn(rng, length(δ0)), β = 0.01 .* randn(rng, 2),
+                             δ = δ0 .+ 0.05 .* randn(rng, length(δ0)), β = β0 .+ 0.01 .* randn(rng, 2),
                              a_π = -1.5 + 0.1 * randn(rng), a_λ = 0.1 * randn(rng)))
     checkpoint === nothing ||
         return run_nuts_checkpointed(model, init(), checkpoint; n_samples, seed, progress_log, log_every, kwargs...)
