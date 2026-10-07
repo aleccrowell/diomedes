@@ -74,3 +74,40 @@ function ergast_suspensions(dir, race_ids)
     end
     return out
 end
+
+# Lap times and pit stops (#12). Ergast has lap times from 1996 and pit stops
+# from 2011. Ids as in `fetch_results`.
+function ergast_event_ids(src::ErgastCSV, seasons)
+    rd(name) = CSV.read(joinpath(src.dir, name), DataFrame; missingstring = "\\N")
+    races = filter(:year => in(Set(seasons)), select(rd("races.csv"), :raceId, :year, :round, :name))
+    src.include_indy500 || filter!(:name => !=(INDY500), races)
+    drivers = select(rd("drivers.csv"), :driverId, :driverRef)
+    return races, drivers
+end
+
+function fetch_laps(src::ErgastCSV, seasons::AbstractVector{<:Integer})
+    races, drivers = ergast_event_ids(src, seasons)
+    lt = CSV.read(joinpath(src.dir, "lap_times.csv"), DataFrame; missingstring = "\\N",
+                  select = [:raceId, :driverId, :lap, :position, :milliseconds])
+    df = innerjoin(innerjoin(lt, races; on = :raceId), drivers; on = :driverId)
+    sort!(df, [:year, :round, :driverRef, :lap])
+    return validate_schema(DataFrame(series = "f1", season = Int.(df.year),
+                                     event_id = string.(df.year, "-", lpad.(df.round, 2, '0')),
+                                     competitor_id = String.(df.driverRef), lap = Int.(df.lap),
+                                     time_ms = Float64.(df.milliseconds),
+                                     position = Vector{Union{Missing,Int}}(maybeint.(df.position))),
+                           LAP_SCHEMA, "laps")
+end
+
+function fetch_pit_stops(src::ErgastCSV, seasons::AbstractVector{<:Integer})
+    races, drivers = ergast_event_ids(src, seasons)
+    ps = CSV.read(joinpath(src.dir, "pit_stops.csv"), DataFrame; missingstring = "\\N",
+                  select = [:raceId, :driverId, :lap, :milliseconds])
+    df = innerjoin(innerjoin(ps, races; on = :raceId), drivers; on = :driverId)
+    sort!(df, [:year, :round, :driverRef, :lap])
+    return validate_schema(DataFrame(series = "f1", season = Int.(df.year),
+                                     event_id = string.(df.year, "-", lpad.(df.round, 2, '0')),
+                                     competitor_id = String.(df.driverRef), lap = Int.(df.lap),
+                                     duration_ms = Vector{Union{Missing,Float64}}(maybefloat.(df.milliseconds))),
+                           PIT_SCHEMA, "pit stops")
+end

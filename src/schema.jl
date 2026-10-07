@@ -46,9 +46,41 @@ empty_results() = DataFrame([name => T[] for (name, T) in RESULT_SCHEMA])
 Throw if `df` is missing a schema column or has a column whose element type is
 not compatible with the schema. Returns `df` so it can be used inline.
 """
-function validate_results(df::AbstractDataFrame)
-    for (name, T) in RESULT_SCHEMA
-        hasproperty(df, name) || throw(ArgumentError("results table missing column :$name"))
+validate_results(df::AbstractDataFrame) = validate_schema(df, RESULT_SCHEMA, "results")
+
+# Lap-level tables (#12), circuit racing only. Ids match the results table's.
+const LAP_SCHEMA = [
+    :series        => String,
+    :season        => Int,
+    :event_id      => String,
+    :competitor_id => String,
+    :lap           => Int,                      # lap number, from 1
+    :time_ms       => Float64,                  # lap time
+    :position      => Union{Missing,Int},       # running position at the end of the lap
+]
+const PIT_SCHEMA = [
+    :series        => String,
+    :season        => Int,
+    :event_id      => String,
+    :competitor_id => String,
+    :lap           => Int,                      # lap the car entered the pits on (its in-lap)
+    :duration_ms   => Union{Missing,Float64},   # time in the pit lane
+]
+
+"""
+    fetch_laps(src::DataSource, seasons) -> DataFrame
+    fetch_pit_stops(src::DataSource, seasons) -> DataFrame
+
+Lap times (`LAP_SCHEMA`) and pit stops (`PIT_SCHEMA`), for sources that have them.
+"""
+function fetch_laps end
+function fetch_pit_stops end
+fetch_laps(src, season::Integer) = fetch_laps(src, [season])
+fetch_pit_stops(src, season::Integer) = fetch_pit_stops(src, [season])
+
+function validate_schema(df::AbstractDataFrame, schema, what::AbstractString)
+    for (name, T) in schema
+        hasproperty(df, name) || throw(ArgumentError("$what table missing column :$name"))
         S = eltype(df[!, name])
         S <: T || throw(ArgumentError("column :$name has eltype $S, expected subtype of $T"))
     end
