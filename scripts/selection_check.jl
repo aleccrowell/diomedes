@@ -2,7 +2,8 @@
 #
 #   julia --project scripts/selection_check.jl calib                  # check the partial-gap calibration
 #   julia --project scripts/selection_check.jl chain <a|b> <k>        # one chain (checkpointed, resumable)
-#   julia --project scripts/selection_check.jl compare [n=4]          # residuals and effect shifts
+#   julia --project scripts/selection_check.jl compare [n=4] [n_b]    # residuals and effect shifts
+#                                         (chains 1..n, or lists per fit, e.g. `compare 1,2,3,4 1,2,4`)
 #
 # F1 1996–2019 (lap times exist), model MODEL. Retirements that completed at
 # least a quarter of the distance enter as calibrated partial gaps (see
@@ -80,8 +81,11 @@ if action == "chain"
     exit()
 end
 
-n = parse(Int, get(ARGS, 2, "4"))
-loadchain(v) = reduce(hcat, [run_nuts_loaded(chain_prefix(v, k)) for k in 1:n])
+# chains to use per fit: 1..n, or comma-separated lists for a and b (e.g. `compare 1,2,3,4 1,2,4`)
+chains_arg(x) = occursin(",", x) ? parse.(Int, split(x, ",")) : 1:parse(Int, x)
+ks_a = chains_arg(get(ARGS, 2, "4"))
+ks_b = chains_arg(get(ARGS, 3, get(ARGS, 2, "4")))
+loadchain(v) = reduce(hcat, [run_nuts_loaded(chain_prefix(v, k)) for k in (v == "a" ? ks_a : ks_b)])
 function run_nuts_loaded(prefix)
     blocks = sort(filter(f -> startswith(f, basename(prefix) * "_block"), readdir(dirname(prefix))),
                   by = f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]))
@@ -142,6 +146,22 @@ for (lo, hi) in ((0.25, 0.5), (0.5, 0.75), (0.75, 1.0))
     sel = lo .<= prow.n_frac .< hi
     println("  laps done $(lo)-$(hi) of distance: ", count(sel), " rows, median residual - finishers' ",
             round(median(rpm[sel]) - fmed; digits = 3))
+end
+
+# robustness: the same rows with the gap taken 3 laps before the retirement lap
+# (a failing or damaged car can limp through its last laps; one slow lap moves a
+# cumulative gap by up to ~1 point). Row means are unchanged, only y differs.
+pg3 = partial_gaps(res, cum; trim = 3)
+y3 = Dict((r.event_id, r.competitor_id) => r.y_hat for r in eachrow(pg3))
+has3 = [haskey(y3, (r.event_id, r.competitor_id)) for r in eachrow(prow)]
+μp = vec(mean(yall[pidx]' .- rp; dims = 1))          # posterior mean row means of the partial rows
+r3 = [y3[(r.event_id, r.competitor_id)] for r in eachrow(prow)[has3]] .- μp[has3]
+println("  gap 3 laps before the last lap ($(count(has3)) rows): median residual - finishers' ",
+        round(median(r3) - fmed; digits = 3), " (same rows at the last lap: ",
+        round(median(rpm[has3]) - fmed; digits = 3), ")")
+for k in (:mech, :incident, :collision)
+    sel = causes[has3] .== k
+    println("    ", rpad(k, 10), round(median(r3[sel]) - fmed; digits = 3))
 end
 
 # 2. effect shifts from a to b

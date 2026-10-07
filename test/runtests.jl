@@ -809,6 +809,8 @@ end
         shift = median([y(f1, 4) - y(f1, 2), y(f2, 4) - y(f2, 2)])
         @test only(pg.y_n) ≈ y(r, 2) && only(pg.shift) ≈ shift && only(pg.y_hat) ≈ y(r, 2) + shift
         @test only(pg.n_ref) == 2
+        # trim: the gap taken k laps earlier; r's 2 laps leave too few after trimming 1
+        @test isempty(partial_gaps(rows, cum; trim = 1))
         # as a timed row at y_hat; finishers and the winner unchanged, even if the partial row is faster
         g = prepare_gaps(with_partial_rows(rows, pg))
         m = partial_mask(g)

@@ -45,11 +45,14 @@ Calibrated partial-distance gaps (see the file header) of the retirements in
 `results` (an Ergast-sourced results table) with lap data in `cum` (see
 `ergast_cumulative_laps`). A retirement counts if its cause is not a non-start
 or a disqualification (see `retirement_cause`) and it completed at least
-`min_frac` of the race distance (and 2 laps). Columns: `event_id`,
+`min_frac` of the race distance (and 2 laps) by the lap the gap is taken at.
+With `trim = k` the gap is taken k laps before the last lap completed, leaving
+out the laps a damaged or failing car may limp through before it stops.
+Columns: `event_id`,
 `competitor_id`, `n`, `L`, `y_n` (raw partial gap), `shift`, `y_hat`, `cause`,
 `n_ref` (finishers the shift is the median over).
 """
-function partial_gaps(results::AbstractDataFrame, cum; min_frac::Real = 0.25)
+function partial_gaps(results::AbstractDataFrame, cum; min_frac::Real = 0.25, trim::Int = 0)
     out = DataFrame(event_id = String[], competitor_id = String[], n = Int[], L = Int[], y_n = Float64[],
                     shift = Float64[], y_hat = Float64[], cause = Symbol[], n_ref = Int[])
     for g in groupby(results, :event_id)
@@ -66,10 +69,11 @@ function partial_gaps(results::AbstractDataFrame, cum; min_frac::Real = 0.25)
         for i in eachindex(g.status)
             cause = retirement_cause(g.status[i], g.laps[i])
             (cause in RETIRE_CAUSES || cause === :other) || continue
-            n = coalesce(g.laps[i], 0)
-            (n >= max(2, ceil(Int, min_frac * L)) && n < L) || continue
+            laps = coalesce(g.laps[i], 0)
+            n = laps - trim                     # the gap is taken `trim` laps before the last one completed
+            (n >= max(2, ceil(Int, min_frac * L)) && laps < L) || continue
             Ci = get(cum, (g.event_id[i], g.competitor_id[i]), nothing)
-            (Ci === nothing || length(Ci) < n) && continue
+            (Ci === nothing || length(Ci) < laps) && continue
             y_n = 100 * log(Ci[n] / Cw[n])
             shift = median(100 * (log(C[L] / Cw[L]) - log(C[n] / Cw[n])) for C in refs)
             push!(out, (g.event_id[i], g.competitor_id[i], n, L, y_n, shift, y_n + shift, cause, length(refs)))
