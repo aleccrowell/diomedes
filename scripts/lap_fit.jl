@@ -7,7 +7,8 @@
 # `inferred` infers stops from the lap times (`infer_pit_stops`). Chains are
 # saved in blocks of 100 draws under output/laps_<first>-<last>_<pits>_chain<k>;
 # rerun a killed chain to resume. `combine` prints convergence and writes
-# output/laps_<first>-<last>_<pits>_{drivers,cars}.csv.
+# output/laps_<first>-<last>_<pits>_{drivers,cars}.csv. With LAP_MAX_BLOCKS=k only the
+# first k blocks of each chain are used.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
@@ -38,6 +39,9 @@ end
 function load_blocks(prefix)
     dir, base = dirname(prefix), basename(prefix) * "_block"
     files = sort(filter(f -> startswith(f, base), readdir(dir)), by = f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]))
+    # LAP_MAX_BLOCKS=k combines only the first k blocks of each chain (chains still running
+    # can be compared at equal length)
+    haskey(ENV, "LAP_MAX_BLOCKS") && (files = files[1:min(end, parse(Int, ENV["LAP_MAX_BLOCKS"]))])
     return reduce(vcat, [rehash_chain!(deserialize(joinpath(dir, f))) for f in files])
 end
 n = parse(Int, get(ARGS, 4, "4"))
