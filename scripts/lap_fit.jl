@@ -2,7 +2,7 @@
 #
 #   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> chain <k> [warm=<first>-<last>]
 #                                                       # one chain, checkpointed; optionally warm-started
-#   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> combine [n=4]
+#   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> combine [n=4 | k1,k2,...]
 #
 # `recorded` excludes the in/out laps of Ergast's recorded pit stops (2011 on);
 # `inferred` infers stops from the lap times (`infer_pit_stops`). Chains are
@@ -64,8 +64,9 @@ function load_blocks(prefix)
     haskey(ENV, "LAP_MAX_BLOCKS") && (files = files[1:min(end, parse(Int, ENV["LAP_MAX_BLOCKS"]))])
     return reduce(vcat, [rehash_chain!(deserialize(joinpath(dir, f))) for f in files])
 end
-n = parse(Int, get(ARGS, 4, "4"))
-chain = reduce(hcat, [load_blocks("output/$(tag)_chain$(k)") for k in 1:n])
+arg = get(ARGS, 4, "4")              # chains 1..n, or a comma-separated list (e.g. 2,3,4)
+ks = occursin(",", arg) ? parse.(Int, split(arg, ",")) : 1:parse(Int, arg)
+chain = reduce(hcat, [load_blocks("output/$(tag)_chain$(k)") for k in ks])
 ni, nc = size(chain[:σ])
 mc = lap_mach_counts(d)
 function collect3(f)
