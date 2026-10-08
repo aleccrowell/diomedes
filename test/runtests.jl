@@ -821,6 +821,92 @@ end
         @test minimum(g2.y[.!partial_mask(g2)[1:length(g2.y)]]) == 0.0 && g2.y[findfirst(partial_mask(g2))] ≈ -1.0
     end
 
+    @testset "lap-time model (#12)" begin
+        # pit inference: 90 s laps, a stop with in-lap +5 s and out-lap +18 s at laps 20/21, a spin (+8 s) at 40
+        t = fill(90_000.0, 60); t[20] += 5_000; t[21] += 18_000; t[40] += 8_000
+        @test infer_pit_stops(t, Set{Int}()) == [20]
+        @test infer_pit_stops(t, Set([20, 21])) == Int[]          # race-wide slow laps are skipped
+        # prepare_laps on a small race: 2 cars × 10 laps, a stop for car "a" at lap 4,
+        # a safety car on lap 7 (every car +40%), lap 1 slow from the start
+        rows = DataFrame(series = "f1", season = 2019, event_id = "2019-01", competitor_id = ["a", "b"],
+                         machine_id = ["m1", "m2"])
+        lt = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
+                       time_ms = Float64[], position = Union{Missing,Int}[])
+        for (c, base) in (("a", 90_000.0), ("b", 91_000.0)), l in 1:10
+            x = base * (l == 1 ? 1.1 : l == 7 ? 1.4 : 1.0) + (c == "a" && l == 4 ? 5_000 : c == "a" && l == 5 ? 18_000 : 0)
+            push!(lt, ("f1", 2019, "2019-01", c, l, x, missing))
+        end
+        ps = DataFrame(series = "f1", season = 2019, event_id = "2019-01", competitor_id = "a", lap = 4,
+                       duration_ms = Union{Missing,Float64}[23_000])
+        for mode in (:recorded, :inferred)
+            d = prepare_laps(lt, rows; pits = mode, pit_stops = ps)
+            @test d.excluded[:lap1] == 2 && d.excluded[:slow_race] == 4 && d.excluded[:pit] == 2   # laps 7, 8
+            ra = d.rows[d.rows.competitor_id .== "a", :]
+            @test ra.lap == [2, 3, 6, 9, 10] && ra.stint == [1, 2, 1, 4, 5]
+            @test d.y ≈ 100 .* log.(d.rows.time_ms ./ 91_000)      # median clean lap: 5 laps of a at 90 s, 7 of b at 91 s
+        end
+        @test_throws ArgumentError prepare_laps(lt, rows; pits = :recorded)
+        # log density against a direct sum, and the fused gradient against ForwardDiff
+        rng = Xoshiro(12)
+        lt2 = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
+                        time_ms = Float64[], position = Union{Missing,Int}[])
+        rows2 = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], machine_id = String[])
+        for s in 2018:2019, r in 1:2, (j, c) in enumerate(("a", "b", "c", "e"))
+            push!(rows2, ("f1", s, "$s-0$r", c, "m$(cld(j, 2) + (s == 2019 && j > 2 ? 0 : 0))"))
+            for l in 1:12
+                push!(lt2, ("f1", s, "$s-0$r", c, l, 90_000 * (1 + 0.01 * randn(rng)) + 300j, missing))
+            end
+        end
+        d = prepare_laps(lt2, rows2; pits = :inferred)
+        nc, nm, nr = length(d.competitors), length(d.machines), length(d.races)
+        θ = (; σ_comp = 0.5, σ_mach = 0.7, σ = 0.4, a_comp = randn(rng, nc), b_mach = randn(rng, nm), μ_γ = 0.1,
+             γ = 0.2 .* randn(rng, nr), μ_δ = -1.0, τ_δ = 0.3, δ = randn(rng, nr), β = [0.02, 0.01], a_π = -1.2, a_λ = 0.3)
+        a = θ.a_comp .- mean(θ.a_comp)
+        b = Diomedes.sum_to_zero_by(θ.b_mach, d.mach_season, Diomedes.lap_mach_counts(d))
+        h = [a[d.comp[j]] + b[d.mach[j]] + θ.β[1] * d.stint[j] / 10 + θ.β[2] * (d.stint[j] / 10)^2 for j in eachindex(d.y)]
+        hbar = [mean(h[d.race .== r]) for r in 1:nr]
+        fbar = [mean(d.frac[d.race .== r]) for r in 1:nr]
+        ll = sum(Diomedes.paceloss_logpdf(d.y[j] - (θ.γ[d.race[j]] + θ.δ[d.race[j]] * (d.frac[j] - fbar[d.race[j]]) +
+                                                     h[j] - hbar[d.race[j]]),
+                                          θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d.y))
+        model = lap_effects(d)
+        @test Turing.DynamicPPL.loglikelihood(model, θ) ≈ ll
+        LDF = Turing.DynamicPPL.LogDensityFunction
+        LDP = Turing.DynamicPPL.LogDensityProblems
+        rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
+        fd = LDF(model; adtype = AutoForwardDiff())
+        pos = (:σ_comp, :σ_mach, :σ, :τ_δ)
+        for _ in 1:3
+            x = reduce(vcat, [k in pos ? [0.2 + rand(rng)] : v isa AbstractVector ? 0.5 .* randn(rng, length(v)) : [0.5 * randn(rng)]
+                              for (k, v) in pairs(θ)])
+            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+        end
+        x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θ)])
+        @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(model), z), x).tape) < 1000
+        # the warm-start layout matches the sampler's parameter vector
+        ranges = NamedTuple(getfield(LDF(model), :_varname_ranges))
+        let o = 0
+            for (name, (n, _)) in Diomedes.lap_layout(d)
+                @test ranges[name].range == (o + 1):(o + n)
+                o += n
+            end
+            @test o == LDP.dimension(LDF(model))
+        end
+        # warm start: shared levels keep their variance, new levels get the group median,
+        # scalars scale with the lap counts; a 2018-only fit warm-starts the 2018-19 one
+        d_old = prepare_laps(lt2[lt2.season .== 2018, :], rows2[rows2.season .== 2018, :]; pits = :inferred)
+        dim_old = sum(first(last(p)) for p in Diomedes.lap_layout(d_old))
+        fake = (; hamiltonian = (; metric = (; M⁻¹ = collect(1.0:dim_old))), kernel = (; τ = (; integrator = (; ϵ = 0.04))))
+        ws = lap_warm_start(fake, d_old, d)
+        @test length(ws.Minv) == LDP.dimension(LDF(model))
+        r = length(d_old.y) / length(d.y)
+        @test ws.Minv[1:3] ≈ [1.0, 2.0, 3.0] .* r && ws.ϵ ≈ 0.04 * sqrt(r)
+        γo, γn = NamedTuple(getfield(LDF(lap_effects(d_old)), :_varname_ranges)).γ.range, ranges.γ.range
+        @test ws.Minv[γn][1:2] == collect(1.0:dim_old)[γo]                 # 2018 races, in the same order
+        @test all(==(median(collect(1.0:dim_old)[γo])), ws.Minv[γn][3:4])  # 2019 races are new
+        @test_throws DimensionMismatch lap_warm_start(fake, d, d)
+    end
+
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
         rng = Xoshiro(31)
         n_comp, n_season, cars_per_season, n_race_per_season = 24, 3, 6, 8
