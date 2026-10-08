@@ -8,12 +8,19 @@
 #       gap_all_pl_dur_rw_kappa_age_big_slope_dev_fgam) for the same drivers and
 #       car-seasons
 #
+# LAP_SEASONS=<first>-<last> restricts the car-season comparison to those seasons.
 # Reads output/<tag>_{drivers,cars}.csv (scripts/lap_fit.jl combine) and, for the
 # race model, output/<race_tag>_{competitor,machine}_effects.csv.
 
 using CSV, DataFrames, Statistics
 
-read2(tag) = (CSV.read("output/$(tag)_drivers.csv", DataFrame), CSV.read("output/$(tag)_cars.csv", DataFrame))
+# LAP_SEASONS=<first>-<last> keeps only car-seasons from those seasons (labels end in _<year>)
+const SEASONS = let m = match(r"^(\d{4})-(\d{4})$", get(ENV, "LAP_SEASONS", ""))
+    m === nothing ? nothing : parse(Int, m[1]):parse(Int, m[2])
+end
+in_seasons(label) = SEASONS === nothing || parse(Int, last(split(label, "_"))) in SEASONS
+read2(tag) = (CSV.read("output/$(tag)_drivers.csv", DataFrame),
+              filter(:machine => in_seasons, CSV.read("output/$(tag)_cars.csv", DataFrame)))
 
 function report(name, x, sx, y, sy, labels; n_show = 8)
     println("\n$name: n = $(length(x)), correlation ", round(cor(x, y); digits = 3),
