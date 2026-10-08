@@ -1,6 +1,7 @@
 # Fit the lap-time model (#12) on F1 lap times (Ergast, 1996–2019).
 #
-#   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> chain <k>   # one chain, checkpointed
+#   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> chain <k> [warm=<first>-<last>]
+#                                                       # one chain, checkpointed; optionally warm-started
 #   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> combine [n=4]
 #
 # `recorded` excludes the in/out laps of Ergast's recorded pit stops (2011 on);
@@ -10,7 +11,7 @@
 # output/laps_<first>-<last>_<pits>_{drivers,cars}.csv. With LAP_MAX_BLOCKS=k only the
 # first k blocks of each chain are used.
 
-using Diomedes, CSV, DataFrames, Random, Serialization, Statistics
+using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
 import MCMCDiagnosticTools
 
@@ -29,8 +30,27 @@ mkpath("output")
 
 if action == "chain"
     k = parse(Int, ARGS[4])
+    # warm=<first>-<last>: start from the adapted metric and step size of chain k of that
+    # (finished, same-pits) fit, and adapt for 300 iterations instead of 500
+    warm = something(match(r"^warm=(\d{4})-(\d{4})$", get(ARGS, 5, "")), nothing)
+    ws, n_adapts = nothing, 500
+    if warm !== nothing
+        old_seasons = parse(Int, warm[1]):parse(Int, warm[2])
+        # chain k of the old fit, or (if it has fewer chains) one of them in turn
+        have = sort(unique(parse(Int, m[1]) for f in readdir("output")
+                           for m in (match(Regex("^laps_$(warm[1])-$(warm[2])_$(pits)_chain(\\d+)_block"), f),)
+                           if m !== nothing))
+        old_tag = "laps_$(warm[1])-$(warm[2])_$(pits)_chain$(k in have ? k : have[mod1(k, length(have))])"
+        blocks = filter(f -> startswith(f, old_tag * "_block"), readdir("output"))
+        last_block = argmax(f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]), blocks)
+        st = only(Turing.loadstate(rehash_chain!(deserialize(joinpath("output", last_block)))))
+        d_old = prepare_laps(fetch_laps(src, old_seasons), fetch_results(src, old_seasons); pits,
+                             pit_stops = pits === :recorded ? fetch_pit_stops(src, old_seasons) : nothing)
+        ws, n_adapts = lap_warm_start(st, d_old, d), 300
+        println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
+    end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k,
-                                  progress_log = stdout)
+                                  progress_log = stdout, warm_start = ws, n_adapts)
     println("chain $k: $(round(t / 60; digits = 1)) min, mean leapfrog steps per draw ",
             round(mean(chain[:n_steps]); digits = 1), ", divergences ", count(chain[:numerical_error] .> 0))
     exit()

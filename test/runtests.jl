@@ -883,6 +883,28 @@ end
         end
         x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θ)])
         @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(model), z), x).tape) < 1000
+        # the warm-start layout matches the sampler's parameter vector
+        ranges = NamedTuple(getfield(LDF(model), :_varname_ranges))
+        let o = 0
+            for (name, (n, _)) in Diomedes.lap_layout(d)
+                @test ranges[name].range == (o + 1):(o + n)
+                o += n
+            end
+            @test o == LDP.dimension(LDF(model))
+        end
+        # warm start: shared levels keep their variance, new levels get the group median,
+        # scalars scale with the lap counts; a 2018-only fit warm-starts the 2018-19 one
+        d_old = prepare_laps(lt2[lt2.season .== 2018, :], rows2[rows2.season .== 2018, :]; pits = :inferred)
+        dim_old = sum(first(last(p)) for p in Diomedes.lap_layout(d_old))
+        fake = (; hamiltonian = (; metric = (; M⁻¹ = collect(1.0:dim_old))), kernel = (; τ = (; integrator = (; ϵ = 0.04))))
+        ws = lap_warm_start(fake, d_old, d)
+        @test length(ws.Minv) == LDP.dimension(LDF(model))
+        r = length(d_old.y) / length(d.y)
+        @test ws.Minv[1:3] ≈ [1.0, 2.0, 3.0] .* r && ws.ϵ ≈ 0.04 * sqrt(r)
+        γo, γn = NamedTuple(getfield(LDF(lap_effects(d_old)), :_varname_ranges)).γ.range, ranges.γ.range
+        @test ws.Minv[γn][1:2] == collect(1.0:dim_old)[γo]                 # 2018 races, in the same order
+        @test all(==(median(collect(1.0:dim_old)[γo])), ws.Minv[γn][3:4])  # 2019 races are new
+        @test_throws DimensionMismatch lap_warm_start(fake, d, d)
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin

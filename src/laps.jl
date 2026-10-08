@@ -277,13 +277,18 @@ lap_effects(d::LapData) = lap_effects(d, lap_mach_counts(d))
 
 Sample `lap_effects`, starting near the prior centre with race intercepts and
 slopes from a per-race least-squares line (jittered per chain). Options as in
-`fit_paceloss`, including `checkpoint` (resumable blocks, one chain).
+`fit_paceloss`, including `checkpoint` (resumable blocks, one chain). With
+`warm_start = lap_warm_start(...)` (checkpointed fits), NUTS starts from that
+metric and step size (`lap_warm_sampler`) and adapts for `n_adapts` iterations.
 """
 function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                   sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                   progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
-                  checkpoint::Union{Nothing,AbstractString} = nothing, seed::Int = 1, kwargs...)
+                  checkpoint::Union{Nothing,AbstractString} = nothing, seed::Int = 1,
+                  warm_start = nothing, n_adapts::Int = 500, kwargs...)
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
+    warm_start === nothing || checkpoint !== nothing ||
+        throw(ArgumentError("warm_start is implemented for checkpointed fits"))
     model = lap_effects(d)
     # per-race line through the laps, as starting values
     γ0, δ0 = zeros(length(d.races)), zeros(length(d.races))
@@ -310,8 +315,69 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                              μ_δ = mean(δ0), τ_δ = std(δ0) * (0.9 + 0.2 * rand(rng)),
                              δ = δ0 .+ 0.05 .* randn(rng, length(δ0)), β = β0 .+ 0.01 .* randn(rng, 2),
                              a_π = -1.5 + 0.1 * randn(rng), a_λ = 0.1 * randn(rng)))
+    external = warm_start === nothing ? nothing : lap_warm_sampler(warm_start.Minv, warm_start.ϵ)
     checkpoint === nothing ||
-        return run_nuts_checkpointed(model, init(), checkpoint; n_samples, seed, progress_log, log_every, kwargs...)
+        return run_nuts_checkpointed(model, init(), checkpoint; n_samples, n_adapts, seed, progress_log, log_every,
+                                     external, kwargs...)
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler, rng,
                     progress, progress_log, log_every, kwargs...)
+end
+
+# Warm start (#12): the 1996–2019 fit spends most of its warm-up at maximum tree
+# depth before the first mass-matrix window (~80 s per iteration on 470k laps).
+# Starting from the step size and diagonal metric adapted on a smaller fit
+# (2011–2019) skips that phase.
+
+"Parameter layout of `lap_effects` in the sampler's (unconstrained) vector: name => (length, level labels or nothing)."
+lap_layout(d::LapData) = [:σ_comp => (1, nothing), :σ_mach => (1, nothing), :σ => (1, nothing),
+                          :a_comp => (length(d.competitors), d.competitors), :b_mach => (length(d.machines), d.machines),
+                          :μ_γ => (1, nothing), :γ => (length(d.races), d.races), :μ_δ => (1, nothing),
+                          :τ_δ => (1, nothing), :δ => (length(d.races), d.races), :β => (2, nothing),
+                          :a_π => (1, nothing), :a_λ => (1, nothing)]
+
+"""
+    lap_warm_start(state, d_old::LapData, d_new::LapData) -> (; Minv, ϵ)
+
+Diagonal inverse metric and step size for a fit to `d_new`, from the adapted
+NUTS `state` of a fit to `d_old` (`only(Turing.loadstate(chain))`). Levels
+(drivers, car-seasons, races) present in both keep their adapted variance; new
+levels get their group's median. Scalars are scaled by the ratio of lap
+counts (posterior variance ∝ 1/data). Adaptation still runs on the new fit;
+this only gives it a good start.
+"""
+function lap_warm_start(state, d_old::LapData, d_new::LapData)
+    Mo = state.hamiltonian.metric.M⁻¹
+    lo, ln = lap_layout(d_old), lap_layout(d_new)
+    sum(first(last(p)) for p in lo) == length(Mo) || throw(DimensionMismatch("state does not match d_old"))
+    scale = length(d_old.y) / length(d_new.y)
+    Mn = Float64[]
+    io = 0
+    for ((name, (no, labels_old)), (_, (nn, labels_new))) in zip(lo, ln)
+        block = Mo[(io + 1):(io + no)]
+        io += no
+        if labels_old === nothing
+            append!(Mn, block .* scale)
+        else
+            pos = Dict(l => k for (k, l) in enumerate(labels_old))
+            med = median(block)
+            append!(Mn, [haskey(pos, l) ? block[pos[l]] : med for l in labels_new])
+        end
+    end
+    return (; Minv = Mn, ϵ = state.kernel.τ.integrator.ϵ * sqrt(scale))
+end
+
+"""
+    lap_warm_sampler(Minv, ϵ; δ = 0.8)
+
+NUTS (AdvancedHMC, via `externalsampler`, uncompiled ReverseDiff) starting from
+diagonal inverse metric `Minv` and step size `ϵ`, with Stan's windowed
+adaptation of both (as Turing's `NUTS`).
+"""
+function lap_warm_sampler(Minv::AbstractVector, ϵ::Real; δ::Real = 0.8)
+    metric = AdvancedHMC.DiagEuclideanMetric(Vector{Float64}(Minv))
+    integrator = AdvancedHMC.Leapfrog(Float64(ϵ))
+    κ = AdvancedHMC.HMCKernel(AdvancedHMC.Trajectory{AdvancedHMC.MultinomialTS}(integrator,
+                                                                               AdvancedHMC.GeneralisedNoUTurn()))
+    adaptor = AdvancedHMC.StanHMCAdaptor(AdvancedHMC.MassMatrixAdaptor(metric), AdvancedHMC.StepSizeAdaptor(δ, integrator))
+    return externalsampler(AdvancedHMC.HMCSampler(κ, metric, adaptor); adtype = gap_sampler().adtype)
 end
