@@ -9,18 +9,22 @@
 # saved in blocks of 100 draws under output/laps_<first>-<last>_<pits>_chain<k>;
 # rerun a killed chain to resume. `combine` prints convergence and writes
 # output/laps_<first>-<last>_<pits>_{drivers,cars}.csv. With LAP_MAX_BLOCKS=k only the
-# first k blocks of each chain are used.
+# first k blocks of each chain are used. A `notyres` argument (anywhere) fits
+# without the stint-age terms (tag laps_<first>-<last>_<pits>_notyres); a warm
+# start then comes from the fit with them.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
 import MCMCDiagnosticTools
 
-m = match(r"^(\d{4})-(\d{4})$", ARGS[1])
+tyres = "notyres" ∉ ARGS
+args = filter(!=("notyres"), ARGS)
+m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
-pits = Symbol(ARGS[2])
-action = get(ARGS, 3, "combine")
+pits = Symbol(args[2])
+action = get(args, 3, "combine")
 data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
-tag = "laps_$(ARGS[1])_$(pits)"
+tag = "laps_$(args[1])_$(pits)" * (tyres ? "" : "_notyres")
 src = ErgastCSV(data_dir)
 res = fetch_results(src, seasons)
 d = prepare_laps(fetch_laps(src, seasons), res; pits,
@@ -29,10 +33,10 @@ println(d); flush(stdout)
 mkpath("output")
 
 if action == "chain"
-    k = parse(Int, ARGS[4])
+    k = parse(Int, args[4])
     # warm=<first>-<last>: start from the adapted metric and step size of chain k of that
     # (finished, same-pits) fit, and adapt for 300 iterations instead of 500
-    warm = something(match(r"^warm=(\d{4})-(\d{4})$", get(ARGS, 5, "")), nothing)
+    warm = something(match(r"^warm=(\d{4})-(\d{4})$", get(args, 5, "")), nothing)
     ws, n_adapts = nothing, 500
     if warm !== nothing
         old_seasons = parse(Int, warm[1]):parse(Int, warm[2])
@@ -46,11 +50,11 @@ if action == "chain"
         st = only(Turing.loadstate(rehash_chain!(deserialize(joinpath("output", last_block)))))
         d_old = prepare_laps(fetch_laps(src, old_seasons), fetch_results(src, old_seasons); pits,
                              pit_stops = pits === :recorded ? fetch_pit_stops(src, old_seasons) : nothing)
-        ws, n_adapts = lap_warm_start(st, d_old, d), 300
+        ws, n_adapts = lap_warm_start(st, d_old, d; tyres_new = tyres), 300
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
     end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k,
-                                  progress_log = stdout, warm_start = ws, n_adapts)
+                                  progress_log = stdout, warm_start = ws, n_adapts, tyres)
     println("chain $k: $(round(t / 60; digits = 1)) min, mean leapfrog steps per draw ",
             round(mean(chain[:n_steps]); digits = 1), ", divergences ", count(chain[:numerical_error] .> 0))
     exit()
@@ -64,7 +68,7 @@ function load_blocks(prefix)
     haskey(ENV, "LAP_MAX_BLOCKS") && (files = files[1:min(end, parse(Int, ENV["LAP_MAX_BLOCKS"]))])
     return reduce(vcat, [rehash_chain!(deserialize(joinpath(dir, f))) for f in files])
 end
-arg = get(ARGS, 4, "4")              # chains 1..n, or a comma-separated list (e.g. 2,3,4)
+arg = get(args, 4, "4")              # chains 1..n, or a comma-separated list (e.g. 2,3,4)
 ks = occursin(",", arg) ? parse.(Int, split(arg, ",")) : 1:parse(Int, arg)
 chain = reduce(hcat, [load_blocks("output/$(tag)_chain$(k)") for k in ks])
 ni, nc = size(chain[:σ])
@@ -77,7 +81,7 @@ end
 drv = collect3((i, c) -> sum_to_zero(chain[:a_comp][i, c]))
 car = collect3((i, c) -> sum_to_zero_by(chain[:b_mach][i, c], d.mach_season, mc))
 scal_names = (:σ_comp, :σ_mach, :σ, :μ_γ, :μ_δ, :τ_δ, :a_π, :a_λ)
-scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], chain[:β][i, c]))
+scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], tyres ? chain[:β][i, c] : Float64[]))
 println("\nconvergence (max R-hat, min bulk ESS):")
 for (name, A) in (("drivers", drv), ("cars", car), ("scalars", scal))
     println(rpad(name, 10), round(maximum(MCMCDiagnosticTools.rhat(A)); digits = 3), "  ",
@@ -86,7 +90,7 @@ end
 println("divergences: ", count(chain[:numerical_error] .> 0))
 flat(A) = reshape(A, ni * nc, :)
 println("\nscalars (mean ± sd):")
-for (j, nm) in enumerate((string.(scal_names)..., "β_stint", "β_stint²/10"))
+for (j, nm) in enumerate((string.(scal_names)..., (tyres ? ("β_stint", "β_stint²/10") : ())...))
     v = flat(scal)[:, j]
     println(rpad(nm, 12), round(mean(v); digits = 4), " ± ", round(std(v); digits = 4))
 end
