@@ -7,27 +7,22 @@ written for readers comfortable with Bayesian hierarchical models; the
 [manual](@ref "Models overview") and [API reference](@ref "API: Gap and pace + loss models")
 cover how to run them.
 
-!!! note "Work in progress"
-    The methodology pages are being written (#45). Until then, the model pages
-    of the manual give each model's structure, and the linked GitHub issues hold
-    the evidence.
+## Pages
 
-## Outline
+1. [The question and what is identifiable](@ref): crossed driver and car
+   effects, what the data can't tell apart, and how convergence is measured.
+2. [Data handling](@ref): the % gap outcome, lapped cars as intervals,
+   red-flag suspensions, priors in the data's units, rallying, lap times.
+3. [Noise: pace and incidents](@ref): Gaussian pace noise plus one-sided
+   incident losses, era paths, and big losses.
+4. [Model progression](@ref): each added term with its out-of-sample evidence
+   and what it found, and how models were compared.
+5. [Retirements and selection bias](@ref): a competing-risks model of
+   retirements, and whether dropping them biases the pace effects.
+6. [The lap-time model](@ref): per-lap pace, inferred pit laps, and agreement
+   with the race model.
+7. [Limitations](@ref).
 
-1. **The question and what is identifiable.** Crossed driver and car-season
-   effects; why car effects are only identified within a season, and how
-   drivers who change teams link seasons. See [Mean structure](@ref).
-2. **Data.** Results from 1950, lapped cars as interval-censored gaps, red-flag
-   suspensions, inferred pit laps. See [Data](@ref).
-3. **Noise.** Why pace noise and incident losses are modelled separately.
-   See [Pace + loss model](@ref).
-4. **Model progression.** Each added term (race duration, era paths, pace
-   scale, career curves, big losses, in-season development) and the
-   out-of-sample evidence for it. See [Which pace model to use](@ref).
-5. **Retirements and selection.** A competing-risks model of retirements, and a
-   check of whether dropping retirements biases the pace effects. See
-   [Retirement model](@ref) and [Retirements and selection](@ref).
-6. **The lap-time model** and how its effects agree with the race model's. See
-   [Lap-time model](@ref).
-7. **Limitations.** What the data can't tell apart, and known
-   mis-specifications.
+Links of the form [#15](https://github.com/aleccrowell/diomedes/issues/15)
+point to the GitHub issues and pull requests where each choice was designed and
+tested; they hold the full evidence.
