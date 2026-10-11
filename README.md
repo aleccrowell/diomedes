@@ -6,92 +6,82 @@
 Bayesian models of driver vs machine performance in motorsport, in Julia with
 [Turing.jl](https://turinglang.org).
 
-The question: how much of a result is the driver and how much is the car? Each
-timed stage (an F1 race, a WRC special stage) gives a standardised time per
-competitor, modelled as
+The question: how much of a result is the driver and how much is the car? Every
+model has crossed random effects for drivers and car-seasons, fitted to public
+timing data: Formula 1 from 1950 (Jolpica / Ergast) and the WRC and ERC rally
+championships.
 
-    z = α + driver effect + machine-season effect + noise
+| Model | Outcome | Fit |
+|---|---|---|
+| Pace + loss (main model) | % gap to the winner, lapped cars as intervals; Gaussian pace noise plus incident losses; optional era, career, big-loss and in-season development terms | `fit_paceloss` |
+| Gap model | the same outcome with Student-t noise | `fit_gaps` |
+| Retirement | competing-risks hazards: car reliability, driver incidents, collisions | `fit_retirement` |
+| Lap time (F1, 1996–) | lap time, % of the race's median clean lap (in development) | `fit_laps` |
+| Z-score (legacy port) | stage time standardised within stage | `fit_effects` |
 
-with crossed random effects for drivers and car-seasons.
+## Documentation
 
-## Layout
+The manual and API reference are built with Documenter.jl:
 
 ```
-src/
-  Diomedes.jl        module entry
-  schema.jl          common long-format results schema (one row per competitor per stage)
-  cache.jl           on-disk cache for API responses + rate limiting
-  sources/           adapters: public data -> schema
-    jolpica.jl         F1, 1950-present (Jolpica API, the Ergast successor)
-    ergast_csv.jl      F1 from a local Ergast CSV dump
-    wrc.jl             WRC 2018-present / ERC 2022-present stage times (wrc.com timing API)
-  prepare.jl         standardise times per stage, index levels -> ModelData
-  models.jl          z-score model (legacy port), fitting, progress logging, diagnostics
-  gap_model.jl       % gap to winner, lapped cars as intervals -> GapData; Student-t model
-  paceloss.jl        pace + incident-loss noise model with race-duration / era terms
-  likelihoods.jl     fused likelihoods with hand-written reverse-mode rules
-  loo.jl             per-row log-likelihoods for PSIS-LOO
-scripts/
-  legacy_parity.jl   check against the original Python pipeline
-  gap_fit.jl         fit a gap model (4 chains, as parallel processes: `chain k` + `combine`)
-  loo_compare.jl     PSIS-LOO comparison of fitted gap models
-  incident_diagnostic.jl, era_paths.jl   per-season incident rate / loss size
-test/                offline tests (fixtures in test/fixtures)
-legacy/              original TensorFlow Probability implementation (reference only)
+julia --project=docs -e 'using Pkg; Pkg.instantiate()'   # once
+julia --project=docs docs/make.jl                         # then open docs/build/index.html
 ```
 
-## Usage
+It covers getting started, the data sources and schema, one page per model
+(outcome, likelihood, identification, options), running long fits
+(checkpoints, parallel chains, warm starts), model comparison, and the scripts.
+
+## Quick start
 
 ```julia
 julia> ]activate .
 julia> ]instantiate
 julia> using Diomedes
 
-julia> res = fetch_results(JolpicaF1(), 2010:2024)      # or WRCTiming(), ErgastCSV("dir")
-julia> d = prepare(res)                                  # ModelData
-julia> chain = fit_effects(d; n_chains = 4)              # NUTS; σ_y = nothing to learn the noise scale
-julia> convergence_summary(chain)                        # worst R-hat / ESS
-julia> eff = effects_table(chain, d)
-julia> first(eff.competitors, 10)
+julia> res = fetch_results(JolpicaF1(), 1950:2024)       # or ErgastCSV("dir"), WRCTiming()
+julia> g = prepare_gaps(res)                               # % gaps, lapped cars as intervals
+julia> chain = fit_paceloss(g; loss_duration = true, era = :rw, pace_scale = true, n_chains = 4)
+julia> identified_convergence(chain, g, "pl_dur_rw_kappa")
+julia> gap_effects_table(chain, g).competitors             # negative = faster, % of race time
 ```
 
-Responses are cached under `data/cache/` (override with `DIOMEDES_CACHE`), so
-repeat runs make no requests. Jolpica allows 500 unauthenticated requests per
-hour; a full 1950-present history needs about 300.
+API responses are cached under `data/cache/` (override with `DIOMEDES_CACHE`).
+Full-history fits take from about an hour to most of a day on a Raspberry Pi 5;
+the scripts in `scripts/` run them as one process per chain with resumable
+checkpoints (see the manual's "Running long fits").
 
-A full 4-chain fit on all F1 data (6,400 results) takes under 2 minutes on a
-Raspberry Pi 5. Chains run one after another by default: on that machine,
-threaded chains were slower in total (see `fit_effects`).
+## Layout
 
-### Gap model with lapped cars (F1)
-
-The z-score model uses lead-lap finishers only, so it silently drops the slower
-half of every field. The gap model uses every classified finisher:
-
-```julia
-julia> g = prepare_gaps(fetch_results(JolpicaF1(), 1950:2024))   # timed + lapped rows
-julia> chain = fit_paceloss(g; era = :rw, n_chains = 4)           # best by PSIS-LOO so far
-julia> gap_effects_table(chain, g).competitors
+```
+src/
+  Diomedes.jl        module entry, exports
+  schema.jl          results / lap / pit-stop schemas
+  cache.jl           on-disk cache for API responses + rate limiting
+  sources/           adapters: public data -> schema
+    jolpica.jl         F1, 1950-present (Jolpica API, the Ergast successor)
+    ergast_csv.jl      F1 from a local Ergast CSV dump (+ lap times, pit stops)
+    wrc.jl             WRC 2018- / ERC 2022- stage times (wrc.com timing API)
+    suspensions.jl     red-flag suspension detection from lap times
+  prepare.jl         z-scores per stage -> ModelData
+  models.jl          z-score model; samplers, checkpointed NUTS, progress, diagnostics
+  noise.jl           noise families for the gap model
+  gap_model.jl       % gap to winner, lapped cars as intervals -> GapData; Student-t model
+  paceloss.jl        pace + incident-loss model and its optional terms
+  likelihoods.jl     fused likelihoods with hand-written reverse-mode rules
+  loo.jl             per-row log-likelihoods (PSIS-LOO), model names, convergence
+  kfold.jl           grouped K-fold cross-validation
+  retirement.jl      competing-risks retirement model
+  partial.jl         partial-distance gaps of retirements (selection check)
+  laps.jl            lap-time model
+scripts/             full-data fits and analyses (arguments in each header)
+docs/                Documenter manual and API reference
+test/                offline tests (fixtures in test/fixtures)
+legacy/              original TensorFlow Probability implementation (reference only)
 ```
 
-- Outcome: % gap to the winner, `100·log(T / T_winner)`. A car k laps down is an
-  interval, `[100·log(L/l), 100·log(L/(l-1)))`.
-- Noise: small Gaussian pace noise plus an incident loss (with probability π,
-  an exponential loss with mean λ) that only ever makes results slower.
-- `era = :rw` lets π and λ drift by season (random walks with heavy-tailed
-  steps). `:decade`, `:regime` (regulation eras) and `loss_duration` are the
-  alternatives.
-- Race intercepts; driver effects sum to zero; car-season effects sum to zero
-  within each season. The Indianapolis 500 (1950–60) is excluded by default.
-
-A full 4-chain fit on all F1 data takes 40–70 min on a Raspberry Pi 5:
-`scripts/gap_fit.jl all pl_rw chain k` for k = 1..4 in parallel, then `combine`.
-
-### Adding a series
-
-Write a `DataSource` subtype and a `fetch_results(src, seasons)` method that
-returns a `DataFrame` matching `RESULT_SCHEMA` (check it with `validate_results`).
-Nothing downstream is series-specific.
+Adding a series means writing one `DataSource` adapter that returns
+`RESULT_SCHEMA` rows; nothing downstream is series-specific (manual: "Data").
 
 ## Tests
 
