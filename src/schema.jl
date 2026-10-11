@@ -9,6 +9,13 @@
 # for the cleaner rally identifiers). Models pair it with `season` to form a
 # machine-season effect, since cars change year to year.
 
+"""
+    RESULT_SCHEMA
+
+The common long-format results table, as `column => element type` pairs: one row
+per competitor per timed stage (an F1 race, a WRC special stage). Every
+`DataSource` returns it from `fetch_results`; see `validate_results`.
+"""
 const RESULT_SCHEMA = [
     :series        => String,                   # "f1", "wrc", "erc", ...
     :season        => Int,
@@ -49,6 +56,12 @@ not compatible with the schema. Returns `df` so it can be used inline.
 validate_results(df::AbstractDataFrame) = validate_schema(df, RESULT_SCHEMA, "results")
 
 # Lap-level tables (#12), circuit racing only. Ids match the results table's.
+"""
+    LAP_SCHEMA
+
+Lap times, as `column => element type` pairs: one row per car per lap
+(`fetch_laps`). Ids match `RESULT_SCHEMA`'s.
+"""
 const LAP_SCHEMA = [
     :series        => String,
     :season        => Int,
@@ -58,6 +71,12 @@ const LAP_SCHEMA = [
     :time_ms       => Float64,                  # lap time
     :position      => Union{Missing,Int},       # running position at the end of the lap
 ]
+"""
+    PIT_SCHEMA
+
+Pit stops, as `column => element type` pairs: one row per stop, with the in-lap
+(`fetch_pit_stops`). Ids match `RESULT_SCHEMA`'s.
+"""
 const PIT_SCHEMA = [
     :series        => String,
     :season        => Int,
@@ -69,11 +88,16 @@ const PIT_SCHEMA = [
 
 """
     fetch_laps(src::DataSource, seasons) -> DataFrame
-    fetch_pit_stops(src::DataSource, seasons) -> DataFrame
 
-Lap times (`LAP_SCHEMA`) and pit stops (`PIT_SCHEMA`), for sources that have them.
+Lap times (`LAP_SCHEMA`), for sources that have them (`ErgastCSV`, 1996 on).
 """
 function fetch_laps end
+
+"""
+    fetch_pit_stops(src::DataSource, seasons) -> DataFrame
+
+Pit stops (`PIT_SCHEMA`), for sources that have them (`ErgastCSV`, 2011 on).
+"""
 function fetch_pit_stops end
 fetch_laps(src, season::Integer) = fetch_laps(src, [season])
 fetch_pit_stops(src, season::Integer) = fetch_pit_stops(src, [season])

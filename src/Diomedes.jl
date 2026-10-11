@@ -7,11 +7,12 @@ Data flows through three layers:
 
 1. **Sources** (`src/sources/`) fetch raw data from a public API or local files and
    normalise it into the common long-format results schema (`src/schema.jl`).
-2. **Preparation** (`src/prepare.jl`) turns a results table into model inputs:
-   a per-stage standardised outcome plus integer indices for competitors and
-   machine-seasons.
-3. **Models** (`src/models.jl`) are Turing models over those inputs and know
-   nothing about which series the data came from.
+2. **Preparation** (`prepare`, `prepare_gaps`, `prepare_retirements`,
+   `prepare_laps`) turns a results table into one model's inputs: an outcome
+   per row plus integer indices for competitors, machine-seasons and races.
+3. **Models** (`fit_effects`, `fit_gaps`, `fit_paceloss`, `fit_retirement`,
+   `fit_laps`) are Turing models over those inputs and know nothing about
+   which series the data came from.
 
 Adding a new series means writing one source adapter; nothing downstream changes.
 """

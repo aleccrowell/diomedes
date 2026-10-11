@@ -604,8 +604,9 @@ Student-t(3) steps (step scale `τ_κ`, standardised steps `e_κ`), centred so t
 geometric mean of κ over seasons is 1. Driver and car effects are then in
 average-season units.
 """
-season_pace_scale(θ) = exp.(rw_path(θ.τ_κ .* θ.e_κ))
 race_pace_scale(θ, cov::LossCovariates) = season_pace_scale(θ)[cov.season]
+"Per-season pace scale κ (see `race_pace_scale`)."
+season_pace_scale(θ) = exp.(rw_path(θ.τ_κ .* θ.e_κ))
 
 """
     paceloss_effects(g::GapData; loss_duration = false, era = :none, pace_scale = false)

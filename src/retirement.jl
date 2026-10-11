@@ -25,6 +25,7 @@
 #     log p = -Σ_j H_j(n) + log(1 - exp(-ΔH)) + log(ΔH_k / ΔH),
 # and a censored start contributes -Σ_j H_j(n).
 
+"Retirement causes with their own hazard in `retirement_effects`: mechanical, solo incident, collision."
 const RETIRE_CAUSES = (:mech, :incident, :collision)
 
 const MECH_STATUS = Set([
