@@ -40,11 +40,17 @@ out-of-sample fit (#36).
 
 ## Pages
 
-- [Drivers](@ref "Drivers"): rankings with uncertainty, and every driver in one
+- [Drivers](drivers.md): rankings with uncertainty, and every driver in one
   explorable chart.
-- [Cars](@ref "Cars"): each season's field, dominant cars, and in-season
+- [Cars](cars.md): each season's field, dominant cars, and in-season
   development.
-- [Careers](@ref "Careers"): the shape of a career, and drivers whose
+- [Careers](careers.md): the shape of a career, and drivers whose
   trajectories differed most.
-- [Eras](@ref "Eras"): how spread out results were, and time lost to
+- [Eras](eras.md): how spread out results were, and time lost to
   incidents, season by season.
+- [Retirements](retirements.md): retirement rates by cause and season,
+  the most and least reliable cars, and incident-proneness.
+- [Lap times](laps.md): the lap-time model against the race model,
+  2011–2019.
+- [Rallying (WRC)](wrc.md): drivers and cars from WRC stage
+  times, 2018–2025.

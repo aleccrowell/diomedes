@@ -1,0 +1,28 @@
+{
+    "model": "lap_effects",
+    "fit": "laps_2011-2019_recorded",
+    "data": "F1 2011–2019 clean laps (Ergast lap times, recorded pit stops): 176385 laps, 62 drivers, 97 machine-seasons, 179 races; excluded lap1 3726, no_machine 0, pit 12682, slow_race 10891, stoppage 13",
+    "race_model": "pl_dur_rw_kappa_age_big_slope_dev_fgam",
+    "convergence": {
+        "max_rhat": 1.006,
+        "min_ess": 421,
+        "divergences": 0,
+        "groups": {
+            "cars": {
+                "max_rhat": 1.006,
+                "min_ess": 452
+            },
+            "scalars": {
+                "max_rhat": 1.002,
+                "min_ess": 928
+            },
+            "drivers": {
+                "max_rhat": 1.005,
+                "min_ess": 421
+            }
+        }
+    },
+    "exported_by": "scripts/export_site.jl laps",
+    "export_commit": "90063cd",
+    "date": "2026-10-11"
+}

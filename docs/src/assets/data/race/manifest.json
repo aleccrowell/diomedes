@@ -13,7 +13,7 @@
         "min_ess": 289.1,
         "divergences": 1
     },
-    "exported_by": "scripts/export_site.jl",
-    "export_commit": "cac942d",
+    "exported_by": "scripts/export_site.jl race",
+    "export_commit": "90063cd",
     "date": "2026-10-11"
 }
