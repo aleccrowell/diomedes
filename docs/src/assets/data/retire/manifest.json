@@ -1,0 +1,39 @@
+{
+    "model": "retirement_effects (competing risks: mechanical, incident, collision)",
+    "fit": "retire",
+    "data": "F1 1950–2019 (Ergast CSV): 22478 starts: 6219 mech, 1756 incident, 828 collision, 13675 censored; 671 drivers, 919 machine-seasons, 1007 races, 70 seasons",
+    "convergence": {
+        "max_rhat": 1.01,
+        "min_ess": 793,
+        "divergences": 1,
+        "groups": {
+            "cars": {
+                "max_rhat": 1.008,
+                "min_ess": 4225
+            },
+            "mech level": {
+                "max_rhat": 1.003,
+                "min_ess": 2760
+            },
+            "scalars": {
+                "max_rhat": 1.01,
+                "min_ess": 793
+            },
+            "collision level": {
+                "max_rhat": 1.004,
+                "min_ess": 1959
+            },
+            "drivers": {
+                "max_rhat": 1.005,
+                "min_ess": 4043
+            },
+            "incident level": {
+                "max_rhat": 1.003,
+                "min_ess": 2187
+            }
+        }
+    },
+    "exported_by": "scripts/export_site.jl retire",
+    "export_commit": "90063cd",
+    "date": "2026-10-11"
+}
