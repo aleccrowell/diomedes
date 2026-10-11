@@ -6,9 +6,45 @@
 // Data URLs in the spec are relative to docs/src (e.g. "assets/data/race/drivers.csv")
 // and are resolved against Documenter's base URL, so they work whatever the page's
 // depth. Charts follow the site theme: they re-render when the theme changes.
+//
+// Documenter pages load RequireJS before any other script. The Vega builds are
+// UMD modules: with RequireJS present they register as anonymous AMD modules
+// instead of setting globals (and RequireJS rejects anonymous modules loaded by
+// plain <script> tags). So Vega is loaded through RequireJS here, never as
+// page assets; without RequireJS it falls back to script tags.
 
 (function () {
   const figures = [];
+  const CDN = "https://cdn.jsdelivr.net/npm/";
+  const LIBS = { "vega": "vega@5.30.0/build/vega.min", "vega-lite": "vega-lite@5.21.0/build/vega-lite.min",
+                 "vega-embed": "vega-embed@6.26.0/build/vega-embed.min" };
+  let embedPromise = null;
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("could not load " + src));
+      document.head.appendChild(s);
+    });
+  }
+
+  function getVegaEmbed() {
+    if (embedPromise) return embedPromise;
+    embedPromise = new Promise((resolve, reject) => {
+      if (typeof window.requirejs === "function") {
+        const paths = {};
+        for (const [k, v] of Object.entries(LIBS)) paths[k] = CDN + v;
+        window.requirejs.config({ paths });
+        window.requirejs(["vega-embed"], resolve, reject);
+      } else {
+        loadScript(CDN + LIBS["vega"] + ".js")
+          .then(() => loadScript(CDN + LIBS["vega-lite"] + ".js"))
+          .then(() => loadScript(CDN + LIBS["vega-embed"] + ".js"))
+          .then(() => resolve(window.vegaEmbed), reject);
+      }
+    });
+    return embedPromise;
+  }
 
   function isDark() {
     // Documenter marks the theme with a class on <html>; read the actual background
@@ -37,13 +73,15 @@
     const dark = isDark();
     const spec = Object.assign({ $schema: "https://vega.github.io/schema/vega-lite/v5.json" }, resolveUrls(fig.spec));
     spec.config = Object.assign({ background: null, view: { stroke: null } }, spec.config || {});
-    vegaEmbed("#" + fig.id, spec, {
-      theme: dark ? "dark" : undefined,
-      actions: { export: true, source: false, compiled: false, editor: true },
-      renderer: "svg",
-    }).catch((err) => {
-      document.getElementById(fig.id).textContent = "Figure failed to load: " + err;
-    });
+    getVegaEmbed()
+      .then((vegaEmbed) => vegaEmbed("#" + fig.id, spec, {
+        theme: dark ? "dark" : undefined,
+        actions: { export: true, source: false, compiled: false, editor: true },
+        renderer: "svg",
+      }))
+      .catch((err) => {
+        document.getElementById(fig.id).textContent = "Figure failed to load: " + err;
+      });
   }
 
   window.diomedesFigure = function (id, spec) {
