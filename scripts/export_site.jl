@@ -67,13 +67,14 @@ dt = DataFrame(id = g.competitors, name = [dname[c] for c in g.competitors],
                rows = [count(==(d), comps) for d in eachindex(g.competitors)],
                first_season = [minimum(racerow_season[comps .== d]) for d in eachindex(g.competitors)],
                last_season = [maximum(racerow_season[comps .== d]) for d in eachindex(g.competitors)])
-de = eff.competitors
-@assert de.label isa AbstractVector
-dt = leftjoin(dt, select(de, :label => :id, :mean, :sd, :q05, :q95); on = :id)
+# per-level columns go on while rows are still in g.competitors order (SL's
+# columns); the join then keeps the left order
 if spec.slopes
     dt.slope_mean, dt.slope_sd = vec(mean(SL; dims = 1)), vec(std(SL; dims = 1))
 end
+dt = leftjoin(dt, select(eff.competitors, :label => :id, :mean, :sd, :q05, :q95); on = :id, order = :left)
 sort!(dt, :mean)
+select!(dt, :id, :name, :rows, :first_season, :last_season, :mean, :sd, :q05, :q95, Not([:id, :name, :rows, :first_season, :last_season, :mean, :sd, :q05, :q95]))
 for c in (:mean, :sd, :q05, :q95, (spec.slopes ? (:slope_mean, :slope_sd) : ())...)
     dt[!, c] = r4(dt[!, c])
 end
@@ -84,15 +85,16 @@ machs = vcat(g.t_mach, g.c_mach)
 ct = DataFrame(id = g.machines, season = [seasons[s] for s in g.mach_season],
                rows = [count(==(m), machs) for m in eachindex(g.machines)])
 ct.constructor = [replace(m, Regex("_$(s)\$") => "") for (m, s) in zip(ct.id, ct.season)]
-ct = leftjoin(ct, select(eff.machines, :label => :id, :mean, :sd, :q05, :q95); on = :id)
-if spec.dev
+if spec.dev                                   # g.machines order, as DV's columns
     ct.dev_mean, ct.dev_sd = vec(mean(DV; dims = 1)), vec(std(DV; dims = 1))
 end
+ct = leftjoin(ct, select(eff.machines, :label => :id, :mean, :sd, :q05, :q95); on = :id, order = :left)
 sort!(ct, [:season, :mean])
 for c in (:mean, :sd, :q05, :q95, (spec.dev ? (:dev_mean, :dev_sd) : ())...)
     ct[!, c] = r4(ct[!, c])
 end
-CSV.write(joinpath(outdir, "cars.csv"), select(ct, :id, :constructor, :season, Not([:id, :constructor, :season])))
+CSV.write(joinpath(outdir, "cars.csv"), select(ct, :id, :constructor, :season, :rows, :mean, :sd, :q05, :q95,
+                                                 Not([:id, :constructor, :season, :rows, :mean, :sd, :q05, :q95])))
 
 # seasons
 st = DataFrame(season = seasons, races = [count(==(s), g.race_season) for s in seasons],
