@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Drivers · Diomedes.jl</title><meta name="title" content="Drivers · Diomedes.jl"/><meta property="og:title" content="Drivers · Diomedes.jl"/><meta property="twitter:title" content="Drivers · Diomedes.jl"/><meta name="description" content="Documentation for Diomedes.jl."/><meta property="og:description" content="Documentation for Diomedes.jl."/><meta property="twitter:description" content="Documentation for Diomedes.jl."/><meta property="og:url" content="https://aleccrowell.github.io/diomedes/stable/findings/drivers/"/><meta property="twitter:url" content="https://aleccrowell.github.io/diomedes/stable/findings/drivers/"/><link rel="canonical" href="https://aleccrowell.github.io/diomedes/stable/findings/drivers/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script><script src="https://cdn.jsdelivr.net/npm/vega@5.30.0"></script><script src="https://cdn.jsdelivr.net/npm/vega-lite@5.21.0"></script><script src="https://cdn.jsdelivr.net/npm/vega-embed@6.26.0"></script><script src="../../assets/figures.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Diomedes.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Methodology</span><ul><li><a class="tocitem" href="../../methodology/">Overview</a></li><li><a class="tocitem" href="../../methodology/identification/">Identification</a></li><li><a class="tocitem" href="../../methodology/data_handling/">Data handling</a></li><li><a class="tocitem" href="../../methodology/noise/">Noise</a></li><li><a class="tocitem" href="../../methodology/progression/">Model progression</a></li><li><a class="tocitem" href="../../methodology/retirements/">Retirements</a></li><li><a class="tocitem" href="../../methodology/laps/">Lap-time model</a></li><li><a class="tocitem" href="../../methodology/limitations/">Limitations</a></li></ul></li><li><span class="tocitem">Findings</span><ul><li><a class="tocitem" href="../">Overview</a></li><li class="is-active"><a class="tocitem" href>Drivers</a><ul class="internal"><li><a class="tocitem" href="#Fastest-drivers"><span>Fastest drivers</span></a></li><li><a class="tocitem" href="#Every-driver"><span>Every driver</span></a></li><li><a class="tocitem" href="#Download-the-data"><span>Download the data</span></a></li></ul></li><li><a class="tocitem" href="../cars/">Cars</a></li><li><a class="tocitem" href="../careers/">Careers</a></li><li><a class="tocitem" href="../eras/">Eras</a></li></ul></li><li><a class="tocitem" href="../../getting_started/">Getting started</a></li><li><a class="tocitem" href="../../data/">Data</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../models/overview/">Overview</a></li><li><a class="tocitem" href="../../models/zscore/">Z-score model</a></li><li><a class="tocitem" href="../../models/gap/">Gap and pace + loss models</a></li><li><a class="tocitem" href="../../models/retirement/">Retirement model</a></li><li><a class="tocitem" href="../../models/laps/">Lap-time model</a></li></ul></li><li><a class="tocitem" href="../../fitting/">Running long fits</a></li><li><a class="tocitem" href="../../comparison/">Model comparison</a></li><li><a class="tocitem" href="../../scripts/">Scripts</a></li><li><span class="tocitem">API reference</span><ul><li><a class="tocitem" href="../../api/data/">Data sources and schemas</a></li><li><a class="tocitem" href="../../api/zscore/">Preparation and z-score model</a></li><li><a class="tocitem" href="../../api/gap/">Gap and pace + loss models</a></li><li><a class="tocitem" href="../../api/comparison/">Model comparison</a></li><li><a class="tocitem" href="../../api/retirement/">Retirement model</a></li><li><a class="tocitem" href="../../api/laps/">Lap-time model</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Findings</a></li><li class="is-active"><a href>Drivers</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Drivers</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/aleccrowell/diomedes" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/aleccrowell/diomedes/blob/master/docs/src/findings/drivers.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Drivers"><a class="docs-heading-anchor" href="#Drivers">Drivers</a><a id="Drivers-1"></a><a class="docs-heading-anchor-permalink" href="#Drivers" title="Permalink"></a></h1><p>Driver effects from the best race-time model (see <a href="../#Findings">Findings</a> for what was fitted and how to read the units). Negative is faster.</p><div class="admonition is-warning" id="Comparing-eras-c42f23b9234dc653"><header class="admonition-header">Comparing eras<a class="admonition-anchor" href="#Comparing-eras-c42f23b9234dc653" title="Permalink"></a></header><div class="admonition-body"><p>Drivers from different decades are compared through chains of team-mates and shared fields, and the pace scale κ removes era-wide changes in how spread out results are. These links are real but long. Treat differences between eras as less certain than the intervals suggest, because they rest on the model&#39;s assumptions about how pace and incidents changed over time.</p></div></div><h2 id="Fastest-drivers"><a class="docs-heading-anchor" href="#Fastest-drivers">Fastest drivers</a><a id="Fastest-drivers-1"></a><a class="docs-heading-anchor-permalink" href="#Fastest-drivers" title="Permalink"></a></h2><p>Posterior means (points) and 90% intervals (lines). Use the sliders to change how many drivers are shown and the minimum number of results a driver needs. Drivers with few results get wide intervals and are shrunk towards the average.</p><div id="fig-driver-ranking" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-driver-ranking", {
+  data: { url: "assets/data/race/drivers.csv",
+          format: { type: "csv", parse: { rows: "number", first_season: "number", last_season: "number",
+                                          mean: "number", sd: "number", q05: "number", q95: "number" } } },
+  params: [
+    { name: "top", value: 30, bind: { input: "range", min: 10, max: 80, step: 5, name: "Drivers shown " } },
+    { name: "minrows", value: 20, bind: { input: "range", min: 1, max: 100, step: 1, name: "Minimum results " } }
+  ],
+  transform: [
+    { filter: "datum.rows >= minrows" },
+    { window: [{ op: "row_number", as: "rank" }], sort: [{ field: "mean", order: "ascending" }] },
+    { filter: "datum.rank <= top" },
+    { calculate: "datum.name + ' (' + datum.first_season + '–' + datum.last_season + ')'", as: "label" }
+  ],
+  height: { step: 16 },
+  width: 520,
+  encoding: {
+    y: { field: "label", type: "nominal", sort: { field: "mean", order: "ascending" }, title: null,
+         axis: { labelLimit: 260 } },
+    tooltip: [
+      { field: "name", title: "Driver" },
+      { field: "first_season", title: "First season" },
+      { field: "last_season", title: "Last season" },
+      { field: "rows", title: "Results" },
+      { field: "mean", title: "Effect (%)", format: ".2f" },
+      { field: "q05", title: "5%", format: ".2f" },
+      { field: "q95", title: "95%", format: ".2f" }
+    ]
+  },
+  layer: [
+    { mark: { type: "rule", opacity: 0.6 },
+      encoding: { x: { field: "q05", type: "quantitative", title: "Driver effect, % of race time (negative = faster)" },
+                  x2: { field: "q95" } } },
+    { mark: { type: "point", filled: true, size: 45 },
+      encoding: { x: { field: "mean", type: "quantitative" } } }
+  ]
+});
+</script><h2 id="Every-driver"><a class="docs-heading-anchor" href="#Every-driver">Every driver</a><a id="Every-driver-1"></a><a class="docs-heading-anchor-permalink" href="#Every-driver" title="Permalink"></a></h2><p>All 550 drivers with a classified finish, by the middle of their career. Point size is the number of results. Drag to pan, scroll to zoom, and type a name to highlight it.</p><div id="fig-driver-scatter" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-driver-scatter", {
+  data: { url: "assets/data/race/drivers.csv",
+          format: { type: "csv", parse: { rows: "number", first_season: "number", last_season: "number",
+                                          mean: "number", sd: "number", q05: "number", q95: "number" } } },
+  params: [
+    { name: "search", value: "", bind: { input: "text", placeholder: "e.g. Prost", name: "Highlight driver " } },
+    { name: "zoom", select: "interval", bind: "scales" }
+  ],
+  transform: [
+    { calculate: "(datum.first_season + datum.last_season) / 2", as: "mid" },
+    { calculate: "search != '' && indexof(lower(datum.name), lower(search)) >= 0", as: "match" }
+  ],
+  width: 640,
+  height: 420,
+  mark: { type: "circle" },
+  encoding: {
+    x: { field: "mid", type: "quantitative", title: "Middle of career (season)", scale: { zero: false },
+         axis: { format: "d" } },
+    y: { field: "mean", type: "quantitative", title: "Driver effect, % of race time (negative = faster)",
+         scale: { reverse: true } },
+    size: { field: "rows", type: "quantitative", title: "Results", scale: { range: [10, 300] } },
+    color: { condition: { test: "datum.match", value: "#e45756" }, value: "#4c78a8" },
+    opacity: { condition: { test: "search == '' || datum.match", value: 0.75 }, value: 0.15 },
+    tooltip: [
+      { field: "name", title: "Driver" },
+      { field: "first_season", title: "First season" },
+      { field: "last_season", title: "Last season" },
+      { field: "rows", title: "Results" },
+      { field: "mean", title: "Effect (%)", format: ".2f" },
+      { field: "sd", title: "sd", format: ".2f" }
+    ]
+  }
+});
+</script><p>The vertical axis is reversed, so faster drivers are higher.</p><h2 id="Download-the-data"><a class="docs-heading-anchor" href="#Download-the-data">Download the data</a><a id="Download-the-data-1"></a><a class="docs-heading-anchor-permalink" href="#Download-the-data" title="Permalink"></a></h2><p>The table behind these charts is
+<a id="drivers-csv" href="#"><code>assets/data/race/drivers.csv</code></a>.
+<script>document.getElementById("drivers-csv").href = documenterBaseURL + "/assets/data/race/drivers.csv";</script>
+</p><p>It has one row per driver with the posterior mean, sd and 90% interval of the effect, the number of results, the first and last season, and the career slope (% per decade of age, relative to the average driver&#39;s trajectory).</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Overview</a><a class="docs-footer-nextpage" href="../cars/">Cars »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Sunday 11 October 2026 16:31">Sunday 11 October 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
