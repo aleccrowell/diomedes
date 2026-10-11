@@ -905,6 +905,33 @@ end
         @test ws.Minv[γn][1:2] == collect(1.0:dim_old)[γo]                 # 2018 races, in the same order
         @test all(==(median(collect(1.0:dim_old)[γo])), ws.Minv[γn][3:4])  # 2019 races are new
         @test_throws DimensionMismatch lap_warm_start(fake, d, d)
+        # without the tyre terms: β = 0, the fused rule still applies, and the layout and
+        # warm start (from a fit with them) drop β
+        θ0 = Base.structdiff(θ, (; β = nothing))
+        h0 = [a[d.comp[j]] + b[d.mach[j]] for j in eachindex(d.y)]
+        h0bar = [mean(h0[d.race .== r]) for r in 1:nr]
+        ll0 = sum(Diomedes.paceloss_logpdf(d.y[j] - (θ.γ[d.race[j]] + θ.δ[d.race[j]] * (d.frac[j] - fbar[d.race[j]]) +
+                                                      h0[j] - h0bar[d.race[j]]),
+                                           θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d.y))
+        model0 = lap_effects(d; tyres = false)
+        @test Turing.DynamicPPL.loglikelihood(model0, θ0) ≈ ll0
+        rd0, fd0 = LDF(model0; adtype = Diomedes.gap_sampler().adtype), LDF(model0; adtype = AutoForwardDiff())
+        x0 = reduce(vcat, [k in pos ? [0.2 + rand(rng)] : v isa AbstractVector ? 0.5 .* randn(rng, length(v)) : [0.5 * randn(rng)]
+                           for (k, v) in pairs(θ0)])
+        @test LDP.logdensity_and_gradient(rd0, x0)[2] ≈ LDP.logdensity_and_gradient(fd0, x0)[2]
+        @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(model0), z), x0).tape) < 1000
+        ranges0 = NamedTuple(getfield(LDF(model0), :_varname_ranges))
+        @test !haskey(ranges0, :β)
+        let o = 0
+            for (name, (n, _)) in Diomedes.lap_layout(d; tyres = false)
+                @test ranges0[name].range == (o + 1):(o + n)
+                o += n
+            end
+            @test o == LDP.dimension(rd0)
+        end
+        ws0 = lap_warm_start(fake, d_old, d; tyres_new = false)
+        @test length(ws0.Minv) == LDP.dimension(rd0)
+        @test ws0.Minv == ws.Minv[setdiff(eachindex(ws.Minv), ranges.β.range)]
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
