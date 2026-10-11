@@ -42,3 +42,9 @@ out-of-sample fit (#36).
 
 - [Drivers](@ref "Drivers"): rankings with uncertainty, and every driver in one
   explorable chart.
+- [Cars](@ref "Cars"): each season's field, dominant cars, and in-season
+  development.
+- [Careers](@ref "Careers"): the shape of a career, and drivers whose
+  trajectories differed most.
+- [Eras](@ref "Eras"): how spread out results were, and time lost to
+  incidents, season by season.
