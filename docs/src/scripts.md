@@ -20,5 +20,6 @@ them with `julia --project scripts/<name>.jl ...`.
 | `selection_check.jl` | Whether dropping retirements biases the pace effects |
 | `lap_fit.jl` | Fits the lap-time model, checkpointed, optionally warm-started |
 | `lap_compare.jl` | Lap-model fits against each other or the race model |
+| `export_site.jl` | Exports posterior summaries of a fitted race model for the site's Findings pages (`docs/src/assets/data/`) |
 
 Model names (`pl_dur_rw_kappa`, ...) are parsed by [`model_spec`](@ref).
