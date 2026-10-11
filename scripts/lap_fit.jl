@@ -48,9 +48,19 @@ if action == "chain"
                            for m in (match(Regex("^laps_$(warm[1])-$(warm[2])_$(pits)_chain(\\d+)_block"), f),)
                            if m !== nothing))
         old_tag = "laps_$(warm[1])-$(warm[2])_$(pits)_chain$(k in have ? k : have[mod1(k, length(have))])"
-        blocks = filter(f -> startswith(f, old_tag * "_block"), readdir("output"))
-        last_block = argmax(f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]), blocks)
-        st = only(Turing.loadstate(rehash_chain!(deserialize(joinpath("output", last_block)))))
+        # the adapted metric and step size: from <old_tag>_warmstate.jls if it exists
+        # (written after each chain; it survives changes to LapData, which the
+        # checkpoint blocks embed and then can't be read back), else the last block
+        wsfile = joinpath("output", old_tag * "_warmstate.jls")
+        if isfile(wsfile)
+            w = deserialize(wsfile)
+            last_block = basename(wsfile)
+            st = (; hamiltonian = (; metric = (; M⁻¹ = w.Minv)), kernel = (; τ = (; integrator = (; ϵ = w.ϵ))))
+        else
+            blocks = filter(f -> startswith(f, old_tag * "_block"), readdir("output"))
+            last_block = argmax(f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]), blocks)
+            st = only(Turing.loadstate(rehash_chain!(deserialize(joinpath("output", last_block)))))
+        end
         d_old = prepare_laps(fetch_laps(src, old_seasons), fetch_results(src, old_seasons); pits,
                              pit_stops = pits === :recorded ? fetch_pit_stops(src, old_seasons) : nothing)
         ws, n_adapts = lap_warm_start(st, d_old, d; tyres_new = tyres, slopes_new = slopes), 300
@@ -58,6 +68,14 @@ if action == "chain"
     end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k,
                                   progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes)
+    # adapted metric and step size, for warm starts of later fits (see above)
+    try
+        st = only(Turing.loadstate(chain))
+        serialize("output/$(tag)_chain$(k)_warmstate.jls",
+                  (; Minv = Vector{Float64}(st.hamiltonian.metric.M⁻¹), ϵ = Float64(st.kernel.τ.integrator.ϵ)))
+    catch err
+        @warn "could not save the warm-start state" err
+    end
     println("chain $k: $(round(t / 60; digits = 1)) min, mean leapfrog steps per draw ",
             round(mean(chain[:n_steps]); digits = 1), ", divergences ", count(chain[:numerical_error] .> 0))
     exit()
