@@ -1,0 +1,19 @@
+{
+    "model": "pl_dur_rw_kappa_age_big_slope_dev_fgam",
+    "fit": "gap_all_pl_dur_rw_kappa_age_big_slope_dev_fgam",
+    "chains": 4,
+    "draws_per_chain": 1000,
+    "data": "F1 1950–2019, Ergast CSV, all classified finishers (lapped as intervals)",
+    "rows": {
+        "timed": 6276,
+        "lapped": 6858
+    },
+    "convergence": {
+        "max_rhat": 1.01,
+        "min_ess": 289.1,
+        "divergences": 1
+    },
+    "exported_by": "scripts/export_site.jl race",
+    "export_commit": "90063cd",
+    "date": "2026-10-11"
+}
