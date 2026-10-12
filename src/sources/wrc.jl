@@ -86,6 +86,7 @@ function wrc_event(src::WRCTiming, season, round, event_id; refresh = src.refres
                 entrant = named(get(e, :entrant, nothing)),
                 time_ms = t.status == "Completed" ? maybefloat(t.elapsedDurationMs) : missing,
                 suspended_ms = missing,
+                own_time_ms = missing,
                 position = t.status == "Completed" ? maybeint(t.position) : missing,
                 laps = missing,
                 status = String(t.status),

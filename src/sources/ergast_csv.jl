@@ -53,6 +53,7 @@ function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
         entrant = Vector{Union{Missing,String}}(missing, nrow(df)),
         time_ms = Vector{Union{Missing,Float64}}(maybefloat.(df.milliseconds)),
         suspended_ms = Vector{Union{Missing,Float64}}([get(susp, id, missing) for id in df.raceId]),
+        own_time_ms = Vector{Union{Missing,Float64}}(missing, nrow(df)),
         position = Vector{Union{Missing,Int}}(maybeint.(df.position)),
         laps = Vector{Union{Missing,Int}}(maybeint.(df.laps)),
         status = String.(df.status),

@@ -845,6 +845,41 @@ end
         @test minimum(g2.y[.!partial_mask(g2)[1:length(g2.y)]]) == 0.0 && g2.y[findfirst(partial_mask(g2))] ≈ -1.0
     end
 
+    @testset "Jolpica-era data: own times of lapped cars, unknown causes, cumulative laps (#55)" begin
+        # a lapped car with its own time over its l laps gets the exact constant-pace gap,
+        # inside its interval; one without keeps the interval
+        rows = DataFrame(series = "f1", season = 2024, event_id = "2024-01", stage_id = "race",
+                         competitor_id = ["w", "a", "b"], machine_id = ["m1", "m2", "m3"],
+                         time_ms = Union{Missing,Float64}[6000.0, missing, missing],
+                         own_time_ms = Union{Missing,Float64}[missing, 6050.0, missing],   # takes the flag just after the winner
+                         suspended_ms = Union{Missing,Float64}[0.0, 0.0, 0.0],
+                         laps = Union{Missing,Int}[60, 58, 58], status = ["Finished", "Lapped", "Lapped"])
+        g = prepare_gaps(rows)
+        ex = findfirst(g.rows.lapped_exact)
+        @test g.rows.competitor_id[ex] == "a" && length(g.y) == 2 && length(g.lo) == 1
+        ya = 100 * log((6050.0 / 58) / (6000.0 / 60))
+        @test g.y[findfirst(==("a"), g.rows.competitor_id[g.rows.kind .== :timed])] ≈ ya
+        @test 100 * log(60 / 58) <= ya < 100 * log(60 / 57)
+        @test g.lo[1] ≈ 100 * log(60 / 58)
+        # a red-flag suspension comes off the lapped car's own time too
+        r2 = copy(rows); r2.time_ms[1] += 500.0; r2.own_time_ms[2] += 500.0; r2.suspended_ms .= 500.0
+        @test prepare_gaps(r2).y ≈ g.y
+        # partial gaps include retirements of unknown cause ("Retired")
+        cum = Dict(("2000-01", "w") => [100.0, 200, 300, 400], ("2000-01", "f") => [101.0, 202, 302, 402],
+                   ("2000-01", "r") => [103.0, 206])
+        res = DataFrame(series = "f1", season = 2000, event_id = "2000-01", stage_id = "race",
+                        competitor_id = ["w", "f", "r"], machine_id = ["m1", "m1", "m2"],
+                        time_ms = Union{Missing,Float64}[400, 402, missing], suspended_ms = Union{Missing,Float64}[missing, missing, missing],
+                        laps = Union{Missing,Int}[4, 4, 2], status = ["Finished", "Finished", "Retired"])
+        pg = partial_gaps(res, cum)
+        @test pg.competitor_id == ["r"] && only(pg.cause) === :unknown
+        # cumulative laps from a LAP_SCHEMA table; a car with a gap in its laps is left out
+        lt = DataFrame(series = "f1", season = 2024, event_id = "2024-01", competitor_id = ["a", "a", "a", "b", "b"],
+                       lap = [2, 1, 3, 1, 3], time_ms = [91.0, 90.0, 92.0, 95.0, 95.0], position = Union{Missing,Int}[missing for _ in 1:5])
+        c = cumulative_laps(lt)
+        @test c[("2024-01", "a")] == [90.0, 181.0, 273.0] && !haskey(c, ("2024-01", "b"))
+    end
+
     @testset "lap-time model (#12)" begin
         # pit inference: 90 s laps, a stop with in-lap +5 s and out-lap +18 s at laps 20/21, a spin (+8 s) at 40
         t = fill(90_000.0, 60); t[20] += 5_000; t[21] += 18_000; t[40] += 8_000

@@ -39,6 +39,23 @@ function ergast_cumulative_laps(dir::AbstractString)
 end
 
 """
+    cumulative_laps(laps) -> Dict{Tuple{String,String},Vector{Float64}}
+
+Cumulative lap times (ms) per (event_id, competitor_id) from a `LAP_SCHEMA` table
+(any source, e.g. `fetch_laps(JolpicaF1(), …)`); element n is the time at the end
+of lap n. Cars whose laps aren't 1..n without gaps are left out, as in
+`ergast_cumulative_laps`.
+"""
+function cumulative_laps(laps::AbstractDataFrame)
+    out = Dict{Tuple{String,String},Vector{Float64}}()
+    for g in groupby(sort(laps, [:event_id, :competitor_id, :lap]), [:event_id, :competitor_id])
+        g.lap == 1:nrow(g) || continue
+        out[(first(g.event_id), first(g.competitor_id))] = cumsum(Float64.(g.time_ms))
+    end
+    return out
+end
+
+"""
     partial_gaps(results, cum; min_frac = 0.25) -> DataFrame
 
 Calibrated partial-distance gaps (see the file header) of the retirements in
@@ -68,7 +85,7 @@ function partial_gaps(results::AbstractDataFrame, cum; min_frac::Real = 0.25, tr
         isempty(refs) && continue
         for i in eachindex(g.status)
             cause = retirement_cause(g.status[i], g.laps[i])
-            (cause in RETIRE_CAUSES || cause === :other) || continue
+            (cause in RETIRE_CAUSES || cause in (:other, :unknown)) || continue
             laps = coalesce(g.laps[i], 0)
             n = laps - trim                     # the gap is taken `trim` laps before the last one completed
             (n >= max(2, ceil(Int, min_frac * L)) && laps < L) || continue
