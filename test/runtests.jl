@@ -945,8 +945,18 @@ end
             @test abs(mean(d3.agec[d3.comp .== k])) < 1e-12
         end
         @test all(iszero, d3.agec[d3.comp .== findfirst(==("e"), d3.competitors)])
-        @test collect(extrema(d3.agec[d3.comp .== findfirst(==("a"), d3.competitors)])) .* 10 ≈
-              [-0.5, 0.5] .* ((Date(2019, 3, 29) - Date(2018, 3, 15)).value / 365.2425)
+        # ages are per season (the mean over the driver's laps that season): two seasons
+        # a year apart give two values one year apart, whatever the laps per season
+        let ag = d3.agec[d3.comp .== findfirst(==("a"), d3.competitors)]
+            @test length(unique(ag)) == 2
+            @test (maximum(ag) - minimum(ag)) * 10 ≈ 365 / 365.2425
+        end
+        # in-season position: with 2 rounds per season, round 1 is 0 and round 2 is 1,
+        # centred on each car's mean over its laps
+        let rp = [parse(Int, last(e)) - 1.0 for e in d3.rows.event_id]
+            cm = [mean(rp[d3.mach .== d3.mach[j]]) for j in eachindex(d3.y)]
+            @test d3.posc ≈ rp .- cm
+        end
         model3 = lap_effects(d3; slopes = true)
         θ3 = merge(θ, (; τ_slope = 0.4, u_slope = randn(rng, nc)))
         sl = 0.4 .* (θ3.u_slope .- mean(θ3.u_slope))
@@ -957,17 +967,30 @@ end
                                                        h3[j] - h3bar[d3.race[j]]),
                                            θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d3.y))
         @test Turing.DynamicPPL.loglikelihood(model3, θ3) ≈ ll3
-        for (m, tyr) in ((model3, true), (lap_effects(d3; tyres = false, slopes = true), false))
+        # car development: dv = τ_dev·(u - season mean u) on the centred season position
+        model4 = lap_effects(d3; slopes = true, dev = true)
+        nm3 = length(d3.machines)
+        θ4 = merge(θ3, (; τ_dev = 0.3, u_dev = randn(rng, nm3)))
+        dvv = 0.3 .* Diomedes.sum_to_zero_by(θ4.u_dev, d3.mach_season, Diomedes.lap_mach_counts(d3))
+        h4 = h3 .+ [dvv[d3.mach[j]] * d3.posc[j] for j in eachindex(d3.y)]
+        h4bar = [mean(h4[d3.race .== r]) for r in 1:nr]
+        ll4 = sum(Diomedes.paceloss_logpdf(d3.y[j] - (θ.γ[d3.race[j]] + θ.δ[d3.race[j]] * (d3.frac[j] - fbar[d3.race[j]]) +
+                                                       h4[j] - h4bar[d3.race[j]]),
+                                           θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d3.y))
+        @test Turing.DynamicPPL.loglikelihood(model4, θ4) ≈ ll4
+        for (m, tyr, dv) in ((model3, true, false), (lap_effects(d3; tyres = false, slopes = true), false, false),
+                             (model4, true, true), (lap_effects(d3; tyres = false, slopes = true, dev = true), false, true),
+                             (lap_effects(d3; tyres = false, dev = true), false, true))
             rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
             rg = NamedTuple(getfield(rdm, :_varname_ranges))
             x3 = 0.5 .* randn(rng, LDP.dimension(rdm))
-            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope)
-                x3[rg[k].range] .= 0.2 + rand(rng)
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_dev)
+                haskey(rg, k) && (x3[rg[k].range] .= 0.2 + rand(rng))
             end
             @test LDP.logdensity_and_gradient(rdm, x3)[2] ≈ LDP.logdensity_and_gradient(fdm, x3)[2]
             @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), x3).tape) < 1000
             let o = 0
-                for (name, (n, _)) in Diomedes.lap_layout(d3; tyres = tyr, slopes = true)
+                for (name, (n, _)) in Diomedes.lap_layout(d3; tyres = tyr, slopes = haskey(rg, :τ_slope), dev = dv)
                     @test rg[name].range == (o + 1):(o + n)
                     o += n
                 end
@@ -981,6 +1004,11 @@ end
         @test all(==(Diomedes.LAP_WARM_DEFAULT[:u_slope]), ws3.Minv[r3.u_slope.range])
         @test ws3.Minv[r3.τ_slope.range] == [Diomedes.LAP_WARM_DEFAULT[:τ_slope]]
         @test ws3.Minv[r3.a_π.range] ≈ ws.Minv[ranges.a_π.range]
+        ws4 = lap_warm_start(fake, d_old, d3; slopes_new = true, dev_new = true)
+        r4 = NamedTuple(getfield(LDF(model4), :_varname_ranges))
+        @test length(ws4.Minv) == LDP.dimension(LDF(model4))
+        @test all(==(Diomedes.LAP_WARM_DEFAULT[:u_dev]), ws4.Minv[r4.u_dev.range])
+        @test ws4.Minv[r4.a_λ.range] ≈ ws.Minv[ranges.a_λ.range]
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
