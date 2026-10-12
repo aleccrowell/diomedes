@@ -82,6 +82,23 @@ end
         @test_throws ArgumentError validate_results(select(empty_results(), Not(:machine_id)))
     end
 
+    @testset "Jolpica rows: lapped cars get no race time (#55)" begin
+        # from 2023 Jolpica gives lapped cars their own (shorter-distance) time
+        race = JSON3.read("""{"season": "2024", "round": "8", "raceName": "Monaco Grand Prix", "date": "2024-05-26",
+            "Results": [
+              {"number": "16", "position": "1", "positionText": "1", "points": "25", "grid": "1", "laps": "78",
+               "status": "Finished", "Time": {"millis": "8595548", "time": "2:23:15.554"},
+               "Driver": {"driverId": "leclerc", "givenName": "Charles", "familyName": "Leclerc", "dateOfBirth": "1997-10-16"},
+               "Constructor": {"constructorId": "ferrari"}},
+              {"number": "14", "position": "11", "positionText": "11", "points": "0", "grid": "11", "laps": "76",
+               "status": "Lapped", "Time": {"millis": "8599412", "time": "+2 Laps"},
+               "Driver": {"driverId": "alonso", "givenName": "Fernando", "familyName": "Alonso", "dateOfBirth": "1981-07-29"},
+               "Constructor": {"constructorId": "aston_martin"}}]}""")
+        rows = [Diomedes.jolpica_row(race, r) for r in race.Results]
+        @test rows[1].time_ms == 8595548.0
+        @test ismissing(rows[2].time_ms) && rows[2].laps == 76 && rows[2].status == "Lapped"
+    end
+
     @testset "standardise_times!" begin
         df = DataFrame(series = "s", event_id = ["a", "a", "a", "b", "b"], stage_id = "x",
                        time_ms = [1.0, 2.0, missing, 5.0, 5.0])

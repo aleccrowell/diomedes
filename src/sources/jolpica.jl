@@ -111,7 +111,11 @@ function jolpica_row(race, r)
         class = missing,
         manufacturer = missing,
         entrant = missing,
-        time_ms = time === nothing ? missing : maybefloat(get(time, :millis, nothing)),
+        # Ergast convention: a race time only for cars on the lead lap. From 2023
+        # Jolpica also gives lapped cars their own time over fewer laps, which would
+        # read as a gap of a fraction of a percent; lapped cars must stay intervals (#55).
+        time_ms = time === nothing || is_lapped_status(String(r.status)) ? missing :
+                  maybefloat(get(time, :millis, nothing)),
         suspended_ms = missing,                # filled per race in jolpica_season
         position = classified ? maybeint(r.position) : missing,
         laps = maybeint(get(r, :laps, nothing)),
