@@ -1,4 +1,4 @@
-# Fit the lap-time model (#12) on F1 lap times (Ergast, 1996–2019).
+# Fit the lap-time model (#12) on F1 lap times (Ergast to 2019, Jolpica from 2020).
 #
 #   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> chain <k> [warm=<first>-<last>]
 #                                                       # one chain, checkpointed; optionally warm-started
@@ -30,10 +30,20 @@ pits = Symbol(args[2])
 action = get(args, 3, "combine")
 data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 tag = "laps_$(args[1])_$(pits)" * (tyres ? "" : "_notyres") * (slopes ? "_slopes" : "") * (dev ? "_dev" : "")
-src = ErgastCSV(data_dir)
-res = fetch_results(src, seasons)
-d = prepare_laps(fetch_laps(src, seasons), res; pits,
-                 pit_stops = pits === :recorded ? fetch_pit_stops(src, seasons) : nothing)
+# Seasons to 2019 come from the local Ergast dump; later ones from the Jolpica API
+# (#55; same ids, laps checked equal on 2019-01). Run scripts/fetch_jolpica.jl
+# first so the Jolpica responses are cached.
+const ERGAST_LAST = 2019
+ergast, jolpica = ErgastCSV(data_dir), JolpicaF1()
+function by_source(f, ss)
+    parts = [f(ergast, filter(<=(ERGAST_LAST), collect(ss))), f(jolpica, filter(>(ERGAST_LAST), collect(ss)))]
+    return reduce(vcat, filter(p -> nrow(p) > 0, parts); init = first(parts)[1:0, :])
+end
+src_data(ss) = (res = by_source(fetch_results, ss), laps = by_source(fetch_laps, ss),
+                pits = pits === :recorded ? by_source(fetch_pit_stops, ss) : nothing)
+sd = src_data(seasons)
+res = sd.res
+d = prepare_laps(sd.laps, res; pits, pit_stops = sd.pits)
 println(d); flush(stdout)
 mkpath("output")
 
@@ -68,8 +78,8 @@ if action == "chain"
             last_block = argmax(f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]), blocks)
             st = only(Turing.loadstate(rehash_chain!(deserialize(joinpath("output", last_block)))))
         end
-        d_old = prepare_laps(fetch_laps(src, old_seasons), fetch_results(src, old_seasons); pits,
-                             pit_stops = pits === :recorded ? fetch_pit_stops(src, old_seasons) : nothing)
+        od = src_data(old_seasons)
+        d_old = prepare_laps(od.laps, od.res; pits, pit_stops = od.pits)
         ws, n_adapts = lap_warm_start(st, d_old, d; tyres_old = old_flags[1], slopes_old = old_flags[2], dev_old = old_flags[3],
                                       tyres_new = tyres, slopes_new = slopes, dev_new = dev), 300
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
