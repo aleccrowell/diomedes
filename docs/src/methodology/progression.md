@@ -17,6 +17,39 @@ before the red-flag correction ([#19](https://github.com/aleccrowell/diomedes/is
 | in-season development | `…_dev` | +155.7 ± 16.4 | ~4.8 h | [#27](https://github.com/aleccrowell/diomedes/issues/27) |
 | learned common race level | (default) | +2.9 ± 6.0 (equal) | | [#34](https://github.com/aleccrowell/diomedes/issues/34), [#37](https://github.com/aleccrowell/diomedes/issues/37) |
 
+The gains, with ±2 standard errors (the first step, era terms over none, is
++1,243 ± 60 and is left off the scale):
+
+```@raw html
+<div id="fig-elpd-gains" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-elpd-gains", {
+  data: { values: [
+    { step: 1, term: "pace scale by season (κ)", gain: 98, se: 12 },
+    { step: 2, term: "population age curve", gain: 30, se: 9.2 },
+    { step: 3, term: "big incident losses", gain: 155, se: 23 },
+    { step: 4, term: "per-driver career slopes", gain: 89.7, se: 13.7 },
+    { step: 5, term: "in-season development", gain: 155.7, se: 16.4 },
+    { step: 6, term: "learned common race level", gain: 2.9, se: 6.0 }
+  ] },
+  transform: [
+    { calculate: "datum.gain - 2 * datum.se", as: "lo" },
+    { calculate: "datum.gain + 2 * datum.se", as: "hi" }
+  ],
+  width: "container", height: { step: 30 },
+  encoding: {
+    y: { field: "term", type: "nominal", sort: { field: "step" }, title: null, axis: { labelLimit: 220 } },
+    tooltip: [{ field: "term", title: "Term" }, { field: "gain", title: "elpd gain" }, { field: "se", title: "SE" }]
+  },
+  layer: [
+    { mark: { type: "bar", height: 16, color: "#4c78a8", opacity: 0.8 },
+      encoding: { x: { field: "gain", type: "quantitative", title: "Gain in expected log predictive density over the previous model" } } },
+    { mark: { type: "rule", color: "#333333" }, encoding: { x: { field: "lo", type: "quantitative" }, x2: { field: "hi" } } }
+  ]
+});
+</script>
+```
+
 ## What each term found
 
 **Race duration** ([#19](https://github.com/aleccrowell/diomedes/issues/19)). Longer races don't have more incidents (slope on

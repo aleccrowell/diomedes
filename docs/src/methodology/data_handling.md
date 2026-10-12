@@ -24,7 +24,36 @@ its full-distance gap therefore lies in
 y \in \Bigl[\,100\log\tfrac{L}{l},\; 100\log\tfrac{L}{l-1}\Bigr) ,
 ```
 
-and enters the likelihood as the probability of that interval. Over 1950–2019
+and enters the likelihood as the probability of that interval. The intervals
+widen for cars further behind:
+
+```@raw html
+<div id="fig-lapped-intervals" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-lapped-intervals", {
+  data: { sequence: { start: 1, stop: 6, as: "k" } },
+  params: [{ name: "laps", value: 60, bind: { input: "range", min: 20, max: 80, step: 1, name: "race length L (laps) " } }],
+  transform: [
+    { calculate: "laps - datum.k", as: "l" },
+    { calculate: "100 * log(laps / datum.l)", as: "lo" },
+    { calculate: "100 * log(laps / (datum.l - 1))", as: "hi" },
+    { calculate: "datum.k + (datum.k == 1 ? ' lap down' : ' laps down') + ' (' + datum.l + ' of ' + laps + ' laps)'", as: "label" }
+  ],
+  width: "container", height: { step: 26 },
+  encoding: {
+    y: { field: "label", type: "nominal", sort: { field: "k" }, title: null, axis: { labelLimit: 220 } },
+    tooltip: [{ field: "label", title: "Car" }, { field: "lo", title: "Gap from (%)", format: ".2f" },
+              { field: "hi", title: "Gap to (%)", format: ".2f" }]
+  },
+  layer: [
+    { mark: { type: "bar", height: 14, opacity: 0.6, color: "#4c78a8" },
+      encoding: { x: { field: "lo", type: "quantitative", title: "Possible gap to the winner over the full distance (% of race time)", scale: { zero: true } },
+                  x2: { field: "hi" } } },
+    { mark: { type: "tick", thickness: 2, color: "#4c78a8" }, encoding: { x: { field: "lo", type: "quantitative" } } }
+  ]
+});
+</script>
+``` Over 1950–2019
 this adds 6,858 lapped results to 6,276 timed ones ([#19](https://github.com/aleccrowell/diomedes/issues/19)). Lapped cars are
 identified by their status ("+2 Laps"), not their position: an early version
 counted 599 retirements with numeric positions as lapped ([#19](https://github.com/aleccrowell/diomedes/issues/19)).

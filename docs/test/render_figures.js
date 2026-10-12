@@ -7,8 +7,9 @@
 // scripts: Documenter's RequireJS, Vega from the CDN, docs/src/assets/figures.js.
 // That is how the site failed before #53 (Vega registering as an anonymous AMD
 // module), which a check that renders the specs directly can't see. The check
-// passes when every figure container holds an SVG and every data download link
-// (a.diomedes-data) resolves; it exits 1 otherwise.
+// passes when every figure container holds an SVG, every data download link
+// (a.diomedes-data) resolves and every number computed from the data
+// (span.diomedes-stat) is filled in; it exits 1 otherwise.
 // jsdom lacks structuredClone and matchMedia, which browsers have: polyfilled.
 
 const fs = require("fs");
@@ -24,7 +25,7 @@ function pagesWithFigures(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) out.push(...pagesWithFigures(p));
-    else if (e.name.endsWith(".html") && /diomedesFigure\("|class="diomedes-data"/.test(fs.readFileSync(p, "utf8"))) out.push(p);
+    else if (e.name.endsWith(".html") && /diomedesFigure\("|class="diomedes-data"|class="diomedes-stat"/.test(fs.readFileSync(p, "utf8"))) out.push(p);
   }
   return out;
 }
@@ -48,7 +49,9 @@ async function checkPage(file) {
   let figs = [];
   while (Date.now() - start < TIMEOUT_MS) {
     figs = [...doc.querySelectorAll(".diomedes-figure")];
-    if (figs.every(f => f.querySelector("svg") || f.textContent.startsWith("Figure failed"))) break;
+    const stats = [...doc.querySelectorAll("span.diomedes-stat")];
+    if (figs.every(f => f.querySelector("svg") || f.textContent.startsWith("Figure failed")) &&
+        stats.every(e => e.classList.contains("diomedes-stat-filled") || e.textContent === "?")) break;
     await new Promise(r => setTimeout(r, 1000));
   }
   const links = [];
@@ -64,7 +67,10 @@ async function checkPage(file) {
                                    detail: f.querySelector("svg") ? "" : (f.textContent || "empty").slice(0, 160) }));
   // windows stay open until the end: a figure can re-render after the check (theme
   // changes), and its callbacks must not run against a closed window
-  return { page: rel, results, links, errors };
+  const statResults = [...doc.querySelectorAll("span.diomedes-stat")].map(e => ({
+    what: `${e.dataset.stat}(${[e.dataset.x, e.dataset.y].filter(Boolean).join(", ")}) of ${e.dataset.path}`,
+    ok: e.classList.contains("diomedes-stat-filled") && e.textContent !== "?", value: e.textContent }));
+  return { page: rel, results, links, stats: statResults, errors };
 }
 
 (async () => {
@@ -72,7 +78,12 @@ async function checkPage(file) {
   if (!pages.length) { console.error("no pages with figures under " + buildDir); process.exit(1); }
   let failed = 0, total = 0;
   for (const p of pages) {
-    const { page, results, links, errors } = await checkPage(p);
+    const { page, results, links, stats, errors } = await checkPage(p);
+    for (const t of stats) {
+      total++;
+      if (t.ok) console.log(`ok   ${page} stat ${t.what} = ${t.value}`);
+      else { failed++; console.log(`FAIL ${page} stat ${t.what}: ${t.value}`); }
+    }
     for (const l of links) {
       total++;
       if (l.ok) console.log(`ok   ${page} data ${l.path}`);
@@ -85,6 +96,6 @@ async function checkPage(file) {
     }
     if (results.some(r => !r.ok) && errors.length) console.log("     page errors:", [...new Set(errors)].slice(0, 5));
   }
-  console.log(`${total - failed}/${total} checks passed (figures rendered, data links resolved) on ${pages.length} pages`);
+  console.log(`${total - failed}/${total} checks passed (figures rendered, data links resolved, numbers filled) on ${pages.length} pages`);
   process.exit(failed ? 1 : 0);
 })();
