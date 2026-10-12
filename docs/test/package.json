@@ -1,0 +1,8 @@
+{
+  "name": "diomedes-docs-figure-check",
+  "private": true,
+  "description": "Checks that every figure on the built documentation site renders (#56)",
+  "dependencies": {
+    "jsdom": "24.1.3"
+  }
+}

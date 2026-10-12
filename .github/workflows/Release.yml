@@ -4,6 +4,7 @@ name: Release
 # Bump `version` in Project.toml in a PR; once CI passes on the merge commit,
 # this creates tag vX.Y.Z on that commit and a GitHub Release with notes
 # generated from the merged PRs. A version that is already tagged is skipped.
+# It then runs CI on the tag, which publishes the /stable docs.
 
 on:
   workflow_run:
@@ -13,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # to dispatch CI on the new tag (docs for /stable)
 
 jobs:
   release:
@@ -35,3 +37,7 @@ jobs:
             exit 0
           fi
           gh release create "$tag" --target "$SHA" --title "$tag" --generate-notes
+          # A tag created with GITHUB_TOKEN triggers no workflows, so CI (and with it
+          # the docs deploy for /stable) is dispatched on the tag explicitly;
+          # workflow_dispatch is the documented exception (#56).
+          gh workflow run CI.yml --ref "$tag"

@@ -34,7 +34,7 @@ diomedesFigure("fig-driver-ranking", {
     { calculate: "datum.name + ' (' + datum.first_season + '–' + datum.last_season + ')'", as: "label" }
   ],
   height: { step: 16 },
-  width: 520,
+  width: "container",
   encoding: {
     y: { field: "label", type: "nominal", sort: { field: "mean", order: "ascending" }, title: null,
          axis: { labelLimit: 260 } },
@@ -80,7 +80,7 @@ diomedesFigure("fig-driver-scatter", {
     { calculate: "(datum.first_season + datum.last_season) / 2", as: "mid" },
     { calculate: "search != '' && indexof(lower(datum.name), lower(search)) >= 0", as: "match" }
   ],
-  width: 640,
+  width: "container",
   height: 420,
   mark: { type: "circle" },
   encoding: {
@@ -110,9 +110,8 @@ The vertical axis is reversed, so faster drivers are higher.
 
 ```@raw html
 <p>The table behind these charts is
-<a id="drivers-csv" href="#"><code>assets/data/race/drivers.csv</code></a>.
-<script>document.getElementById("drivers-csv").href = documenterBaseURL + "/assets/data/race/drivers.csv";</script>
-</p>
+<a class="diomedes-data" data-path="assets/data/race/drivers.csv"><code>drivers.csv</code></a>
+(columns described on the <a href="../data/">data page</a>).</p>
 ```
 
 It has one row per

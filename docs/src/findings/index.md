@@ -54,3 +54,5 @@ out-of-sample fit (#36).
   2011–2019.
 - [Rallying (WRC)](wrc.md): drivers and cars from WRC stage
   times, 2018–2025.
+- [Data downloads](data.md): every table behind the charts, with its columns
+  and units.
