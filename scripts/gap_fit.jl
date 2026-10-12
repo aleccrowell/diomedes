@@ -4,7 +4,9 @@
 #   julia --project scripts/gap_fit.jl <timed|all> <model> chain <k>        # one chain (seed k), saved to output/
 #   julia --project scripts/gap_fit.jl <timed|all> <model> combine [n=4]    # combine saved chains 1..n
 #
-# `timed`: lead-lap finishers only; `all`: plus lapped cars as intervals.
+# `timed`: lead-lap finishers only; `all`: plus lapped cars as intervals (both from
+# the local Ergast dump, 1950–2019). `jolpica<first>-<last>` (e.g. jolpica1950-2025):
+# all rows from the Jolpica API (#55).
 # `wrc<first>-<last>` (e.g. wrc2023-2025): WRC stage times in the top two tiers
 # (Rally1 incl. WRC, Rally2 incl. R5; see `wrc_top_tiers`), each special stage
 # a "race", cars grouped by manufacturer × tier × season (#10).
@@ -35,7 +37,12 @@ fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
                  race_hier = spec.race_hier, race_mean = spec.race_mean, kw...)
 
 wrc = match(r"^wrc(\d{4})-(\d{4})$", mode)
-if wrc === nothing
+jol = match(r"^jolpica(\d{4})-(\d{4})$", mode)
+if jol !== nothing
+    # F1 from the Jolpica API (#55; responses cached by scripts/fetch_jolpica.jl), all rows
+    res = fetch_results(JolpicaF1(), parse(Int, jol[1]):parse(Int, jol[2]))
+    g = prepare_gaps(res)
+elseif wrc === nothing
     res = fetch_results(ErgastCSV(data_dir), 1950:2100)
     g = prepare_gaps(res; include_lapped = mode == "all")
 else

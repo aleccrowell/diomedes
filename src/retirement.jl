@@ -9,7 +9,10 @@
 #     driver incident-proneness effect,
 #   - collision: contact with another car; the driver effect enters with a
 #     learned loading β_col, since a collision is not one driver's alone,
-#   - other (out of fuel, puncture, driver unwell, "Retired", ...): treated as
+#   - unknown ("Retired", the only code most retirements get in Jolpica from 2023,
+#     #55): the car retired, cause not recorded; the likelihood uses the total
+#     hazard of the three causes, log(1 - exp(-ΔH)), without splitting it,
+#   - other (out of fuel, puncture, driver unwell, ...): treated as
 #     censoring at the laps completed (non-informative).
 # Non-starters (did not (pre)qualify, withdrew before the start) and
 # disqualified starts (the outcome is hidden) are dropped.
@@ -52,15 +55,17 @@ const NONSTART_STATUS = Set(["Did not qualify", "Did not prequalify", "107% Rule
     retirement_cause(status, laps) -> Symbol
 
 Cause of a start's end, from the source status: `:finish` (ran to the end,
-classified or not), one of `RETIRE_CAUSES`, `:other` (retired, cause not
-attributable: censored), `:nonstart`, or `:excluded` (disqualified: how the race
-ended is unknown, dropped). A withdrawal with no laps is a non-start.
+classified or not), one of `RETIRE_CAUSES`, `:unknown` (retired, cause not
+recorded: "Retired"), `:other` (retired for a cause outside the model:
+censored), `:nonstart`, or `:excluded` (disqualified: how the race ended is
+unknown, dropped). A withdrawal with no laps is a non-start.
 """
 function retirement_cause(status::AbstractString, laps)
     (status == "Finished" || is_lapped_status(status) || status == "Not classified") && return :finish
     status in NONSTART_STATUS && return :nonstart
     status in EXCLUDED_STATUS && return :excluded
     status == "Withdrew" && return coalesce(laps, 0) == 0 ? :nonstart : :other
+    status == "Retired" && return :unknown
     status in MECH_STATUS && return :mech
     status in INCIDENT_STATUS && return :incident
     status in COLLISION_STATUS && return :collision
@@ -72,7 +77,7 @@ end
 
 Starts for the retirement model: per start the driver, machine-season and race
 indices, laps completed `n`, race distance `L` (laps), and `cause` (0 =
-censored, else the index into `RETIRE_CAUSES`).
+censored, -1 = retired with the cause unknown, else the index into `RETIRE_CAUSES`).
 """
 struct RetireData
     comp::Vector{Int}
@@ -94,7 +99,7 @@ end
 function Base.show(io::IO, d::RetireData)
     k = [count(==(c), d.cause) for c in 1:length(RETIRE_CAUSES)]
     print(io, "RetireData($(length(d.n)) starts: ", join(("$(n) $(c)" for (c, n) in zip(RETIRE_CAUSES, k)), ", "),
-          ", $(count(==(0), d.cause)) censored; $(length(d.competitors)) drivers, ",
+          ", $(count(==(-1), d.cause)) unknown cause, $(count(==(0), d.cause)) censored; $(length(d.competitors)) drivers, ",
           "$(length(d.machines)) machine-seasons, $(length(d.races)) races, $(length(d.seasons)) seasons)")
 end
 
@@ -132,7 +137,7 @@ function prepare_retirements(results::AbstractDataFrame; machine_key = r -> stri
         mach_season[mi[r.machine_key]] = si[r.season]
         race_season[ri[r.race_key]] = si[r.season]
     end
-    cause = [something(findfirst(==(c), RETIRE_CAUSES), 0) for c in df.cause]
+    cause = [c === :unknown ? -1 : something(findfirst(==(c), RETIRE_CAUSES), 0) for c in df.cause]
     return RetireData([ci[k] for k in df.competitor_id], [mi[k] for k in df.machine_key],
                       [ri[k] for k in df.race_key], df.n, df.L, cause, [si[s] for s in df.season],
                       mach_season, race_season, seasons, comps, machs, races, df)
@@ -152,6 +157,7 @@ end
     di = exp(ηi) * ((first ? zero(b1i) : exp(b1i)) + 1 / L)
     dc = exp(ηc) * ((first ? zero(b1c) : exp(b1c)) + 1 / L)
     dH = dm + di + dc
+    cause == -1 && return ll + log1mexp(-dH)          # retired, cause unknown
     dk = cause == 1 ? dm : cause == 2 ? di : dc
     return ll + log1mexp(-dH) + log(dk) - log(dH)
 end

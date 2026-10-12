@@ -733,6 +733,12 @@ end
         @test retirement_cause("Withdrew", 10) === :other
         @test retirement_cause("Disqualified", 58) === :excluded
         @test retirement_cause("Out of fuel", 50) === :other
+        @test retirement_cause("Retired", 30) === :unknown     # cause not recorded (Jolpica from 2023, #55)
+        # an unknown-cause retirement is the sum of the three cause-specific likelihoods
+        for (n, L, η, b) in ((0, 5, (-1.0, -2.0, -2.5), (-1.0, -0.5, 0.3)), (33, 70, (0.4, -1.0, -3.0), (-3.0, -2.0, -1.0)))
+            @test Diomedes.retire_row(η..., b..., n, L, -1) ≈
+                  log(sum(exp(Diomedes.retire_row(η..., b..., n, L, k)) for k in 1:3))
+        end
         # every outcome of one start (retire in lap 1..L from each cause, or finish) sums to 1
         for (L, η, b) in ((5, (-1.0, -2.0, -2.5), (-1.0, -0.5, 0.3)), (70, (0.4, -1.0, -3.0), (-3.0, -2.0, -1.0)))
             p = exp(Diomedes.retire_row(η..., b..., L, L, 0))
