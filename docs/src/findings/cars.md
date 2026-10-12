@@ -20,7 +20,7 @@ diomedesFigure("fig-car-season", {
   // "constructor" can't be a sort field (it collides with Object.prototype.constructor
   // in Vega's parser), so the chart uses a copy named "team"
   transform: [{ filter: "datum.season == chosen" }, { calculate: "datum.constructor", as: "team" }],
-  width: 520,
+  width: "container",
   height: { step: 18 },
   encoding: {
     y: { field: "team", type: "nominal", sort: { field: "mean", order: "ascending" }, title: null },
@@ -62,7 +62,7 @@ diomedesFigure("fig-car-margin", {
     { pivot: "rank", value: "mean", groupby: ["season"] },
     { calculate: "datum['2'] - datum['1']", as: "margin" }
   ],
-  width: 640, height: 260,
+  width: "container", height: 260,
   layer: [
     { mark: { type: "bar", opacity: 0.85 },
       encoding: { x: { field: "season", type: "ordinal", title: "Season",
@@ -99,7 +99,7 @@ diomedesFigure("fig-car-dev", {
     { filter: "datum.up <= 20 || datum.down <= 20" },
     { calculate: "datum.dev_mean < 0 ? 'improved' : 'faded'", as: "direction" }
   ],
-  width: 520, height: { step: 14 },
+  width: "container", height: { step: 14 },
   encoding: {
     y: { field: "car", type: "nominal", sort: { field: "dev_mean", order: "ascending" }, title: null },
     color: { field: "direction", type: "nominal", title: null,
@@ -122,3 +122,9 @@ Intervals are ±1.645 sd (about 90%). The spread of trends is about 0.5% per
 season ([#27](https://github.com/aleccrowell/diomedes/issues/27)). Several of the
 largest match known histories, such as Force India's 2015 B-spec car and
 Renault's strong start and fade in 2011.
+
+## Download the data
+
+```@raw html
+<p><a class="diomedes-data" data-path="assets/data/race/cars.csv"><code>cars.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
+```

@@ -34,7 +34,7 @@ diomedesFigure("fig-retire-seasons", {
     { calculate: "indexof(datum.key, '_obs') >= 0 ? 'observed' : 'model'", as: "kind" },
     { calculate: "{mech: 'mechanical', incident: 'incident', collision: 'collision'}[replace(datum.key, '_obs', '')]", as: "cause" }
   ],
-  width: 640, height: 300,
+  width: "container", height: 300,
   encoding: {
     x: { field: "season", type: "quantitative", title: "Season", axis: { format: "d" }, scale: { zero: false } },
     y: { field: "value", type: "quantitative", title: "Retirements per start" },
@@ -72,7 +72,7 @@ diomedesFigure("fig-retire-cars", {
     { filter: "datum.best <= 15 || datum.worst <= 15" },
     { calculate: "datum.effect < 0 ? 'more reliable' : 'less reliable'", as: "group" }
   ],
-  width: 520, height: { step: 14 },
+  width: "container", height: { step: 14 },
   encoding: {
     y: { field: "car", type: "nominal", sort: { field: "effect", order: "ascending" }, title: null },
     color: { field: "group", type: "nominal", title: null,
@@ -111,7 +111,7 @@ diomedesFigure("fig-retire-drivers", {
     { filter: "datum.best <= 15 || datum.worst <= 15" },
     { calculate: "datum.effect < 0 ? 'fewer incidents' : 'more incidents'", as: "group" }
   ],
-  width: 520, height: { step: 14 },
+  width: "container", height: { step: 14 },
   encoding: {
     y: { field: "name", type: "nominal", sort: { field: "effect", order: "ascending" }, title: null },
     color: { field: "group", type: "nominal", title: null,
@@ -132,3 +132,9 @@ diomedesFigure("fig-retire-drivers", {
 Slower drivers tend to be more incident-prone (correlation 0.42 with the race
 model's driver effects), and slower car-seasons less reliable (0.46)
 ([#42](https://github.com/aleccrowell/diomedes/pull/42)).
+
+## Download the data
+
+```@raw html
+<p><a class="diomedes-data" data-path="assets/data/retire/seasons.csv"><code>seasons.csv</code></a>, <a class="diomedes-data" data-path="assets/data/retire/cars.csv"><code>cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/retire/drivers.csv"><code>drivers.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
+```

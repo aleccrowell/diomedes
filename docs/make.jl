@@ -9,8 +9,9 @@
 #
 # The site (#45) adds Methodology and Findings sections. Their figures are Vega-Lite
 # specs embedded in the pages (docs/src/assets/figures.js), drawing on posterior
-# summaries committed under docs/src/assets/data/ (scripts/export_site.jl). On CI,
-# pushes to master deploy the site to the gh-pages branch (GitHub Pages).
+# summaries committed under docs/src/assets/data/ (scripts/export_site.jl).
+# Deployment is a separate step (docs/deploy.jl), so CI can check that the built
+# site's figures render (docs/test/render_figures.js) before publishing it.
 
 using Documenter, Diomedes
 
@@ -40,7 +41,8 @@ makedocs(; sitename = "Diomedes.jl", modules = [Diomedes], checkdocs = :exports,
                                  "Eras" => "findings/eras.md",
                                  "Retirements" => "findings/retirements.md",
                                  "Lap times" => "findings/laps.md",
-                                 "Rallying (WRC)" => "findings/wrc.md"],
+                                 "Rallying (WRC)" => "findings/wrc.md",
+                                 "Data downloads" => "findings/data.md"],
                   "Getting started" => "getting_started.md",
                   "Data" => "data.md",
                   "Models" => ["Overview" => "models/overview.md",
@@ -58,4 +60,3 @@ makedocs(; sitename = "Diomedes.jl", modules = [Diomedes], checkdocs = :exports,
                                            "Retirement model" => "api/retirement.md",
                                            "Lap-time model" => "api/laps.md"]])
 
-deploydocs(; repo = "github.com/aleccrowell/diomedes.git", devbranch = "master", push_preview = false)

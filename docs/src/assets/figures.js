@@ -6,6 +6,10 @@
 // Data URLs in the spec are relative to docs/src (e.g. "assets/data/race/drivers.csv")
 // and are resolved against Documenter's base URL, so they work whatever the page's
 // depth. Charts follow the site theme: they re-render when the theme changes.
+// Specs use width "container", so charts fit the page column (phones included).
+//
+// Download links: <a class="diomedes-data" data-path="assets/data/race/drivers.csv">
+// gets its href resolved the same way.
 //
 // Documenter pages load RequireJS before any other script. The Vega builds are
 // UMD modules: with RequireJS present they register as anonymous AMD modules
@@ -61,7 +65,7 @@
       const out = {};
       for (const [k, v] of Object.entries(node)) {
         out[k] = k === "url" && typeof v === "string" && !/^[a-z]+:/i.test(v)
-          ? (typeof documenterBaseURL === "string" ? documenterBaseURL : ".") + "/" + v
+          ? baseURL() + "/" + v
           : resolveUrls(v);
       }
       return out;
@@ -80,9 +84,26 @@
         renderer: "svg",
       }))
       .catch((err) => {
-        document.getElementById(fig.id).textContent = "Figure failed to load: " + err;
+        const el = document.getElementById(fig.id);
+        if (el) el.textContent = "Figure failed to load: " + err;
       });
   }
+
+  // figure containers fill the content column, so "container" widths fit it
+  const style = document.createElement("style");
+  style.textContent = ".diomedes-figure { width: 100%; margin: 1em 0; } .diomedes-figure .vega-embed { width: 100%; }";
+  document.head.appendChild(style);
+
+  function baseURL() { return typeof documenterBaseURL === "string" ? documenterBaseURL : "."; }
+
+  function resolveDataLinks() {
+    for (const a of document.querySelectorAll("a.diomedes-data[data-path]")) {
+      a.href = baseURL() + "/" + a.dataset.path;
+      a.setAttribute("download", a.dataset.path.split("/").pop());
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", resolveDataLinks);
+  else resolveDataLinks();
 
   window.diomedesFigure = function (id, spec) {
     const fig = { id, spec };

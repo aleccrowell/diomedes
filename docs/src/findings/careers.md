@@ -13,7 +13,7 @@ identified, not its overall tilt or the age of its minimum (see
 diomedesFigure("fig-age-curve", {
   data: { url: "assets/data/race/age_curve.csv",
           format: { type: "csv", parse: { age: "number", rows: "number", mean: "number", q05: "number", q95: "number" } } },
-  width: 600, height: 300,
+  width: "container", height: 300,
   encoding: { x: { field: "age", type: "quantitative", title: "Age", scale: { zero: false } } },
   layer: [
     { mark: { type: "area", opacity: 0.25 },
@@ -57,7 +57,7 @@ diomedesFigure("fig-career-slopes", {
     { filter: "datum.up <= 15 || datum.down <= 15" },
     { calculate: "datum.slope_mean < 0 ? 'improved' : 'declined'", as: "direction" }
   ],
-  width: 520, height: { step: 15 },
+  width: "container", height: { step: 15 },
   encoding: {
     y: { field: "label", type: "nominal", sort: { field: "slope_mean", order: "ascending" }, title: null,
          axis: { labelLimit: 260 } },
@@ -79,3 +79,9 @@ diomedesFigure("fig-career-slopes", {
 
 Intervals are ±1.645 sd (about 90%). Kubica's decline is his comeback after a
 serious injury.
+
+## Download the data
+
+```@raw html
+<p><a class="diomedes-data" data-path="assets/data/race/age_curve.csv"><code>age_curve.csv</code></a>, <a class="diomedes-data" data-path="assets/data/race/drivers.csv"><code>drivers.csv (career slopes)</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
+```

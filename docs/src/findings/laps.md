@@ -34,7 +34,7 @@ diomedesFigure("fig-laps-cars", {
   // "constructor" can't be used as a field name in Vega (Object.prototype); use a copy
   transform: [{ calculate: "datum.constructor", as: "team" }],
   params: [{ name: "zoom", select: "interval", bind: "scales" }],
-  width: 480, height: 420,
+  width: "container", height: 420,
   mark: { type: "circle", size: 70, opacity: 0.8 },
   encoding: {
     x: { field: "race_mean", type: "quantitative", title: "Race model: car effect (%)" },
@@ -64,7 +64,7 @@ diomedesFigure("fig-laps-drivers", {
                                           race_mean: "number", race_sd: "number" } } },
   transform: [{ filter: "datum.laps >= 500" }],
   params: [{ name: "zoom", select: "interval", bind: "scales" }],
-  width: 480, height: 420,
+  width: "container", height: 420,
   mark: { type: "circle", opacity: 0.8 },
   encoding: {
     x: { field: "race_mean", type: "quantitative", title: "Race model: driver effect, whole career (%)" },
@@ -79,3 +79,9 @@ diomedesFigure("fig-laps-drivers", {
 ```
 
 Drivers with at least 500 clean laps.
+
+## Download the data
+
+```@raw html
+<p><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv"><code>vs_race_cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv"><code>vs_race_drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/drivers.csv"><code>drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/cars.csv"><code>cars.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
+```

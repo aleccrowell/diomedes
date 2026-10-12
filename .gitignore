@@ -140,3 +140,4 @@ dmypy.json
 /output/
 .DS_Store
 /docs/Manifest.toml
+/docs/test/node_modules/

@@ -15,7 +15,7 @@ measure how fast cars were in absolute terms.
 diomedesFigure("fig-kappa", {
   data: { url: "assets/data/race/seasons.csv",
           format: { type: "csv", parse: { season: "number", kappa_mean: "number", kappa_q05: "number", kappa_q95: "number" } } },
-  width: 640, height: 260,
+  width: "container", height: 260,
   layer: [
     { mark: { type: "area", opacity: 0.25 },
       encoding: { x: { field: "season", type: "quantitative", title: "Season", axis: { format: "d" }, scale: { zero: false } },
@@ -39,31 +39,41 @@ race length. Rare big losses (repairs, many laps down) are a separate component
 and aren't shown here (see [Noise: pace and incidents](@ref)).
 
 ```@raw html
-<div id="fig-incidents" class="diomedes-figure"></div>
+<div id="fig-incidents-pi" class="diomedes-figure"></div>
 <script>
-diomedesFigure("fig-incidents", {
+diomedesFigure("fig-incidents-pi", {
   data: { url: "assets/data/race/seasons.csv",
-          format: { type: "csv", parse: { season: "number", pi_mean: "number", pi_q05: "number", pi_q95: "number",
-                                          lambda_mean: "number", lambda_q05: "number", lambda_q95: "number" } } },
-  vconcat: [
-    { width: 640, height: 180,
-      encoding: { x: { field: "season", type: "quantitative", title: null, axis: { format: "d" }, scale: { zero: false } } },
-      layer: [
-        { mark: { type: "area", opacity: 0.25 },
-          encoding: { y: { field: "pi_q05", type: "quantitative", title: "Loss probability π", axis: { format: ".0%" } },
-                      y2: { field: "pi_q95" } } },
-        { mark: "line", encoding: { y: { field: "pi_mean", type: "quantitative" },
-                                    tooltip: [{ field: "season", title: "Season" }, { field: "pi_mean", title: "π", format: ".1%" }] } }
-      ] },
-    { width: 640, height: 180,
-      encoding: { x: { field: "season", type: "quantitative", title: "Season", axis: { format: "d" }, scale: { zero: false } } },
-      layer: [
-        { mark: { type: "area", opacity: 0.25 },
-          encoding: { y: { field: "lambda_q05", type: "quantitative", title: "Mean loss λ (%)" }, y2: { field: "lambda_q95" } } },
-        { mark: "line", encoding: { y: { field: "lambda_mean", type: "quantitative" },
-                                    tooltip: [{ field: "season", title: "Season" }, { field: "lambda_mean", title: "λ (%)", format: ".2f" }] } }
-      ] }
+          format: { type: "csv", parse: { season: "number", pi_mean: "number", pi_q05: "number", pi_q95: "number" } } },
+  width: "container", height: 180,
+  encoding: { x: { field: "season", type: "quantitative", title: "Season", axis: { format: "d" }, scale: { zero: false } } },
+  layer: [
+    { mark: { type: "area", opacity: 0.25 },
+      encoding: { y: { field: "pi_q05", type: "quantitative", title: "Loss probability π", axis: { format: ".0%" } },
+                  y2: { field: "pi_q95" } } },
+    { mark: "line", encoding: { y: { field: "pi_mean", type: "quantitative" },
+                                tooltip: [{ field: "season", title: "Season" }, { field: "pi_mean", title: "π", format: ".1%" }] } }
   ]
 });
 </script>
+<div id="fig-incidents-lambda" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-incidents-lambda", {
+  data: { url: "assets/data/race/seasons.csv",
+          format: { type: "csv", parse: { season: "number", lambda_mean: "number", lambda_q05: "number", lambda_q95: "number" } } },
+  width: "container", height: 180,
+  encoding: { x: { field: "season", type: "quantitative", title: "Season", axis: { format: "d" }, scale: { zero: false } } },
+  layer: [
+    { mark: { type: "area", opacity: 0.25 },
+      encoding: { y: { field: "lambda_q05", type: "quantitative", title: "Mean loss λ (%)" }, y2: { field: "lambda_q95" } } },
+    { mark: "line", encoding: { y: { field: "lambda_mean", type: "quantitative" },
+                                tooltip: [{ field: "season", title: "Season" }, { field: "lambda_mean", title: "λ (%)", format: ".2f" }] } }
+  ]
+});
+</script>
+```
+
+## Download the data
+
+```@raw html
+<p><a class="diomedes-data" data-path="assets/data/race/seasons.csv"><code>seasons.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
 ```

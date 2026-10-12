@@ -40,7 +40,7 @@ diomedesFigure("fig-wrc-drivers", {
     { window: [{ op: "row_number", as: "rank" }], sort: [{ field: "mean", order: "ascending" }] },
     { filter: "datum.rank <= top" }
   ],
-  width: 520, height: { step: 16 },
+  width: "container", height: { step: 16 },
   encoding: {
     y: { field: "name", type: "nominal", sort: { field: "mean", order: "ascending" }, title: null },
     tooltip: [{ field: "name", title: "Driver" }, { field: "stages", title: "Stage times" },
@@ -71,7 +71,7 @@ diomedesFigure("fig-wrc-cars", {
           format: { type: "csv", parse: { season: "number", mean: "number", sd: "number", q05: "number", q95: "number",
                                           stage_times: "number" } } },
   transform: [{ filter: "datum.stage_times >= 50" }],
-  width: 600, height: 360,
+  width: "container", height: 360,
   encoding: {
     x: { field: "season", type: "ordinal", title: "Season" },
     y: { field: "mean", type: "quantitative", title: "Car effect within season, % (negative = faster)", scale: { reverse: true } },
@@ -89,3 +89,9 @@ diomedesFigure("fig-wrc-cars", {
 
 Levels with at least 50 stage times. The vertical axis is reversed, so faster is
 higher.
+
+## Download the data
+
+```@raw html
+<p><a class="diomedes-data" data-path="assets/data/wrc/drivers.csv"><code>drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/wrc/cars.csv"><code>cars.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
+```
