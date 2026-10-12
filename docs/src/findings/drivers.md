@@ -61,11 +61,14 @@ diomedesFigure("fig-driver-ranking", {
 
 ## How sure is the ranking?
 
-Intervals on effects don't directly answer "who is the fastest?". Ranking the
+```@raw html
+<p>Intervals on effects don't directly answer "who is the fastest?". Ranking the
 drivers with at least 20 results in each of the 4,000 posterior draws does: the
 bars show how often each driver ranks first, in the top 3 and in the top 10.
-Even the most likely fastest driver is first in only about a fifth of the
-draws.
+Even the most likely fastest driver is first in only
+<span class="diomedes-stat" data-path="assets/data/race/ranks.csv" data-stat="max" data-x="p_top1" data-format="pct">…</span>
+of the draws.</p>
+```
 
 ```@raw html
 <div id="fig-driver-ranks" class="diomedes-figure"></div>

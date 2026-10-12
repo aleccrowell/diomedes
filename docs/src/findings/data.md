@@ -93,7 +93,7 @@ Only its shape is identified: it has no constant or linear part</td></tr>
 <thead><tr><th>File</th><th>One row per</th><th>Columns</th></tr></thead>
 <tbody>
 <tr><td><a class="diomedes-data" data-path="assets/data/wrc/drivers.csv">drivers.csv</a></td><td>driver</td>
-<td><code>id</code> (wrc.com id), <code>name</code>; <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: relative to the average of all 641 drivers; <code>stages</code></td></tr>
+<td><code>id</code> (wrc.com id), <code>name</code>; <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: relative to the average of all drivers in the file; <code>stages</code></td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/wrc/cars.csv">cars.csv</a></td><td>manufacturer × tier × season</td>
 <td><code>id</code>, <code>manufacturer</code>, <code>tier</code>, <code>season</code>; <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: within season; <code>stage_times</code></td></tr>
 </tbody></table>

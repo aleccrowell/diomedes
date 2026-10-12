@@ -16,12 +16,17 @@ fetch(documenterBaseURL + "/assets/data/wrc/manifest.json").then(r => r.json()).
 </script>
 ```
 
-!!! note "Relative to whom?"
-    Driver effects are relative to the average of the 641 drivers in the data,
-    most of them amateurs in Rally2 cars. That's why the fastest drivers sit
-    about 9% ahead. Stage results are much noisier than F1 races, and the model
-    has no road-order or surface terms
-    ([#33](https://github.com/aleccrowell/diomedes/pull/33)).
+```@raw html
+<div class="admonition is-info"><header class="admonition-header">Relative to whom?</header>
+<div class="admonition-body"><p>Driver effects are relative to the average of the
+<span class="diomedes-stat" data-path="assets/data/wrc/drivers.csv" data-stat="count" data-format="int">…</span>
+drivers in the data, most of them amateurs in Rally2 cars. That's why the fastest
+driver sits
+<span class="diomedes-stat" data-path="assets/data/wrc/drivers.csv" data-stat="min" data-x="mean" data-format="1">…</span>%
+from the average. Stage results are much noisier than F1 races, and the model has
+no road-order or surface terms
+(<a href="https://github.com/aleccrowell/diomedes/pull/33">#33</a>).</p></div></div>
+```
 
 ## Drivers
 

@@ -15,13 +15,20 @@
 // UMD modules: with RequireJS present they register as anonymous AMD modules
 // instead of setting globals (and RequireJS rejects anonymous modules loaded by
 // plain <script> tags). So Vega is loaded through RequireJS here, never as
-// page assets; without RequireJS it falls back to script tags.
+// page assets; without RequireJS it falls back to script tags. The libraries are
+// pinned copies served from assets/vendor/ (with their licences), not a CDN.
+//
+// Numbers in the text: <span class="diomedes-stat" data-path="assets/data/…csv"
+// data-stat="corr" data-x="col" data-y="col" [data-filter="col>=500"]
+// [data-format="2"|"pct"]> is filled with a statistic of that file when the page
+// loads, so the text can't go stale after a re-export. Stats: corr (Pearson),
+// max, min, mean, count (of rows passing the filter).
 
 (function () {
   const figures = [];
-  const CDN = "https://cdn.jsdelivr.net/npm/";
-  const LIBS = { "vega": "vega@5.30.0/build/vega.min", "vega-lite": "vega-lite@5.21.0/build/vega-lite.min",
-                 "vega-embed": "vega-embed@6.26.0/build/vega-embed.min" };
+  const LIBS = { "vega": "vega.min", "vega-lite": "vega-lite.min", "vega-embed": "vega-embed.min" };
+  // absolute, so RequireJS doesn't resolve the paths against its own baseUrl
+  function vendorURL() { return new URL(baseURL() + "/assets/vendor/", window.location.href).href; }
   let embedPromise = null;
 
   function loadScript(src) {
@@ -37,13 +44,13 @@
     embedPromise = new Promise((resolve, reject) => {
       if (typeof window.requirejs === "function") {
         const paths = {};
-        for (const [k, v] of Object.entries(LIBS)) paths[k] = CDN + v;
+        for (const [k, v] of Object.entries(LIBS)) paths[k] = vendorURL() + v;
         window.requirejs.config({ paths });
         window.requirejs(["vega-embed"], resolve, reject);
       } else {
-        loadScript(CDN + LIBS["vega"] + ".js")
-          .then(() => loadScript(CDN + LIBS["vega-lite"] + ".js"))
-          .then(() => loadScript(CDN + LIBS["vega-embed"] + ".js"))
+        loadScript(vendorURL() + LIBS["vega"] + ".js")
+          .then(() => loadScript(vendorURL() + LIBS["vega-lite"] + ".js"))
+          .then(() => loadScript(vendorURL() + LIBS["vega-embed"] + ".js"))
           .then(() => resolve(window.vegaEmbed), reject);
       }
     });
@@ -102,8 +109,56 @@
       a.setAttribute("download", a.dataset.path.split("/").pop());
     }
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", resolveDataLinks);
-  else resolveDataLinks();
+  // statistics in the text, from the exported CSVs (no quoted fields in our exports)
+  const csvCache = {};
+  function loadCSV(path) {
+    if (!csvCache[path]) {
+      csvCache[path] = fetch(baseURL() + "/" + path).then(r => r.text()).then(text => {
+        const [head, ...lines] = text.trim().split(/\r?\n/);
+        const cols = head.split(",");
+        return lines.map(l => { const v = l.split(","), o = {}; cols.forEach((c, i) => o[c] = v[i]); return o; });
+      });
+    }
+    return csvCache[path];
+  }
+  function passes(row, filter) {
+    if (!filter) return true;
+    const m = filter.match(/^(\w+)\s*(>=|<=|>|<|==)\s*(-?[\d.]+)$/);
+    if (!m) return false;
+    const x = Number(row[m[1]]), y = Number(m[3]);
+    return { ">=": x >= y, "<=": x <= y, ">": x > y, "<": x < y, "==": x == y }[m[2]];
+  }
+  function stat(rows, el) {
+    const x = rows.map(r => Number(r[el.dataset.x])), y = rows.map(r => Number(r[el.dataset.y]));
+    const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+    switch (el.dataset.stat) {
+      case "count": return rows.length;
+      case "max": return Math.max(...x);
+      case "min": return Math.min(...x);
+      case "mean": return mean(x);
+      case "corr": {
+        const mx = mean(x), my = mean(y);
+        let sxy = 0, sxx = 0, syy = 0;
+        x.forEach((v, i) => { sxy += (v - mx) * (y[i] - my); sxx += (v - mx) ** 2; syy += (y[i] - my) ** 2; });
+        return sxy / Math.sqrt(sxx * syy);
+      }
+    }
+    return NaN;
+  }
+  function fill(el) {
+    loadCSV(el.dataset.path).then(rows => {
+      const v = stat(rows.filter(r => passes(r, el.dataset.filter)), el);
+      const f = el.dataset.format || "2";
+      el.textContent = !isFinite(v) ? "?" : f === "pct" ? Math.round(100 * v) + "%" : f === "int" ? String(Math.round(v)) : v.toFixed(Number(f));
+      el.classList.add("diomedes-stat-filled");
+    }).catch(() => { el.textContent = "?"; });
+  }
+  function onReady() {
+    resolveDataLinks();
+    document.querySelectorAll("span.diomedes-stat").forEach(fill);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", onReady);
+  else onReady();
 
   window.diomedesFigure = function (id, spec) {
     const fig = { id, spec };

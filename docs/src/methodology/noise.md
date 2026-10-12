@@ -15,7 +15,40 @@ L = \begin{cases} 0 & \text{with probability } 1-\pi \\
 ```
 
 so the density is a mixture of a Gaussian and an exponentially modified
-Gaussian (EMG). Both the density and the interval probabilities of lapped cars
+Gaussian (EMG). The figure draws it from that formula; move the sliders to see
+how the two components shape the slow tail.
+
+```@raw html
+<div id="fig-noise-density" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-noise-density", {
+  data: { sequence: { start: -2, stop: 8, step: 0.02, as: "x" } },
+  params: [
+    { name: "sigma", value: 0.4, bind: { input: "range", min: 0.1, max: 1.5, step: 0.05, name: "pace noise σ (%) " } },
+    { name: "piinc", value: 0.5, bind: { input: "range", min: 0, max: 0.95, step: 0.05, name: "loss probability π " } },
+    { name: "lam", value: 1.5, bind: { input: "range", min: 0.2, max: 5, step: 0.1, name: "mean loss λ (%) " } }
+  ],
+  transform: [
+    { calculate: "(1 - piinc) * densityNormal(datum.x, 0, sigma)", as: "pace" },
+    { calculate: "piinc / lam * exp(sigma * sigma / (2 * lam * lam) - datum.x / lam) * cumulativeNormal(datum.x / sigma - sigma / lam, 0, 1)", as: "loss" },
+    { calculate: "datum.pace + datum.loss", as: "total" },
+    { fold: ["total", "pace", "loss"], as: ["component", "density"] },
+    { calculate: "{total: 'result (mixture)', pace: 'clean race: (1−π)·Normal(0, σ)', loss: 'incident: π·EMG(σ, λ)'}[datum.component]", as: "label" }
+  ],
+  width: "container", height: 260,
+  mark: { type: "line", strokeWidth: 2 },
+  encoding: {
+    x: { field: "x", type: "quantitative", title: "Residual: result minus expected (% of race time; positive = slower)" },
+    y: { field: "density", type: "quantitative", title: "Density" },
+    color: { field: "label", type: "nominal", title: null,
+             scale: { domain: ["result (mixture)", "clean race: (1−π)·Normal(0, σ)", "incident: π·EMG(σ, λ)"],
+                      range: ["#333333", "#4c78a8", "#e45756"] },
+             legend: { orient: "top", columns: 1, labelLimit: 400 } },
+    strokeDash: { condition: { test: "datum.component == 'total'", value: [1, 0] }, value: [5, 3] }
+  }
+});
+</script>
+``` Both the density and the interval probabilities of lapped cars
 have closed forms. These need care in the tails, where naive formulas cancel
 catastrophically ([`paceloss_effects`](@ref)).
 

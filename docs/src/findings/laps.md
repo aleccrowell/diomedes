@@ -19,10 +19,14 @@ fetch(documenterBaseURL + "/assets/data/laps/manifest.json").then(r => r.json())
 
 ## Lap model against the race model: cars
 
-Each point is a car-season, placed by its effect in the two models. They agree
-closely (correlation 0.97). The lap model's spread is larger, because clean
-laps leave out the safety-car bunching and strategy noise that compress race
-time gaps.
+```@raw html
+<p>Each point is a car-season, placed by its effect in the two models. They agree
+closely (correlation
+<span class="diomedes-stat" data-path="assets/data/laps/vs_race_cars.csv" data-stat="corr" data-x="race_mean" data-y="lap_mean">…</span>
+over <span class="diomedes-stat" data-path="assets/data/laps/vs_race_cars.csv" data-stat="count" data-format="int">…</span>
+car-seasons). The lap model's spread is larger, because clean laps leave out the
+safety-car bunching and strategy noise that compress race time gaps.</p>
+```
 
 ```@raw html
 <div id="fig-laps-cars" class="diomedes-figure"></div>
@@ -50,10 +54,15 @@ diomedesFigure("fig-laps-cars", {
 
 ## Lap model against the race model: drivers
 
-Drivers agree less (correlation 0.70). The race model's driver effects cover a
-whole career, with an age curve and career slopes, while the lap model sees
-only 2011–2019. A driver whose best years were before 2011 is fast in the race
-model and ordinary here: Michael Schumacher's 2010–12 comeback, for example.
+```@raw html
+<p>Drivers agree less (correlation
+<span class="diomedes-stat" data-path="assets/data/laps/vs_race_drivers.csv" data-stat="corr" data-x="race_mean" data-y="lap_mean" data-filter="laps>=500">…</span>
+over the <span class="diomedes-stat" data-path="assets/data/laps/vs_race_drivers.csv" data-stat="count" data-filter="laps>=500" data-format="int">…</span>
+drivers with at least 500 clean laps). The race model's driver effects cover a
+whole career, with an age curve and career slopes, while the lap model sees only
+2011–2019. A driver whose best years were before 2011 is fast in the race model
+and ordinary here: Michael Schumacher's 2010–12 comeback, for example.</p>
+```
 
 ```@raw html
 <div id="fig-laps-drivers" class="diomedes-figure"></div>
