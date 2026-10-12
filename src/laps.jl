@@ -450,7 +450,8 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                    slopes_old = false, slopes_new = slopes_old, dev_old = false, dev_new = dev_old) -> (; Minv, ϵ)
 
 Diagonal inverse metric and step size for a fit to `d_new`, from the adapted
-NUTS `state` of a fit to `d_old` (`only(Turing.loadstate(chain))`). Levels
+NUTS `state` of a fit to `d_old` (`only(Turing.loadstate(chain))`, or its
+`lap_adapted` summary). Levels
 (drivers, car-seasons, races) present in both keep their adapted variance; new
 levels get their group's median. Scalars are scaled by the ratio of lap
 counts (posterior variance ∝ 1/data). Adaptation still runs on the new fit;
@@ -461,7 +462,8 @@ doesn't have starts from `LAP_WARM_DEFAULT`.
 function lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old::Bool = true, tyres_new::Bool = tyres_old,
                         slopes_old::Bool = false, slopes_new::Bool = slopes_old,
                         dev_old::Bool = false, dev_new::Bool = dev_old)
-    Mo = state.hamiltonian.metric.M⁻¹
+    ad = lap_adapted(state)
+    Mo = ad.Minv
     lo = lap_layout(d_old; tyres = tyres_old, slopes = slopes_old, dev = dev_old)
     ln = lap_layout(d_new; tyres = tyres_new, slopes = slopes_new, dev = dev_new)
     sum(first(last(p)) for p in lo) == length(Mo) || throw(DimensionMismatch("state does not match d_old"))
@@ -488,7 +490,23 @@ function lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old::Bool =
             append!(Mn, [haskey(pos, l) ? block[pos[l]] : med for l in labels_new])
         end
     end
-    return (; Minv = Mn, ϵ = state.kernel.τ.integrator.ϵ * sqrt(scale))
+    return (; Minv = Mn, ϵ = ad.ϵ * sqrt(scale))
+end
+
+"""
+    lap_adapted(state) -> (; Minv, ϵ)
+
+The adapted diagonal inverse metric and step size in a sampler state: Turing's
+NUTS state, the `TuringState` wrapping an AdvancedHMC sampler (a fit that was
+itself warm-started, see `lap_warm_sampler`), or an already extracted
+`(; Minv, ϵ)`.
+"""
+function lap_adapted(st)
+    st isa NamedTuple && haskey(st, :Minv) && return (; Minv = Vector{Float64}(st.Minv), ϵ = Float64(st.ϵ))
+    s = hasproperty(st, :hamiltonian) || hasproperty(st, :metric) ? st : st.state
+    hasproperty(s, :hamiltonian) &&
+        return (; Minv = Vector{Float64}(s.hamiltonian.metric.M⁻¹), ϵ = Float64(s.kernel.τ.integrator.ϵ))
+    return (; Minv = Vector{Float64}(s.metric.M⁻¹), ϵ = Float64(s.κ.τ.integrator.ϵ))     # AdvancedHMC.HMCState
 end
 
 """

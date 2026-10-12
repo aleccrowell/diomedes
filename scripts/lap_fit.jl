@@ -12,7 +12,8 @@
 # first k blocks of each chain are used. A `notyres` argument (anywhere) fits
 # without the stint-age terms, `slopes` adds per-driver career slopes and `dev`
 # in-season car development (tags laps_<first>-<last>_<pits>[_notyres][_slopes][_dev]);
-# a warm start comes from the plain fit (with tyres, without slopes or dev).
+# a warm start comes from an earlier fit with the same terms over the warm seasons
+# if there is one, else from the plain fit (with tyres, without slopes or dev).
 # `combine` also writes output/<tag>_slopes.csv and <tag>_dev.csv for those terms.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
@@ -44,19 +45,24 @@ if action == "chain"
     ws, n_adapts = nothing, 500
     if warm !== nothing
         old_seasons = parse(Int, warm[1]):parse(Int, warm[2])
+        # the old fit: one with the same terms (notyres/slopes/dev) if it exists, as it has
+        # adapted every block; else the plain fit (tyres, no slopes or dev)
+        flags = (tyres ? "" : "_notyres") * (slopes ? "_slopes" : "") * (dev ? "_dev" : "")
+        chains_of(t) = sort(unique(parse(Int, m[1]) for f in readdir("output")
+                                   for m in (match(Regex("^$(t)_chain(\\d+)_(block|warmstate)"), f),) if m !== nothing))
+        same = "laps_$(warm[1])-$(warm[2])_$(pits)$(flags)"
+        base = isempty(flags) || isempty(chains_of(same)) ? "laps_$(warm[1])-$(warm[2])_$(pits)" : same
+        old_flags = base == same ? (tyres, slopes, dev) : (true, false, false)
         # chain k of the old fit, or (if it has fewer chains) one of them in turn
-        have = sort(unique(parse(Int, m[1]) for f in readdir("output")
-                           for m in (match(Regex("^laps_$(warm[1])-$(warm[2])_$(pits)_chain(\\d+)_block"), f),)
-                           if m !== nothing))
-        old_tag = "laps_$(warm[1])-$(warm[2])_$(pits)_chain$(k in have ? k : have[mod1(k, length(have))])"
+        have = chains_of(base)
+        old_tag = "$(base)_chain$(k in have ? k : have[mod1(k, length(have))])"
         # the adapted metric and step size: from <old_tag>_warmstate.jls if it exists
         # (written after each chain; it survives changes to LapData, which the
         # checkpoint blocks embed and then can't be read back), else the last block
         wsfile = joinpath("output", old_tag * "_warmstate.jls")
         if isfile(wsfile)
-            w = deserialize(wsfile)
+            st = deserialize(wsfile)                        # (; Minv, ϵ)
             last_block = basename(wsfile)
-            st = (; hamiltonian = (; metric = (; M⁻¹ = w.Minv)), kernel = (; τ = (; integrator = (; ϵ = w.ϵ))))
         else
             blocks = filter(f -> startswith(f, old_tag * "_block"), readdir("output"))
             last_block = argmax(f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]), blocks)
@@ -64,16 +70,15 @@ if action == "chain"
         end
         d_old = prepare_laps(fetch_laps(src, old_seasons), fetch_results(src, old_seasons); pits,
                              pit_stops = pits === :recorded ? fetch_pit_stops(src, old_seasons) : nothing)
-        ws, n_adapts = lap_warm_start(st, d_old, d; tyres_new = tyres, slopes_new = slopes, dev_new = dev), 300
+        ws, n_adapts = lap_warm_start(st, d_old, d; tyres_old = old_flags[1], slopes_old = old_flags[2], dev_old = old_flags[3],
+                                      tyres_new = tyres, slopes_new = slopes, dev_new = dev), 300
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
     end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k,
                                   progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev)
     # adapted metric and step size, for warm starts of later fits (see above)
     try
-        st = only(Turing.loadstate(chain))
-        serialize("output/$(tag)_chain$(k)_warmstate.jls",
-                  (; Minv = Vector{Float64}(st.hamiltonian.metric.M⁻¹), ϵ = Float64(st.kernel.τ.integrator.ϵ)))
+        serialize("output/$(tag)_chain$(k)_warmstate.jls", Diomedes.lap_adapted(only(Turing.loadstate(chain))))
     catch err
         @warn "could not save the warm-start state" err
     end
