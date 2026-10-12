@@ -59,6 +59,51 @@ diomedesFigure("fig-driver-ranking", {
 </script>
 ```
 
+## How sure is the ranking?
+
+Intervals on effects don't directly answer "who is the fastest?". Ranking the
+drivers with at least 20 results in each of the 4,000 posterior draws does: the
+bars show how often each driver ranks first, in the top 3 and in the top 10.
+Even the most likely fastest driver is first in only about a fifth of the
+draws.
+
+```@raw html
+<div id="fig-driver-ranks" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-driver-ranks", {
+  data: { url: "assets/data/race/ranks.csv",
+          format: { type: "csv", parse: { rows: "number", p_top1: "number", p_top3: "number", p_top10: "number",
+                                          rank_median: "number", rank_q05: "number", rank_q95: "number" } } },
+  transform: [
+    { window: [{ op: "row_number", as: "order" }], sort: [{ field: "p_top10", order: "descending" }] },
+    { filter: "datum.order <= 25" },
+    { fold: ["p_top10", "p_top3", "p_top1"], as: ["level", "p"] },
+    { calculate: "{p_top1: 'fastest', p_top3: 'top 3', p_top10: 'top 10'}[datum.level]", as: "which" }
+  ],
+  width: "container", height: { step: 16 },
+  mark: { type: "bar", height: { band: 0.8 } },
+  encoding: {
+    y: { field: "name", type: "nominal", sort: { field: "order", op: "min", order: "ascending" }, title: null,
+         axis: { labelLimit: 200 } },
+    x: { field: "p", type: "quantitative", title: "Posterior probability", axis: { format: ".0%" },
+         scale: { domain: [0, 1] }, stack: null },
+    color: { field: "which", type: "nominal", title: "Rank",
+             scale: { domain: ["top 10", "top 3", "fastest"], range: ["#c6dbef", "#6baed6", "#08519c"] } },
+    order: { field: "p", sort: "descending" },
+    tooltip: [{ field: "name", title: "Driver" }, { field: "rows", title: "Results" },
+              { field: "which", title: "Rank" }, { field: "p", title: "Probability", format: ".1%" },
+              { field: "rank_median", title: "Median rank" }, { field: "rank_q05", title: "Rank 5%" },
+              { field: "rank_q95", title: "Rank 95%" }]
+  }
+});
+</script>
+```
+
+```@raw html
+<p>The 25 drivers most often in the top 10 are shown. All drivers with at least 20
+results are in <a class="diomedes-data" data-path="assets/data/race/ranks.csv"><code>ranks.csv</code></a>.</p>
+```
+
 ## Every driver
 
 All 550 drivers with a classified finish, by the middle of their career. Point
@@ -109,8 +154,9 @@ The vertical axis is reversed, so faster drivers are higher.
 ## Download the data
 
 ```@raw html
-<p>The table behind these charts is
-<a class="diomedes-data" data-path="assets/data/race/drivers.csv"><code>drivers.csv</code></a>
+<p>The tables behind these charts are
+<a class="diomedes-data" data-path="assets/data/race/drivers.csv"><code>drivers.csv</code></a> and
+<a class="diomedes-data" data-path="assets/data/race/ranks.csv"><code>ranks.csv</code></a>
 (columns described on the <a href="../data/">data page</a>).</p>
 ```
 

@@ -42,6 +42,8 @@ out-of-sample fit (#36).
 
 - [Drivers](drivers.md): rankings with uncertainty, and every driver in one
   explorable chart.
+- [Driver vs car](explorer.md): every driver-season split into the driver's
+  part and the car's part.
 - [Cars](cars.md): each season's field, dominant cars, and in-season
   development.
 - [Careers](careers.md): the shape of a career, and drivers whose

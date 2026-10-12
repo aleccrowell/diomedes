@@ -26,6 +26,15 @@ posterior intervals (`q05`, `q95`). `sd` is the posterior standard deviation.
 <td><code>id</code> (constructor_season), <code>constructor</code>, <code>season</code>, <code>rows</code>;
 <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: car effect, % of race time relative to the other cars in the same season;
 <code>dev_mean</code>, <code>dev_sd</code>: in-season development trend, % from the season's first round to its last, relative to the field</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/race/ranks.csv">ranks.csv</a></td><td>driver with ≥ 20 results</td>
+<td><code>id</code>, <code>name</code>, <code>rows</code>; <code>p_top1</code>, <code>p_top3</code>, <code>p_top10</code>: share of the
+posterior draws in which the driver ranks fastest, in the top 3, in the top 10 among these drivers;
+<code>rank_median</code>, <code>rank_q05</code>, <code>rank_q95</code></td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/race/driver_seasons.csv">driver_seasons.csv</a></td><td>driver × car-season raced</td>
+<td><code>driver</code>, <code>name</code>, <code>season</code>, <code>car</code>, <code>constructor</code>, <code>rows</code>;
+<code>driver_*</code>: driver part, κ_season × (driver effect + career terms averaged over that season's results);
+<code>car_*</code>: car part (car-season effect); <code>total_*</code>: their sum. All in that season's % units
+(mean, q05, q95), relative to the season's average entrant</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/seasons.csv">seasons.csv</a></td><td>season</td>
 <td><code>season</code>, <code>races</code>; <code>pi_*</code>: probability that a result includes a routine loss;
 <code>lambda_*</code>: mean routine loss, % of race time (both at average race duration); <code>kappa_*</code>: pace scale κ</td></tr>

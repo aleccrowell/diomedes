@@ -18,6 +18,12 @@
 #                 development trends if the model has them
 #   seasons.csv   per season: incident probability π, mean loss λ, pace scale κ
 #   age_curve.csv the population career curve, if the model has one
+#   ranks.csv     per driver with ≥ 20 results: P(fastest), P(top 3), P(top 10) and the
+#                 rank's median and 90% interval, ranking those drivers in every draw
+#   driver_seasons.csv  per driver and car-season raced: the driver part
+#                 (κ_season × (driver effect + career terms averaged over that season's
+#                 results)), the car part (car-season effect) and their sum, in that
+#                 season's % units, with 90% intervals
 # retire: the tables of scripts/retire_fit.jl combine (output/retire_*.csv), with
 #   convergence from output/retire_combine.txt.
 # laps: the tables of scripts/lap_fit.jl combine (output/<tag>_{drivers,cars}.csv),
@@ -27,8 +33,8 @@
 #   convergence isn't recomputed: the WRC source refreshes its season list, so the
 #   data could differ from the fit's; the manifest points to where it was reported.
 
-using Diomedes, CSV, DataFrames, Dates, JSON3, Serialization, Statistics
-using Diomedes: draw, model_param_names, rw_path, season_counts
+using Diomedes, CSV, DataFrames, Dates, JSON3, Serialization, Statistics, Turing
+using Diomedes: draw, model_param_names, rw_path, season_counts, sum_to_zero, sum_to_zero_by, CareerRows, driver_offsets
 using LogExpFunctions: logistic
 
 
@@ -157,6 +163,75 @@ function export_race(model)
                   DataFrame(age = g.age_years, rows = Int.(g.age_rows), mean = r4(vec(mean(AC; dims = 1))),
                             q05 = r4(q(AC, 0.05)), q95 = r4(q(AC, 0.95))))
     end
+
+    # per-draw effects, in the draw order of the loop above (iterations within chains),
+    # as gap_effects_table computes them (centred drivers and cars)
+    stackd(sym) = stack(vec(chain[sym]); dims = 1)
+    hasp(sym) = any(vn -> string(vn) == string(sym), Turing.FlexiChains.parameters(chain))
+    A = hasp(:a_comp) ? mapslices(sum_to_zero, stackd(:a_comp); dims = 2) :         # draws × drivers
+        mapslices(sum_to_zero, stackd(:z_comp); dims = 2) .* vec(chain[:σ_comp])
+    Bm = mapslices(b -> sum_to_zero_by(b, g.mach_season, sc), stackd(:b_mach); dims = 2)   # draws × cars
+    K = exp.(lk)                                                              # draws × seasons
+    # the stacked draws must line up with the loop's (i within c) order
+    for (i, c) in ((1, 1), (ni, 1), (1, nc))
+        k = (c - 1) * ni + i
+        θk = draw(chain, pnames, i, c)
+        @assert A[k, :] ≈ (hasp(:a_comp) ? sum_to_zero(θk.a_comp) : θk.σ_comp .* sum_to_zero(θk.z_comp))
+        @assert lk[k, :] ≈ rw_path(draw(chain, pnames, i, c).τ_κ .* draw(chain, pnames, i, c).e_κ)
+    end
+
+    # rank probabilities among drivers with ≥ 20 results (ranked in every draw)
+    nrows = [count(==(d), comps) for d in eachindex(g.competitors)]
+    elig = findall(>=(20), nrows)
+    R = zeros(Int, ndraw, length(elig))
+    for k in 1:ndraw
+        R[k, sortperm(A[k, elig])] .= 1:length(elig)
+    end
+    rt = DataFrame(id = g.competitors[elig], name = [dname[c] for c in g.competitors[elig]], rows = nrows[elig],
+                   p_top1 = r4(vec(mean(R .== 1; dims = 1))), p_top3 = r4(vec(mean(R .<= 3; dims = 1))),
+                   p_top10 = r4(vec(mean(R .<= 10; dims = 1))),
+                   rank_median = [median(c) for c in eachcol(R)],
+                   rank_q05 = [quantile(c, 0.05) for c in eachcol(R)], rank_q95 = [quantile(c, 0.95) for c in eachcol(R)])
+    sort!(rt, :rank_median)
+    CSV.write(joinpath(outdir, "ranks.csv"), rt)
+
+    # driver and car parts of each driver-season's pace (that season's % units)
+    rowseason = vcat(g.race_season[g.t_race], g.race_season[g.c_race])
+    dm = Dict{Tuple{Int,Int},Int}()
+    for (d, m) in zip(comps, machs)
+        dm[(d, m)] = get(dm, (d, m), 0) + 1
+    end
+    qs(x) = (r4(mean(x)), r4(quantile(x, 0.05)), r4(quantile(x, 0.95)))
+    ds = DataFrame(driver = String[], name = String[], season = Int[], car = String[], constructor = String[], rows = Int[],
+                   driver_mean = Float64[], driver_q05 = Float64[], driver_q95 = Float64[],
+                   car_mean = Float64[], car_q05 = Float64[], car_q95 = Float64[],
+                   total_mean = Float64[], total_q05 = Float64[], total_q95 = Float64[])
+    # career terms (age curve, slopes) for each driver-season: their mean over the
+    # pair's rows, per draw, so the driver part is that season's driver pace
+    keys_dm = collect(keys(dm))
+    pidx = Dict(p => i for (i, p) in enumerate(keys_dm))
+    rowpair = [pidx[(d, m)] for (d, m) in zip(comps, machs)]
+    H = zeros(ndraw, length(keys_dm))
+    if spec.age || spec.slopes
+        cr = CareerRows(g)
+        for k in 1:ndraw
+            hk = driver_offsets(cr, spec.age ? AC[k, :] : nothing, spec.slopes ? SL[k, :] : nothing)
+            for (r, p) in enumerate(rowpair)
+                H[k, p] += hk[r]
+            end
+        end
+        H ./= [dm[p] for p in keys_dm]'
+    end
+    for (pj, (d, m)) in enumerate(keys_dm)
+        n = dm[(d, m)]
+        si = g.mach_season[m]
+        dpart = K[:, si] .* (A[:, d] .+ H[:, pj])
+        cpart = Bm[:, m]
+        push!(ds, (g.competitors[d], dname[g.competitors[d]], seasons[si], g.machines[m], ct.constructor[findfirst(==(g.machines[m]), ct.id)], n,
+                   qs(dpart)..., qs(cpart)..., qs(dpart .+ cpart)...))
+    end
+    sort!(ds, [:name, :season, :car])
+    CSV.write(joinpath(outdir, "driver_seasons.csv"), ds)
 
     # provenance
     ic = identified_convergence(chain, g, model)
