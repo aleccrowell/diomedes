@@ -1,0 +1,21 @@
+chain,mode,kept,quantity,label,mean,q05,q95
+1,A,false,sigma,Pace noise σ (%),0.4882,0.4745,0.5012
+1,A,false,pi_base,Routine-loss probability,0.5465,0.4955,0.6266
+1,A,false,lambda_base,Routine-loss mean (%),1.5607,1.398,1.6801
+1,A,false,rho,Big-loss share of incidents,0.065,0.0573,0.0737
+1,A,false,lambda_big,Big-loss mean (%),13.928,12.6129,15.3204
+2,B,true,sigma,Pace noise σ (%),0.467,0.4541,0.4804
+2,B,true,pi_base,Routine-loss probability,0.5194,0.4744,0.5811
+2,B,true,lambda_base,Routine-loss mean (%),1.9461,1.8481,2.0474
+2,B,true,rho,Big-loss share of incidents,0.0289,0.0227,0.0357
+2,B,true,lambda_big,Big-loss mean (%),15.4838,12.9914,18.2445
+3,B,true,sigma,Pace noise σ (%),0.4672,0.454,0.4804
+3,B,true,pi_base,Routine-loss probability,0.5127,0.4689,0.5607
+3,B,true,lambda_base,Routine-loss mean (%),1.9508,1.8622,2.0516
+3,B,true,rho,Big-loss share of incidents,0.0287,0.0224,0.0354
+3,B,true,lambda_big,Big-loss mean (%),15.4858,12.9653,18.4837
+4,A,false,sigma,Pace noise σ (%),0.4886,0.4761,0.5008
+4,A,false,pi_base,Routine-loss probability,0.5448,0.4926,0.6148
+4,A,false,lambda_base,Routine-loss mean (%),1.5496,1.3822,1.6795
+4,A,false,rho,Big-loss share of incidents,0.0648,0.0572,0.0727
+4,A,false,lambda_big,Big-loss mean (%),13.9908,12.712,15.3374
