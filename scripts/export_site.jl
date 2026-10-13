@@ -1,7 +1,7 @@
 # Export posterior summaries of fitted models for the documentation site (#45).
 #
 #   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_fgam] [data=all]
-#   julia --project scripts/export_site.jl retire
+#   julia --project scripts/export_site.jl retire [prefix=retire]
 #   julia --project scripts/export_site.jl laps [tag=laps_2011-2019_recorded]
 #   julia --project scripts/export_site.jl wrc [model=pl_dur_rw_kappa_cdrv_tdrv_fgam]
 #
@@ -33,8 +33,9 @@
 #                 (κ_season × (driver effect + career terms averaged over that season's
 #                 results)), the car part (car-season effect) and their sum, in that
 #                 season's % units, with 90% intervals
-# retire: the tables of scripts/retire_fit.jl combine (output/retire_*.csv), with
-#   convergence from output/retire_combine.txt.
+# retire: the tables of scripts/retire_fit.jl combine (output/<prefix>_*.csv, e.g.
+#   prefix retire_jolpica1950-2025), with convergence from output/<prefix>_combine.txt
+#   (the combine step's printed output).
 # laps: the tables of scripts/lap_fit.jl combine (output/<tag>_{drivers,cars}.csv),
 #   plus the same drivers and car-seasons joined with the race model's effects (run
 #   `race` first), with convergence from output/<tag>_combine.txt.
@@ -353,18 +354,21 @@ function export_race(model, source)
             "kept $(join(mi.kept, ", "))")
 end
 
-function export_retire()
+function export_retire(pre)
     dir = joinpath(OUT, "retire")
     mkpath(dir)
-    cars = round_floats!(CSV.read("output/retire_cars.csv", DataFrame))
+    cars = round_floats!(CSV.read("output/$(pre)_cars.csv", DataFrame))
     cars.constructor = [replace(m, Regex("_$(s)\$") => "") for (m, s) in zip(cars.machine, cars.season)]
     CSV.write(joinpath(dir, "cars.csv"), select(cars, :machine => :id, :constructor, Not([:machine, :constructor])))
-    CSV.write(joinpath(dir, "drivers.csv"), select(round_floats!(CSV.read("output/retire_drivers.csv", DataFrame)),
+    CSV.write(joinpath(dir, "drivers.csv"), select(round_floats!(CSV.read("output/$(pre)_drivers.csv", DataFrame)),
                                                    :driver => :id, Not(:driver)))
-    CSV.write(joinpath(dir, "seasons.csv"), round_floats!(CSV.read("output/retire_seasons.csv", DataFrame)))
-    log = "output/retire_combine.txt"
+    CSV.write(joinpath(dir, "seasons.csv"), round_floats!(CSV.read("output/$(pre)_seasons.csv", DataFrame)))
+    log = "output/$(pre)_combine.txt"
+    jol = match(r"jolpica(\d{4})-(\d{4})", pre)
+    src = jol === nothing ? "F1 1950–2019 (Ergast CSV)" :
+          "F1 $(jol[1])–$(jol[2]) (Jolpica API; retirements with no recorded cause count under the total hazard)"
     write_manifest(dir, (; model = "retirement_effects (competing risks: mechanical, incident, collision)",
-                         fit = "retire", data = "F1 1950–2019 (Ergast CSV): " * inner(first(readlines(log))), convergence = log_convergence(log),
+                         fit = pre, data = src * ": " * inner(first(readlines(log))), convergence = log_convergence(log),
                          exported_by = "scripts/export_site.jl retire"))
     println("wrote $dir")
 end
@@ -419,7 +423,7 @@ mode = get(ARGS, 1, "race")
 if mode == "race"
     export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev_fgam"), get(ARGS, 3, "all"))
 elseif mode == "retire"
-    export_retire()
+    export_retire(get(ARGS, 2, "retire"))
 elseif mode == "laps"
     export_laps(get(ARGS, 2, "laps_2011-2019_recorded"))
 elseif mode == "wrc"
