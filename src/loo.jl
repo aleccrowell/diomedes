@@ -216,3 +216,31 @@ function identified_convergence(chain, g::GapData, model::AbstractString)
                min_ess = minimum(v.min_ess for v in values(groups)))
     return (; overall, NamedTuple(groups)...)
 end
+
+"""
+    chain_modes(chain, names; threshold = 1.1) -> Vector{String}
+
+Group the chains of `chain` into modes: two chains are in the same mode when the
+R-hat of each scalar parameter in `names`, computed from those two chains alone,
+is below `threshold`, and modes are the connected groups of such pairs. Returns
+one label per chain ("A", "B", …, in order of each mode's first chain).
+
+Chains that agree on every parameter get one label, so a converged fit has a
+single mode. Used to report fits whose chains settle in different solutions
+(#55, #64) by mode instead of pooled.
+"""
+function chain_modes(chain, names; threshold = 1.1)
+    ni, nc = size(chain[first(names)])
+    X = Array{Float64,3}(undef, ni, nc, length(names))
+    for (p, n) in enumerate(names)
+        X[:, :, p] = chain[n]
+    end
+    parent = collect(1:nc)
+    root(i) = parent[i] == i ? i : (parent[i] = root(parent[i]))
+    for i in 1:nc, j in (i + 1):nc
+        maximum(MCMCDiagnosticTools.rhat(X[:, [i, j], :])) < threshold && (parent[root(j)] = root(i))
+    end
+    roots = root.(1:nc)
+    order = unique(roots)
+    return [string(Char('A' + findfirst(==(r), order) - 1)) for r in roots]
+end

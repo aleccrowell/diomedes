@@ -10,7 +10,9 @@ posterior intervals (`q05`, `q95`). `sd` is the posterior standard deviation.
 ## Race-model files
 
 ```@raw html
-<p>F1 1950–2019, best pace + loss model.
+<p>F1 1950–2025 (Jolpica API), best pace + loss model. The manifest also records
+the modes the chains settled in, convergence by group, and how far the effects
+differ between modes.
 <a class="diomedes-data" data-path="assets/data/race/manifest.json">manifest.json</a></p>
 ```
 
@@ -38,6 +40,14 @@ posterior draws in which the driver ranks fastest, in the top 3, in the top 10 a
 <tr><td><a class="diomedes-data" data-path="assets/data/race/seasons.csv">seasons.csv</a></td><td>season</td>
 <td><code>season</code>, <code>races</code>; <code>pi_*</code>: probability that a result includes a routine loss;
 <code>lambda_*</code>: mean routine loss, % of race time (both at average race duration); <code>kappa_*</code>: pace scale κ</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/race/seasons_by_mode.csv">seasons_by_mode.csv</a></td><td>mode × season</td>
+<td><code>mode</code> (chains grouped by where the loss mixture settled; see <code>modes.csv</code>), then the columns of
+<code>seasons.csv</code> over that mode's draws</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/race/modes.csv">modes.csv</a></td><td>chain × quantity</td>
+<td><code>chain</code>, <code>mode</code>; <code>quantity</code>, <code>label</code>: <code>sigma</code> (pace noise σ, %),
+<code>pi_base</code> (routine-loss probability), <code>lambda_base</code> (routine-loss mean, %), <code>rho</code> (big-loss share of
+incidents), <code>lambda_big</code> (big-loss mean, %), from the intercepts (average race duration, before the season paths);
+<code>mean</code>, <code>q05</code>, <code>q95</code> over that chain's draws</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/age_curve.csv">age_curve.csv</a></td><td>age (years)</td>
 <td><code>age</code>, <code>rows</code>; <code>mean</code>, <code>q05</code>, <code>q95</code>: population career curve, % of race time.
 Only its shape is identified: it has no constant or linear part</td></tr>

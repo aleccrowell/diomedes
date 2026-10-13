@@ -104,3 +104,95 @@ to 0.40 ([#32](https://github.com/aleccrowell/diomedes/issues/32)). Learning the
 pull at equal out-of-sample fit (2.9 ± 6.0 elpd), and is the default ([#36](https://github.com/aleccrowell/diomedes/issues/36)).
 The remaining uncertainty is honest: the incident intercept ``a_\pi`` has
 posterior sd 0.19 ([#32](https://github.com/aleccrowell/diomedes/issues/32)). The driver and car effects don't depend on the split.
+
+## Two modes in the loss mixture
+
+The Jolpica refit of 1950–2025 ([#55](https://github.com/aleccrowell/diomedes/issues/55)) adds the 2020–2025 seasons,
+lapped cars at exact gaps (from 2023, when their own times are recorded), and
+retirements as partial gaps (from 1996). Its chains didn't all settle in the same
+place:
+
+```@raw html
+<div id="noise-modes"><p>(The exported fit has a single mode.)</p></div>
+<script>
+fetch(documenterBaseURL + "/assets/data/race/manifest.json").then(r => r.json()).then(m => {
+  if (!m.modes || m.modes.length < 2) return;
+  const f = (x, d) => x == null ? "–" : Number(x).toFixed(d);
+  const rows = m.modes.map(x =>
+    `<tr><td><b>${x.label}</b></td><td>${x.chains.join(", ")}</td>
+     <td>${x.convergence ? f(x.convergence.max_rhat, 3) : "–"}</td><td>${f(x.mean_logjoint, 1)}</td>
+     <td>${x.kept ? "yes" : "no"}</td></tr>`).join("");
+  const agree = (m.effects_by_mode || []).map(e =>
+    `<li><b>${e.modes}</b>: driver effects correlate ${f(e.drivers.corr, 4)}, the largest difference
+     ${f(e.drivers.max_diff, 2)}% (${f(e.drivers.max_diff_sd, 2)} posterior sds); car-seasons ${f(e.cars.corr, 4)},
+     ${f(e.cars.max_diff, 2)}% (${f(e.cars.max_diff_sd, 2)} sds).</li>`).join("");
+  document.getElementById("noise-modes").innerHTML =
+    `<table><thead><tr><th>Mode</th><th>Chains</th><th>Max R-hat within the mode</th><th>Mean log density</th><th>Used</th></tr></thead>
+     <tbody>${rows}</tbody></table>
+
+     <p>How far the effects differ between modes:</p><ul>${agree}</ul>`;
+});
+</script>
+```
+
+Both modes describe the same slow tail of results, split differently between
+the two loss components. Each row below is one chain (posterior mean and 90%
+interval):
+
+```@raw html
+<div id="fig-modes"></div>
+<script>
+[["sigma", "Pace noise σ (%)", ".2f"], ["pi_base", "Routine-loss probability", ".0%"],
+ ["lambda_base", "Routine-loss mean (%)", ".2f"], ["rho", "Big-loss share of incidents", ".1%"],
+ ["lambda_big", "Big-loss mean (%)", ".1f"]].forEach(([q, title, fmt]) => {
+  const id = "fig-modes-" + q;
+  const div = document.createElement("div");
+  div.id = id; div.className = "diomedes-figure";
+  document.getElementById("fig-modes").appendChild(div);
+  diomedesFigure(id, {
+    data: { url: "assets/data/race/modes.csv",
+            format: { type: "csv", parse: { chain: "number", mean: "number", q05: "number", q95: "number" } } },
+    transform: [{ filter: `datum.quantity === "${q}"` }],
+    width: "container", height: 70,
+    encoding: { y: { field: "chain", type: "ordinal", title: "Chain" },
+                color: { field: "mode", type: "nominal", title: "Mode" } },
+    layer: [
+      { mark: "rule", encoding: { x: { field: "q05", type: "quantitative", title, scale: { zero: false }, axis: { format: fmt } },
+                                  x2: { field: "q95" } } },
+      { mark: { type: "point", filled: true, size: 50 },
+        encoding: { x: { field: "mean", type: "quantitative" },
+                    tooltip: [{ field: "chain", title: "Chain" }, { field: "mode", title: "Mode" },
+                              { field: "mean", title, format: fmt }] } }
+    ]
+  });
+});
+</script>
+```
+
+In mode A, <span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==rho & mode==A" data-format="pct"></span>
+of incidents are big losses and the routine loss averages
+<span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==lambda_base & mode==A"></span>%.
+In mode B, <span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==rho & mode==B" data-format="pct"></span>
+are big and the routine loss averages
+<span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==lambda_base & mode==B"></span>%:
+fewer big losses and larger routine ones, with slightly less pace noise.
+
+**Mode B is the posterior; A is a local mode.** B's mean log density is about
+150 higher, its log-likelihood about 145 higher, and it predicts better out of
+sample (PSIS-LOO, 130 ± 25 elpd; [#55](https://github.com/aleccrowell/diomedes/issues/55)). A difference that size means A holds a
+negligible share of the posterior: chains that start near it stay there, but the
+correct posterior summary is B alone. So the tables on these pages use B's
+chains, and the export drops any mode whose mean log density is more than 10
+below the best one's ([#64](https://github.com/aleccrowell/diomedes/issues/64)). Mode A is still shown, here and dashed in [Eras](../findings/eras.md).
+
+**What depends on the mode.** The driver and car effects barely do (the list
+above), so this choice doesn't move the rankings. The loss scalars, the season
+paths of π and λ, and the big-loss share and size do.
+
+**Why it can happen.** A retirement row is a car that was running slower than
+its effects predict before it stopped ([Do the dropped retirements bias the pace effects?](@ref)).
+These rows add a block of moderately slow results, and either loss component
+can absorb it: a few more big losses, or a wider routine one. A refit without
+those rows will show whether they cause the second mode ([#55](https://github.com/aleccrowell/diomedes/issues/55)). Half the chains
+landing in a local mode also means a fit like this needs more than one chain per
+mode to be trusted: R-hat over all chains is what flagged it.

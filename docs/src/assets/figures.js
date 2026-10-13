@@ -19,7 +19,7 @@
 // pinned copies served from assets/vendor/ (with their licences), not a CDN.
 //
 // Numbers in the text: <span class="diomedes-stat" data-path="assets/data/…csv"
-// data-stat="corr" data-x="col" data-y="col" [data-filter="col>=500"]
+// data-stat="corr" data-x="col" data-y="col" [data-filter="col>=500 & mode==A"]
 // [data-format="2"|"pct"]> is filled with a statistic of that file when the page
 // loads, so the text can't go stale after a re-export. Stats: corr (Pearson),
 // max, min, mean, count (of rows passing the filter).
@@ -121,12 +121,16 @@
     }
     return csvCache[path];
   }
+  // conditions joined by "&": col>=500, col==A (text) or col==2.5 (number)
   function passes(row, filter) {
     if (!filter) return true;
-    const m = filter.match(/^(\w+)\s*(>=|<=|>|<|==)\s*(-?[\d.]+)$/);
-    if (!m) return false;
-    const x = Number(row[m[1]]), y = Number(m[3]);
-    return { ">=": x >= y, "<=": x <= y, ">": x > y, "<": x < y, "==": x == y }[m[2]];
+    return filter.split("&").every(cond => {
+      const m = cond.trim().match(/^(\w+)\s*(>=|<=|>|<|==)\s*([\w.-]+)$/);
+      if (!m) return false;
+      if (m[2] === "==" && isNaN(Number(m[3]))) return row[m[1]] === m[3];
+      const x = Number(row[m[1]]), y = Number(m[3]);
+      return { ">=": x >= y, "<=": x <= y, ">": x > y, "<": x < y, "==": x == y }[m[2]];
+    });
   }
   function stat(rows, el) {
     const x = rows.map(r => Number(r[el.dataset.x])), y = rows.map(r => Number(r[el.dataset.y]));
