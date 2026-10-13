@@ -16,6 +16,10 @@
 - **Pace noise against routine losses** (σ against π, λ) is weakly identified
   ([#32](https://github.com/aleccrowell/diomedes/issues/32)). The effects don't depend on it, but those parameters shouldn't be
   read as precise.
+- **The loss mixture has a local mode.** In the Jolpica 1950–2025 refit, half
+  the chains settled in a split with more big losses and smaller routine ones,
+  with much lower posterior density. The results use the other mode; the
+  effects are the same in both ([#55](https://github.com/aleccrowell/diomedes/issues/55), [Two modes in the loss mixture](@ref)).
 - **Model comparison is getting harder.** As the models grow, more rows have
   Pareto k > 0.7, which makes PSIS-LOO less reliable. Grouped K-fold has
   confirmed the era-term ranking, but hasn't been run on the latest terms

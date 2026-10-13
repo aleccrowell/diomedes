@@ -68,6 +68,8 @@ block-buffers.
   likelihood identifies (centred effects, per-race incident rates), grouped and
   naming the worst level. It leaves out directions only the prior sees, so use it
   for the gap models.
+- [`chain_modes`](@ref): groups the chains into modes when they settle in
+  different solutions, so results can be reported by mode (#64).
 
 Rules of thumb: R-hat below 1.01 and bulk ESS above about 400 over 4 chains, and
 no divergences.

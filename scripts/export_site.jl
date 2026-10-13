@@ -1,6 +1,6 @@
 # Export posterior summaries of fitted models for the documentation site (#45).
 #
-#   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_fgam]
+#   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_fgam] [data=all]
 #   julia --project scripts/export_site.jl retire
 #   julia --project scripts/export_site.jl laps [tag=laps_2011-2019_recorded]
 #   julia --project scripts/export_site.jl wrc [model=pl_dur_rw_kappa_cdrv_tdrv_fgam]
@@ -10,13 +10,22 @@
 # convergence, export commit and date) under docs/src/assets/data/<mode>/. The site
 # is built from these files only; nothing is refitted in CI.
 #
-# race: from the saved chains output/gap_all_<model>_chain<k>.jls (scripts/gap_fit.jl,
-# F1, all rows):
+# race: from the saved chains output/gap_<data>_<model>_chain<k>.jls (scripts/gap_fit.jl
+# <data> <model>, data as in scripts/gap_data.jl: `all` or `jolpica<a>-<b>[+partial]`).
+# Chains are grouped into modes (`chain_modes`, on the loss scalars, #64). A mode
+# whose mean log density is more than MODE_DROP_NATS below the best one's holds a
+# negligible share of the posterior: the tables use the other modes' chains, and
+# the dropped mode is reported in modes.csv, seasons_by_mode.csv and the manifest
+# (with how far the effects differ between modes):
 #   drivers.csv   driver effects (% of race time, average-season units; negative =
 #                 faster), with career slopes if the model has them
 #   cars.csv      car-season effects (% of race time within season), with in-season
 #                 development trends if the model has them
 #   seasons.csv   per season: incident probability π, mean loss λ, pace scale κ
+#   seasons_by_mode.csv  the same per mode, all chains (`mode`, `kept` columns)
+#   modes.csv     per chain (all chains): its mode, whether it is used, and the loss scalars on readable scales
+#                 (pace noise σ, routine-loss probability and mean, big-loss share and
+#                 mean), with 90% intervals, one row per chain and quantity
 #   age_curve.csv the population career curve, if the model has one
 #   ranks.csv     per driver with ≥ 20 results: P(fastest), P(top 3), P(top 10) and the
 #                 rank's median and 90% interval, ranking those drivers in every draw
@@ -71,16 +80,105 @@ function log_convergence(path)
             divergences = d[1] === nothing ? missing : parse(Int, d[1]), groups)
 end
 
-function export_race(model)
+include("gap_data.jl")
+
+# the loss scalars that define a mode, on readable scales (#64)
+function loss_quantities(chain, spec)
+    q = [("sigma", "Pace noise σ (%)", vec(chain[:σ])),
+         ("pi_base", "Routine-loss probability", logistic.(vec(chain[:a_π]))),
+         ("lambda_base", "Routine-loss mean (%)", exp.(vec(chain[:a_λ])))]
+    if spec.big_loss
+        push!(q, ("rho", "Big-loss share of incidents", logistic.(vec(chain[:a_ρ]))),
+              ("lambda_big", "Big-loss mean (%)", exp.(vec(chain[:a_λ]) .+ vec(chain[:δ_λ2]))))
+    end
+    return q
+end
+
+# A mode whose mean log density is more than this below the best mode's holds a
+# negligible share of the posterior (#64): its draws are reported, not pooled
+const MODE_DROP_NATS = 10
+
+function export_modes(chs, g, spec, model, outdir)
+    all = reduce(hcat, chs)
+    ni = size(all[:σ], 1)
+    nc = length(chs)
+    modes = chain_modes(all, [:σ, :a_π, :a_λ, (spec.big_loss ? (:a_ρ, :δ_λ2) : ())...])
+    labels = unique(modes)
+    idx(m) = findall(==(m), modes)
+    lj = Dict(m => mean(mean(vec(chs[c][:logjoint])) for c in idx(m)) for m in labels)
+    best = maximum(values(lj))
+    kept = [m for m in labels if lj[m] > best - MODE_DROP_NATS]
+
+    # season paths per mode
+    pnames, cov = model_param_names(spec), LossCovariates(g)
+    seasons = minimum(g.race_season) .+ (0:(cov.n_seasons - 1))
+    q(X, p) = [quantile(c, p) for c in eachcol(X)]
+    sm = DataFrame()
+    for m in labels
+        cs = idx(m)
+        n = ni * length(cs)
+        P, Λ, Kp = zeros(n, cov.n_seasons), zeros(n, cov.n_seasons), zeros(n, cov.n_seasons)
+        k = 0
+        for c in cs, i in 1:ni
+            θ = draw(all, pnames, i, c)
+            k += 1
+            P[k, :] = θ.a_π .+ rw_path(θ.τ_π_rw .* θ.e_π_rw)
+            Λ[k, :] = θ.a_λ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)
+            Kp[k, :] = rw_path(θ.τ_κ .* θ.e_κ)
+        end
+        append!(sm, DataFrame(mode = m, kept = m in kept, season = seasons,
+                              pi_mean = vec(mean(logistic.(P); dims = 1)), pi_q05 = logistic.(q(P, 0.05)), pi_q95 = logistic.(q(P, 0.95)),
+                              lambda_mean = vec(mean(exp.(Λ); dims = 1)), lambda_q05 = exp.(q(Λ, 0.05)), lambda_q95 = exp.(q(Λ, 0.95)),
+                              kappa_mean = vec(mean(exp.(Kp); dims = 1)), kappa_q05 = exp.(q(Kp, 0.05)), kappa_q95 = exp.(q(Kp, 0.95))))
+    end
+    CSV.write(joinpath(outdir, "seasons_by_mode.csv"), round_floats!(sm))
+
+    # the loss scalars per chain, on readable scales
+    mt = DataFrame(chain = Int[], mode = String[], kept = Bool[], quantity = String[], label = String[],
+                   mean = Float64[], q05 = Float64[], q95 = Float64[])
+    for c in 1:nc, (key, label, x) in loss_quantities(chs[c], spec)
+        push!(mt, (c, modes[c], modes[c] in kept, key, label, mean(x), quantile(x, 0.05), quantile(x, 0.95)))
+    end
+    CSV.write(joinpath(outdir, "modes.csv"), round_floats!(mt))
+
+    # do the effects depend on the mode? (posterior means, against the best mode)
+    eff = Dict(m => gap_effects_table(reduce(hcat, chs[idx(m)]), g) for m in labels)
+    ref = labels[argmax([lj[m] for m in labels])]
+    function agree(a, b)
+        j = innerjoin(select(a, :label, :mean, :sd), select(b, :label, :mean => :mb); on = :label)
+        d = abs.(j.mean .- j.mb)
+        (; corr = round(cor(j.mean, j.mb); digits = 4), max_diff = round(maximum(d); digits = 3),
+         max_diff_sd = round(maximum(d ./ j.sd); digits = 2))
+    end
+    effects_by_mode = [(; modes = "$(ref) vs $(m)", drivers = agree(eff[ref].competitors, eff[m].competitors),
+                        cars = agree(eff[ref].machines, eff[m].machines)) for m in labels if m != ref]
+    rconv(v) = (; max_rhat = round(v.max_rhat; digits = 3), min_ess = round(v.min_ess; digits = 1))
+    info = [(; label = m, chains = idx(m), draws = ni * length(idx(m)), kept = m in kept,
+             mean_logjoint = round(lj[m]; digits = 1),
+             mean_loglikelihood = round(mean(mean(vec(chs[c][:loglikelihood])) for c in idx(m)); digits = 1),
+             loss = NamedTuple(Symbol(k) => round(mean(x); digits = 4) for (k, _, x) in loss_quantities(reduce(hcat, chs[idx(m)]), spec)),
+             # convergence within the mode (needs two chains)
+             convergence = length(idx(m)) < 2 ? missing :
+                           rconv(identified_convergence(reduce(hcat, chs[idx(m)]), g, model).overall)) for m in labels]
+    return (; modes = info, kept, kept_chains = findall(in(kept), modes), effects_by_mode,
+            drop_nats = MODE_DROP_NATS)
+end
+
+function export_race(model, source)
     spec = model_spec(model)
     spec.family === :pl && spec.era === :rw && spec.pace_scale ||
         error("export_site expects a pace + loss model with random-walk eras and a pace scale (pl…_rw_kappa…)")
-    data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
-    res = fetch_results(ErgastCSV(data_dir), 1950:2100)
-    g = prepare_gaps(res)
-    files = filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8])
-    isempty(files) && error("no saved chains for $model")
-    chain = reduce(hcat, rehash_chain!.(deserialize.(files)))
+    res, g = gap_data(source)
+    fit = "gap_$(source)_$(model)"
+    files = filter(isfile, ["output/$(fit)_chain$(k).jls" for k in 1:8])
+    isempty(files) && error("no saved chains for $fit")
+    chs = rehash_chain!.(deserialize.(files))
+    outdir = joinpath(OUT, "race")
+    mkpath(outdir)
+    # chains grouped by where the loss mixture settled; the tables below use the
+    # modes with the most posterior density, the rest are reported in modes.csv
+    mi = export_modes(chs, g, spec, model, outdir)
+    chain = reduce(hcat, chs[mi.kept_chains])
     pnames = model_param_names(spec)
     sc, cov = season_counts(g), LossCovariates(g)
     ni, nc = size(chain[:σ])
@@ -106,8 +204,6 @@ function export_race(model)
         end
     end
     q(X, p) = [quantile(c, p) for c in eachcol(X)]
-    outdir = joinpath(OUT, "race")
-    mkpath(outdir)
 
     # drivers
     eff = gap_effects_table(chain, g)
@@ -235,15 +331,26 @@ function export_race(model)
 
     # provenance
     ic = identified_convergence(chain, g, model)
-    manifest = (; model, fit = "gap_all_$(model)", chains = nc, draws_per_chain = ni,
-                data = "F1 $(first(seasons))–$(last(seasons)), Ergast CSV, all classified finishers (lapped as intervals)",
-                rows = (; timed = length(g.y), lapped = length(g.lo)),
-                convergence = (; max_rhat = round(ic.overall.max_rhat; digits = 3), min_ess = round(ic.overall.min_ess; digits = 1),
-                               divergences = count(identity, chain[:numerical_error])),
+    rconv(v) = (; max_rhat = round(v.max_rhat; digits = 3), min_ess = round(v.min_ess; digits = 1))
+    jol = match(r"^jolpica(\d{4})-(\d{4})(\+partial)?$", source)
+    data = jol === nothing ?
+        "F1 $(first(seasons))–$(last(seasons)), Ergast CSV, all classified finishers (lapped as intervals)" :
+        "F1 $(first(seasons))–$(last(seasons)), Jolpica API, all classified finishers (lapped as intervals, or at exact " *
+        "gaps from their own times from 2023)" * (jol[3] === nothing ? "" : ", plus retirements from 1996 as partial gaps")
+    nlap_exact = hasproperty(g.rows, :lapped_exact) ? count(g.rows.lapped_exact) : 0
+    npartial = hasproperty(g.rows, :partial) ? count(Bool.(g.rows.partial)) : 0
+    manifest = (; model, fit, chains = nc, draws_per_chain = ni, chains_fitted = length(chs), chains_used = mi.kept_chains, data,
+                rows = (; timed = length(g.y) - npartial - nlap_exact, lapped = length(g.lo), lapped_exact = nlap_exact,
+                        partial = npartial),
+                convergence = (; rconv(ic.overall)..., divergences = count(identity, chain[:numerical_error]),
+                               groups = NamedTuple(k => (; rconv(v)..., v.worst) for (k, v) in pairs(ic) if k !== :overall)),
+                modes = mi.modes, kept_modes = mi.kept, effects_by_mode = mi.effects_by_mode,
                 exported_by = "scripts/export_site.jl race")
     write_manifest(outdir, manifest)
     println("wrote $(outdir): $(nrow(dt)) drivers, $(nrow(ct)) car-seasons, $(nrow(st)) seasons; ",
-            "$(nc) chains × $(ni) draws; R-hat $(manifest.convergence.max_rhat), min ESS $(manifest.convergence.min_ess)")
+            "$(nc) chains × $(ni) draws; R-hat $(manifest.convergence.max_rhat), min ESS $(manifest.convergence.min_ess); ",
+            "modes $(join(["$(m.label) (chains $(join(m.chains, ", ")), mean log density $(m.mean_logjoint))" for m in mi.modes], ", ")); ",
+            "kept $(join(mi.kept, ", "))")
 end
 
 function export_retire()
@@ -310,7 +417,7 @@ end
 
 mode = get(ARGS, 1, "race")
 if mode == "race"
-    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev_fgam"))
+    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev_fgam"), get(ARGS, 3, "all"))
 elseif mode == "retire"
     export_retire()
 elseif mode == "laps"

@@ -1122,6 +1122,13 @@ end
         ic = identified_convergence(chain, g, "pl")
         @test Set(keys(ic)) ⊇ Set((:overall, :drivers, :cars, :races, :scalars))
         @test ic.overall.max_rhat < 1.1 && ic.drivers.min_ess > 20
+        # one mode for a converged fit; two when chains sit in different places (#64)
+        @test chain_modes(chain, [:σ, :a_π, :a_λ]) == ["A", "A"]
+        let x = randn(MersenneTwister(1), 500, 4)
+            two = Dict(:p => x .+ [0 3 3 0], :q => x)
+            @test chain_modes(two, [:p, :q]) == ["A", "B", "B", "A"]
+            @test chain_modes(Dict(:q => x), [:q]) == fill("A", 4)
+        end
         # pointwise log-likelihoods from the chain: shape, and draw (1, 1) sums to the fused likelihood
         ll = pointwise_loglik(chain, g, "pl")
         @test size(ll) == (300, 2, length(g.y) + length(g.lo))

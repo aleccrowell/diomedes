@@ -16,7 +16,7 @@ diomedesFigure("fig-car-season", {
           format: { type: "csv", parse: { season: "number", rows: "number", mean: "number", sd: "number",
                                           q05: "number", q95: "number", dev_mean: "number", dev_sd: "number" } } },
   params: [{ name: "chosen", value: 1988,
-             bind: { input: "range", min: 1950, max: 2019, step: 1, name: "Season " } }],
+             bind: { input: "range", min: 1950, max: 2025, step: 1, name: "Season " } }],
   // "constructor" can't be a sort field (it collides with Object.prototype.constructor
   // in Vega's parser), so the chart uses a copy named "team"
   transform: [{ filter: "datum.season == chosen" }, { calculate: "datum.constructor", as: "team" }],

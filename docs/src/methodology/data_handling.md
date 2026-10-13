@@ -53,13 +53,34 @@ diomedesFigure("fig-lapped-intervals", {
   ]
 });
 </script>
-``` Over 1950–2019
-this adds 6,858 lapped results to 6,276 timed ones ([#19](https://github.com/aleccrowell/diomedes/issues/19)). Lapped cars are
+```
+
+Over 1950–2019 this adds 6,858 lapped results to 6,276 timed ones ([#19](https://github.com/aleccrowell/diomedes/issues/19)). Lapped cars are
 identified by their status ("+2 Laps"), not their position: an early version
 counted 599 retirements with numeric positions as lapped ([#19](https://github.com/aleccrowell/diomedes/issues/19)).
 
-Retirements are dropped. Whether that biases the effects is tested separately
-(see [Retirements and selection bias](@ref)).
+In the Ergast data, retirements are dropped. Whether that biases the effects is
+tested separately (see [Retirements and selection bias](@ref)).
+
+## Jolpica data, 1950–2025
+
+The current fits use the Jolpica API, Ergast's successor, which continues the
+same tables past 2019 ([#55](https://github.com/aleccrowell/diomedes/issues/55)). Over 1950–2019 it matches the Ergast dump: the same
+drivers, cars and races, identical lap times, and 17 rows that differ (mostly
+disqualifications Jolpica codes and the dump doesn't). Two things change from
+2023:
+
+- **Lapped cars have their own time.** Jolpica records "Lapped" with no race
+  time but the car's own elapsed time. From that and its laps, the car's pace
+  over the full distance gives an exact gap, not an interval.
+- **Retirement causes are mostly "Retired".** The retirement model takes these
+  as retirements of unknown cause, through the total hazard with no split
+  between causes ([A competing-risks model of retirements](@ref)). Its refit on
+  Jolpica data is still to run; the retirement pages show the 1950–2019 fit.
+
+The 1950–2025 race refit also adds retirements from 1996 as partial gaps,
+measured 3 laps before the car stopped, from lap times (Ergast to 2019, Jolpica
+after).
 
 ## Red-flag suspensions
 
