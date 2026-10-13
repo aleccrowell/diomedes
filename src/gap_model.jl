@@ -63,8 +63,11 @@ Build `GapData` from a results table. Per stage, the winner is the fastest
 timed row, and the race distance `L` is the winner's lap count. Timed rows get
 their % gap to the winner. With `include_lapped`, untimed rows with a lapped
 status (see `is_lapped_status`) that completed 2 ≤ l < L laps become intervals
-(see file header); with
-`max_laps_down = k`, only those at most k laps down. Everything else is dropped.
+(see file header), or, when the source gives the car's own elapsed time
+(`own_time_ms`, Jolpica from 2023), timed rows at their exact constant-pace gap
+100·log((own racing time / l) / (winner's racing time / L)), marked by
+`rows.lapped_exact`; with `max_laps_down = k`, only those at most k laps down.
+Everything else is dropped.
 """
 function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
                       max_laps_down::Union{Nothing,Int} = nothing,
@@ -75,6 +78,7 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
     df.y = Vector{Union{Missing,Float64}}(missing, nrow(df))
     df.lo = Vector{Union{Missing,Float64}}(missing, nrow(df))
     df.hi = Vector{Union{Missing,Float64}}(missing, nrow(df))
+    df.lapped_exact = falses(nrow(df))       # lapped car whose exact gap came from its own time
     # racing time: official time minus any red-flag suspension (same for every car)
     # (tables without the column, e.g. simulated ones, have no suspensions)
     df.race_ms = hasproperty(df, :suspended_ms) ? df.time_ms .- coalesce.(df.suspended_ms, 0.0) : df.time_ms
@@ -93,13 +97,24 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
         end
         L = g.laps[w]
         (include_lapped && !ismissing(L)) || continue
+        susp = hasproperty(g, :suspended_ms) ? coalesce(first(g.suspended_ms), 0.0) : 0.0
         for i in eachindex(g.kind)
             l = g.laps[i]
             if ismissing(g.time_ms[i]) && is_lapped_status(g.status[i]) && !ismissing(l) && 2 <= l < L &&
                (max_laps_down === nothing || L - l <= max_laps_down)
-                g.kind[i] = :lapped
-                g.lo[i] = 100 * log(L / l)
-                g.hi[i] = 100 * log(L / (l - 1))
+                own = hasproperty(g, :own_time_ms) ? g.own_time_ms[i] : missing
+                if ismissing(own)
+                    g.kind[i] = :lapped
+                    g.lo[i] = 100 * log(L / l)
+                    g.hi[i] = 100 * log(L / (l - 1))
+                else
+                    # its own time over its l laps (Jolpica from 2023, #55): at constant
+                    # pace (as the interval assumes) its exact full-distance gap, which
+                    # lies in the interval [log(L/l), log(L/(l-1)))
+                    g.kind[i] = :timed
+                    g.lapped_exact[i] = true
+                    g.y[i] = 100 * log(((own - susp) / l) / (T_w / L))
+                end
             end
         end
     end

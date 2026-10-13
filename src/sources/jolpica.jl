@@ -111,11 +111,83 @@ function jolpica_row(race, r)
         class = missing,
         manufacturer = missing,
         entrant = missing,
-        time_ms = time === nothing ? missing : maybefloat(get(time, :millis, nothing)),
+        # Ergast convention: a race time only for cars on the lead lap. From 2023
+        # Jolpica also gives lapped cars their own time over fewer laps, which read
+        # as a lead-lap time would put them a fraction of a percent behind (#55); it
+        # goes to own_time_ms, from which prepare_gaps gets their exact gap.
+        time_ms = time === nothing || is_lapped_status(String(r.status)) ? missing :
+                  maybefloat(get(time, :millis, nothing)),
+        own_time_ms = time !== nothing && is_lapped_status(String(r.status)) ?
+                      maybefloat(get(time, :millis, nothing)) : missing,
         suspended_ms = missing,                # filled per race in jolpica_season
         position = classified ? maybeint(r.position) : missing,
         laps = maybeint(get(r, :laps, nothing)),
         status = String(r.status),
         classified,
     )
+end
+
+# Rounds of a season, from its schedule (one request), skipping the Indianapolis 500.
+function jolpica_rounds(src::JolpicaF1, season::Integer)
+    url = "$(src.base_url)/$season.json?limit=$JOLPICA_PAGE"
+    mr = cached_json(url; cache_dir = src.cache_dir, limiter = src.limiter, refresh = src.refresh).MRData
+    return [parse(Int, r.round) for r in mr.RaceTable.Races if src.include_indy500 || r.raceName != INDY500]
+end
+
+# Pages of one race's endpoint (laps or pitstops), concatenated.
+function jolpica_race_pages(f, src::JolpicaF1, season, round, endpoint)
+    offset, total = 0, 1
+    while offset < total
+        url = "$(src.base_url)/$season/$round/$endpoint.json?limit=$JOLPICA_PAGE&offset=$offset"
+        mr = cached_json(url; cache_dir = src.cache_dir, limiter = src.limiter, refresh = src.refresh).MRData
+        total = parse(Int, mr.total)
+        foreach(f, mr.RaceTable.Races)
+        offset += JOLPICA_PAGE
+    end
+end
+
+"""
+    fetch_laps(src::JolpicaF1, seasons) -> DataFrame
+
+Lap times (`LAP_SCHEMA`) from Jolpica's laps endpoint, which has them from 1996:
+about 11 paged requests per race (100 timings per page), cached. Ids match
+`fetch_results(src, …)` and `ErgastCSV`, so seasons from the two sources can be
+combined. Races without lap data are skipped.
+"""
+function fetch_laps(src::JolpicaF1, seasons::AbstractVector{<:Integer})
+    out = DataFrame([name => T[] for (name, T) in LAP_SCHEMA])
+    for season in seasons, round in jolpica_rounds(src, season)
+        eid = string(season, "-", lpad(round, 2, '0'))
+        jolpica_race_pages(src, season, round, "laps") do race
+            for lap in race.Laps, t in lap.Timings
+                push!(out, ("f1", season, eid, String(t.driverId), parse(Int, lap.number),
+                            laptime_ms(String(t.time)), maybeint(get(t, :position, nothing))))
+            end
+        end
+    end
+    sort!(out, [:season, :event_id, :competitor_id, :lap])
+    return validate_schema(out, LAP_SCHEMA, "laps")
+end
+
+"""
+    fetch_pit_stops(src::JolpicaF1, seasons) -> DataFrame
+
+Pit stops (`PIT_SCHEMA`) from Jolpica's pitstops endpoint (2011 on), one or two
+requests per race, cached. `duration_ms` is `missing` when the duration isn't a
+plain time (e.g. a stop during a red flag).
+"""
+function fetch_pit_stops(src::JolpicaF1, seasons::AbstractVector{<:Integer})
+    out = DataFrame([name => T[] for (name, T) in PIT_SCHEMA])
+    for season in seasons, round in jolpica_rounds(src, season)
+        eid = string(season, "-", lpad(round, 2, '0'))
+        jolpica_race_pages(src, season, round, "pitstops") do race
+            for p in get(race, :PitStops, [])
+                d = tryparse(Float64, String(get(p, :duration, "")))
+                push!(out, ("f1", season, eid, String(p.driverId), parse(Int, p.lap),
+                            d === nothing ? missing : 1000d))
+            end
+        end
+    end
+    sort!(out, [:season, :event_id, :competitor_id, :lap])
+    return validate_schema(out, PIT_SCHEMA, "pit stops")
 end

@@ -4,6 +4,10 @@
 #                                                            # rerun after a kill to resume from saved blocks
 #   julia --project scripts/retire_fit.jl combine [n=4]      # combine saved chains 1..n (or a list: 2,3,4), write tables
 #
+# Data: the local Ergast dump (1950–2019) by default; a `jolpica<first>-<last>`
+# argument (anywhere, e.g. jolpica1950-2025) uses the Jolpica API (#55) and names
+# every output retire_jolpica<first>-<last>_… instead of retire_….
+#
 # 1000 draws per chain after 500 warm-up iterations. Run the chains as separate
 # processes (one per core), then `combine`. Writes, under output/:
 #   retire_cars.csv     car-season mechanical reliability (log-hazard effect within season)
@@ -15,17 +19,27 @@ using Diomedes, CSV, DataFrames, Random, Serialization, Statistics
 using Diomedes: sum_to_zero, sum_to_zero_by, rw_path, retire_counts
 import MCMCDiagnosticTools
 
-action = get(ARGS, 1, "combine")
+jol = something(findfirst(a -> occursin(r"^jolpica\d{4}-\d{4}$", a), ARGS), 0)
+src_arg = jol > 0 ? ARGS[jol] : nothing
+args = jol > 0 ? ARGS[setdiff(eachindex(ARGS), jol)] : ARGS
+pre = src_arg === nothing ? "output/retire" : "output/retire_$(src_arg)"
+action = get(args, 1, "combine")
 data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
-chain_path(k) = "output/retire_chain$(k).jls"
-d = prepare_retirements(fetch_results(ErgastCSV(data_dir), 1950:2100))
+chain_path(k) = "$(pre)_chain$(k).jls"
+res = if src_arg === nothing
+    fetch_results(ErgastCSV(data_dir), 1950:2100)
+else
+    m = match(r"^jolpica(\d{4})-(\d{4})$", src_arg)
+    fetch_results(JolpicaF1(), parse(Int, m[1]):parse(Int, m[2]))
+end
+d = prepare_retirements(res)
 println(d); flush(stdout)
 mkpath("output")
 
 if action == "chain"
-    k = parse(Int, ARGS[2])
+    k = parse(Int, args[2])
     # saved in blocks of 100 draws (output/retire_chain<k>_block<j>.jls); rerun to resume after a kill
-    t = @elapsed chain = fit_retirement(d; rng = Xoshiro(k), checkpoint = "output/retire_chain$(k)", seed = 1000k,
+    t = @elapsed chain = fit_retirement(d; rng = Xoshiro(k), checkpoint = "$(pre)_chain$(k)", seed = 1000k,
                                         progress_log = stdout)
     serialize(chain_path(k), chain)
     println("chain $k: $(round(t / 60; digits = 1)) min, mean leapfrog steps per draw ",
@@ -35,7 +49,7 @@ if action == "chain"
 end
 
 # chains 1..n, or a comma-separated list (e.g. 2,3,4)
-arg = get(ARGS, 2, "4")
+arg = get(args, 2, "4")
 ks = occursin(",", arg) ? parse.(Int, split(arg, ",")) : 1:parse(Int, arg)
 chain = reduce(hcat, [rehash_chain!(deserialize(chain_path(k))) for k in ks])
 ni, nc = size(chain[:σ_car])
@@ -88,7 +102,7 @@ car_tab = DataFrame(machine = d.machines, season = d.seasons[d.mach_season],
                     starts = [count(==(m), d.mach) for m in eachindex(d.machines)],
                     mech_dnf = [count(mech .& (d.mach .== m)) for m in eachindex(d.machines)])
 sort!(car_tab, :effect)
-CSV.write("output/retire_cars.csv", car_tab)
+CSV.write("$(pre)_cars.csv", car_tab)
 
 D = flat(drvs)
 drv_tab = DataFrame(driver = d.competitors, name = [first(r.competitor_name[r.competitor_id .== c]) for c in d.competitors],
@@ -97,7 +111,7 @@ drv_tab = DataFrame(driver = d.competitors, name = [first(r.competitor_name[r.co
                     incidents = [count(inc .& (d.comp .== c)) for c in eachindex(d.competitors)],
                     collisions = [count(col .& (d.comp .== c)) for c in eachindex(d.competitors)])
 sort!(drv_tab, :effect)
-CSV.write("output/retire_drivers.csv", drv_tab)
+CSV.write("$(pre)_drivers.csv", drv_tab)
 
 # expected retirements per race distance (hazard per race, ignoring the first-lap jump)
 season_tab = DataFrame(season = d.seasons)
@@ -107,7 +121,7 @@ for (k, nm) in enumerate(("mech", "incident", "collision"))
     season_tab[!, Symbol(nm, "_obs")] = [count((d.cause .== k) .& (d.season .== s)) / sum(expo[d.season .== s])
                                          for s in 1:S]
 end
-CSV.write("output/retire_seasons.csv", season_tab)
+CSV.write("$(pre)_seasons.csv", season_tab)
 
 println("\nmost reliable car-seasons (≥ 20 starts):")
 show(stdout, MIME"text/plain"(), first(car_tab[car_tab.starts .>= 20, :], 10)); println()
