@@ -25,7 +25,7 @@ function pagesWithFigures(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) out.push(...pagesWithFigures(p));
-    else if (e.name.endsWith(".html") && /diomedesFigure\("|class="diomedes-data"|class="diomedes-stat"/.test(fs.readFileSync(p, "utf8"))) out.push(p);
+    else if (e.name.endsWith(".html") && /diomedesFigure\("|class="diomedes-data"|class=(&quot;|")diomedes-stat/.test(fs.readFileSync(p, "utf8"))) out.push(p);
   }
   return out;
 }
@@ -70,6 +70,9 @@ async function checkPage(file) {
   const statResults = [...doc.querySelectorAll("span.diomedes-stat")].map(e => ({
     what: `${e.dataset.stat}(${[e.dataset.x, e.dataset.y].filter(Boolean).join(", ")}) of ${e.dataset.path}`,
     ok: e.classList.contains("diomedes-stat-filled") && e.textContent !== "?", value: e.textContent }));
+  // a span written in a Markdown paragraph, not a raw HTML block, is escaped into text
+  if (doc.body.textContent.includes('<span class="diomedes-stat"'))
+    statResults.push({ what: "markup: a diomedes-stat span was escaped (put it in a raw html block)", ok: false, value: "" });
   return { page: rel, results, links, stats: statResults, errors };
 }
 

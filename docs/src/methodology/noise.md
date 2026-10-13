@@ -169,13 +169,15 @@ interval):
 </script>
 ```
 
-In mode A, <span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==rho & mode==A" data-format="pct"></span>
+```@raw html
+<p>In mode A, <span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==rho &amp; mode==A" data-format="pct"></span>
 of incidents are big losses and the routine loss averages
-<span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==lambda_base & mode==A"></span>%.
-In mode B, <span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==rho & mode==B" data-format="pct"></span>
+<span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==lambda_base &amp; mode==A"></span>%.
+In mode B, <span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==rho &amp; mode==B" data-format="pct"></span>
 are big and the routine loss averages
-<span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==lambda_base & mode==B"></span>%:
-fewer big losses and larger routine ones, with slightly less pace noise.
+<span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==lambda_base &amp; mode==B"></span>%:
+fewer big losses and larger routine ones, with slightly less pace noise.</p>
+```
 
 **Mode B is the posterior; A is a local mode.** B's mean log density is about
 150 higher, its log-likelihood about 145 higher, and it predicts better out of
