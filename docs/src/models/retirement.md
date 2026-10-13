@@ -34,9 +34,13 @@ centred within season, race effects within season, and driver effects overall.
 Effects are on the **log-hazard scale**: a car effect of +0.5 means a mechanical
 failure rate 1.65× its season's average.
 
+A retirement with no recorded cause (status "Retired", which is most of
+Jolpica's from 2023) counts as a retirement under the total hazard, with no
+split between causes (#55).
+
 ```jldoctest
 julia> prepare_retirements(fetch_results(ErgastCSV(FIXTURE), 2019))
-RetireData(40 starts: 3 mech, 0 incident, 2 collision, 35 censored; 20 drivers, 10 machine-seasons, 2 races, 1 seasons)
+RetireData(40 starts: 3 mech, 0 incident, 2 collision, 1 unknown cause, 34 censored; 20 drivers, 10 machine-seasons, 2 races, 1 seasons)
 ```
 
 `scripts/retire_fit.jl` fits the full F1 history and writes car reliability,

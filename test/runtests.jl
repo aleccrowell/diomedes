@@ -82,6 +82,23 @@ end
         @test_throws ArgumentError validate_results(select(empty_results(), Not(:machine_id)))
     end
 
+    @testset "Jolpica rows: lapped cars get no race time (#55)" begin
+        # from 2023 Jolpica gives lapped cars their own (shorter-distance) time
+        race = JSON3.read("""{"season": "2024", "round": "8", "raceName": "Monaco Grand Prix", "date": "2024-05-26",
+            "Results": [
+              {"number": "16", "position": "1", "positionText": "1", "points": "25", "grid": "1", "laps": "78",
+               "status": "Finished", "Time": {"millis": "8595548", "time": "2:23:15.554"},
+               "Driver": {"driverId": "leclerc", "givenName": "Charles", "familyName": "Leclerc", "dateOfBirth": "1997-10-16"},
+               "Constructor": {"constructorId": "ferrari"}},
+              {"number": "14", "position": "11", "positionText": "11", "points": "0", "grid": "11", "laps": "76",
+               "status": "Lapped", "Time": {"millis": "8599412", "time": "+2 Laps"},
+               "Driver": {"driverId": "alonso", "givenName": "Fernando", "familyName": "Alonso", "dateOfBirth": "1981-07-29"},
+               "Constructor": {"constructorId": "aston_martin"}}]}""")
+        rows = [Diomedes.jolpica_row(race, r) for r in race.Results]
+        @test rows[1].time_ms == 8595548.0
+        @test ismissing(rows[2].time_ms) && rows[2].laps == 76 && rows[2].status == "Lapped"
+    end
+
     @testset "standardise_times!" begin
         df = DataFrame(series = "s", event_id = ["a", "a", "a", "b", "b"], stage_id = "x",
                        time_ms = [1.0, 2.0, missing, 5.0, 5.0])
@@ -733,6 +750,12 @@ end
         @test retirement_cause("Withdrew", 10) === :other
         @test retirement_cause("Disqualified", 58) === :excluded
         @test retirement_cause("Out of fuel", 50) === :other
+        @test retirement_cause("Retired", 30) === :unknown     # cause not recorded (Jolpica from 2023, #55)
+        # an unknown-cause retirement is the sum of the three cause-specific likelihoods
+        for (n, L, η, b) in ((0, 5, (-1.0, -2.0, -2.5), (-1.0, -0.5, 0.3)), (33, 70, (0.4, -1.0, -3.0), (-3.0, -2.0, -1.0)))
+            @test Diomedes.retire_row(η..., b..., n, L, -1) ≈
+                  log(sum(exp(Diomedes.retire_row(η..., b..., n, L, k)) for k in 1:3))
+        end
         # every outcome of one start (retire in lap 1..L from each cause, or finish) sums to 1
         for (L, η, b) in ((5, (-1.0, -2.0, -2.5), (-1.0, -0.5, 0.3)), (70, (0.4, -1.0, -3.0), (-3.0, -2.0, -1.0)))
             p = exp(Diomedes.retire_row(η..., b..., L, L, 0))
@@ -820,6 +843,41 @@ end
         fast = copy(pg); fast.y_hat .= -1.0
         g2 = prepare_gaps(with_partial_rows(rows, fast))
         @test minimum(g2.y[.!partial_mask(g2)[1:length(g2.y)]]) == 0.0 && g2.y[findfirst(partial_mask(g2))] ≈ -1.0
+    end
+
+    @testset "Jolpica-era data: own times of lapped cars, unknown causes, cumulative laps (#55)" begin
+        # a lapped car with its own time over its l laps gets the exact constant-pace gap,
+        # inside its interval; one without keeps the interval
+        rows = DataFrame(series = "f1", season = 2024, event_id = "2024-01", stage_id = "race",
+                         competitor_id = ["w", "a", "b"], machine_id = ["m1", "m2", "m3"],
+                         time_ms = Union{Missing,Float64}[6000.0, missing, missing],
+                         own_time_ms = Union{Missing,Float64}[missing, 6050.0, missing],   # takes the flag just after the winner
+                         suspended_ms = Union{Missing,Float64}[0.0, 0.0, 0.0],
+                         laps = Union{Missing,Int}[60, 58, 58], status = ["Finished", "Lapped", "Lapped"])
+        g = prepare_gaps(rows)
+        ex = findfirst(g.rows.lapped_exact)
+        @test g.rows.competitor_id[ex] == "a" && length(g.y) == 2 && length(g.lo) == 1
+        ya = 100 * log((6050.0 / 58) / (6000.0 / 60))
+        @test g.y[findfirst(==("a"), g.rows.competitor_id[g.rows.kind .== :timed])] ≈ ya
+        @test 100 * log(60 / 58) <= ya < 100 * log(60 / 57)
+        @test g.lo[1] ≈ 100 * log(60 / 58)
+        # a red-flag suspension comes off the lapped car's own time too
+        r2 = copy(rows); r2.time_ms[1] += 500.0; r2.own_time_ms[2] += 500.0; r2.suspended_ms .= 500.0
+        @test prepare_gaps(r2).y ≈ g.y
+        # partial gaps include retirements of unknown cause ("Retired")
+        cum = Dict(("2000-01", "w") => [100.0, 200, 300, 400], ("2000-01", "f") => [101.0, 202, 302, 402],
+                   ("2000-01", "r") => [103.0, 206])
+        res = DataFrame(series = "f1", season = 2000, event_id = "2000-01", stage_id = "race",
+                        competitor_id = ["w", "f", "r"], machine_id = ["m1", "m1", "m2"],
+                        time_ms = Union{Missing,Float64}[400, 402, missing], suspended_ms = Union{Missing,Float64}[missing, missing, missing],
+                        laps = Union{Missing,Int}[4, 4, 2], status = ["Finished", "Finished", "Retired"])
+        pg = partial_gaps(res, cum)
+        @test pg.competitor_id == ["r"] && only(pg.cause) === :unknown
+        # cumulative laps from a LAP_SCHEMA table; a car with a gap in its laps is left out
+        lt = DataFrame(series = "f1", season = 2024, event_id = "2024-01", competitor_id = ["a", "a", "a", "b", "b"],
+                       lap = [2, 1, 3, 1, 3], time_ms = [91.0, 90.0, 92.0, 95.0, 95.0], position = Union{Missing,Int}[missing for _ in 1:5])
+        c = cumulative_laps(lt)
+        @test c[("2024-01", "a")] == [90.0, 181.0, 273.0] && !haskey(c, ("2024-01", "b"))
     end
 
     @testset "lap-time model (#12)" begin
@@ -945,8 +1003,18 @@ end
             @test abs(mean(d3.agec[d3.comp .== k])) < 1e-12
         end
         @test all(iszero, d3.agec[d3.comp .== findfirst(==("e"), d3.competitors)])
-        @test collect(extrema(d3.agec[d3.comp .== findfirst(==("a"), d3.competitors)])) .* 10 ≈
-              [-0.5, 0.5] .* ((Date(2019, 3, 29) - Date(2018, 3, 15)).value / 365.2425)
+        # ages are per season (the mean over the driver's laps that season): two seasons
+        # a year apart give two values one year apart, whatever the laps per season
+        let ag = d3.agec[d3.comp .== findfirst(==("a"), d3.competitors)]
+            @test length(unique(ag)) == 2
+            @test (maximum(ag) - minimum(ag)) * 10 ≈ 365 / 365.2425
+        end
+        # in-season position: with 2 rounds per season, round 1 is 0 and round 2 is 1,
+        # centred on each car's mean over its laps
+        let rp = [parse(Int, last(e)) - 1.0 for e in d3.rows.event_id]
+            cm = [mean(rp[d3.mach .== d3.mach[j]]) for j in eachindex(d3.y)]
+            @test d3.posc ≈ rp .- cm
+        end
         model3 = lap_effects(d3; slopes = true)
         θ3 = merge(θ, (; τ_slope = 0.4, u_slope = randn(rng, nc)))
         sl = 0.4 .* (θ3.u_slope .- mean(θ3.u_slope))
@@ -957,17 +1025,30 @@ end
                                                        h3[j] - h3bar[d3.race[j]]),
                                            θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d3.y))
         @test Turing.DynamicPPL.loglikelihood(model3, θ3) ≈ ll3
-        for (m, tyr) in ((model3, true), (lap_effects(d3; tyres = false, slopes = true), false))
+        # car development: dv = τ_dev·(u - season mean u) on the centred season position
+        model4 = lap_effects(d3; slopes = true, dev = true)
+        nm3 = length(d3.machines)
+        θ4 = merge(θ3, (; τ_dev = 0.3, u_dev = randn(rng, nm3)))
+        dvv = 0.3 .* Diomedes.sum_to_zero_by(θ4.u_dev, d3.mach_season, Diomedes.lap_mach_counts(d3))
+        h4 = h3 .+ [dvv[d3.mach[j]] * d3.posc[j] for j in eachindex(d3.y)]
+        h4bar = [mean(h4[d3.race .== r]) for r in 1:nr]
+        ll4 = sum(Diomedes.paceloss_logpdf(d3.y[j] - (θ.γ[d3.race[j]] + θ.δ[d3.race[j]] * (d3.frac[j] - fbar[d3.race[j]]) +
+                                                       h4[j] - h4bar[d3.race[j]]),
+                                           θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d3.y))
+        @test Turing.DynamicPPL.loglikelihood(model4, θ4) ≈ ll4
+        for (m, tyr, dv) in ((model3, true, false), (lap_effects(d3; tyres = false, slopes = true), false, false),
+                             (model4, true, true), (lap_effects(d3; tyres = false, slopes = true, dev = true), false, true),
+                             (lap_effects(d3; tyres = false, dev = true), false, true))
             rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
             rg = NamedTuple(getfield(rdm, :_varname_ranges))
             x3 = 0.5 .* randn(rng, LDP.dimension(rdm))
-            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope)
-                x3[rg[k].range] .= 0.2 + rand(rng)
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_dev)
+                haskey(rg, k) && (x3[rg[k].range] .= 0.2 + rand(rng))
             end
             @test LDP.logdensity_and_gradient(rdm, x3)[2] ≈ LDP.logdensity_and_gradient(fdm, x3)[2]
             @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), x3).tape) < 1000
             let o = 0
-                for (name, (n, _)) in Diomedes.lap_layout(d3; tyres = tyr, slopes = true)
+                for (name, (n, _)) in Diomedes.lap_layout(d3; tyres = tyr, slopes = haskey(rg, :τ_slope), dev = dv)
                     @test rg[name].range == (o + 1):(o + n)
                     o += n
                 end
@@ -981,6 +1062,11 @@ end
         @test all(==(Diomedes.LAP_WARM_DEFAULT[:u_slope]), ws3.Minv[r3.u_slope.range])
         @test ws3.Minv[r3.τ_slope.range] == [Diomedes.LAP_WARM_DEFAULT[:τ_slope]]
         @test ws3.Minv[r3.a_π.range] ≈ ws.Minv[ranges.a_π.range]
+        ws4 = lap_warm_start(fake, d_old, d3; slopes_new = true, dev_new = true)
+        r4 = NamedTuple(getfield(LDF(model4), :_varname_ranges))
+        @test length(ws4.Minv) == LDP.dimension(LDF(model4))
+        @test all(==(Diomedes.LAP_WARM_DEFAULT[:u_dev]), ws4.Minv[r4.u_dev.range])
+        @test ws4.Minv[r4.a_λ.range] ≈ ws.Minv[ranges.a_λ.range]
     end
 
     opt_in("DIOMEDES_SLOW_TESTS") && @testset "paceloss_effects recovers simulated effects" begin
