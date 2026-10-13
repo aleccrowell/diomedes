@@ -4,6 +4,7 @@
 #   julia --project scripts/gap_fit.jl <timed|all> <model> chain <k>        # one chain (seed k), saved to output/
 #   julia --project scripts/gap_fit.jl <timed|all> <model> combine [n=4]    # combine saved chains 1..n
 #
+# Data modes (built by scripts/gap_data.jl):
 # `timed`: lead-lap finishers only; `all`: plus lapped cars as intervals (both from
 # the local Ergast dump, 1950–2019). `jolpica<first>-<last>` (e.g. jolpica1950-2025):
 # all rows from the Jolpica API (#55); `jolpica<first>-<last>+partial` adds
@@ -37,31 +38,8 @@ fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
                  centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
                  race_hier = spec.race_hier, race_mean = spec.race_mean, kw...)
 
-wrc = match(r"^wrc(\d{4})-(\d{4})$", mode)
-jol = match(r"^jolpica(\d{4})-(\d{4})(\+partial)?$", mode)
-if jol !== nothing
-    # F1 from the Jolpica API (#55; responses cached by scripts/fetch_jolpica.jl), all
-    # rows; lapped cars with their own time (2023 on) enter at their exact gap
-    yrs = parse(Int, jol[1]):parse(Int, jol[2])
-    res = fetch_results(JolpicaF1(), yrs)
-    if jol[3] !== nothing
-        # retirements as calibrated partial gaps (#13), taken 3 laps before the car
-        # stopped (leaving out laps it may have limped through), from lap times:
-        # the Ergast dump to 2019, Jolpica after (cached by fetch_jolpica.jl)
-        cum = merge(ergast_cumulative_laps(data_dir), cumulative_laps(fetch_laps(JolpicaF1(), filter(>(2019), yrs))))
-        pg = partial_gaps(res, cum; min_frac = 0.25, trim = 3)
-        res = with_partial_rows(res, pg)
-        println("partial-gap rows (retirements): $(nrow(pg))"); flush(stdout)
-    end
-    g = prepare_gaps(res)
-    println("lapped cars at exact gaps (own time): $(count(g.rows.lapped_exact))"); flush(stdout)
-elseif wrc === nothing
-    res = fetch_results(ErgastCSV(data_dir), 1950:2100)
-    g = prepare_gaps(res; include_lapped = mode == "all")
-else
-    res = wrc_top_tiers(fetch_results(WRCTiming(), parse(Int, wrc[1]):parse(Int, wrc[2])))
-    g = prepare_gaps(res; machine_key = wrc_machine_key)
-end
+include("gap_data.jl")
+res, g = gap_data(mode; data_dir)
 println(g); flush(stdout)
 mkpath("output")
 
