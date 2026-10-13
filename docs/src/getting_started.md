@@ -24,7 +24,7 @@ fixture: two 2019 Grands Prix in Ergast CSV format, from the test suite.
 julia> res = fetch_results(ErgastCSV(FIXTURE), 2019);    # or JolpicaF1(), WRCTiming()
 
 julia> size(res)
-(40, 21)
+(40, 22)
 
 julia> g = prepare_gaps(res)
 GapData(17 timed + 16 lapped obs, 17 competitors, 10 machine-seasons, 2 races)
