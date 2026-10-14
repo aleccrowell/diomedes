@@ -70,8 +70,9 @@ Only its shape is identified: it has no constant or linear part</td></tr>
 <td><code>id</code>, <code>name</code>; <code>effect</code>, <code>sd</code>: incident-proneness log-hazard relative to the average driver;
 <code>starts</code>, <code>incidents</code>, <code>collisions</code></td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/retire/seasons.csv">seasons.csv</a></td><td>season</td>
-<td><code>mech</code>, <code>incident</code>, <code>collision</code>: modelled retirements per start over a race distance, by cause;
-<code>*_obs</code>: observed rates</td></tr>
+<td><code>mech</code>, <code>incident</code>, <code>collision</code>: the model's season-level rate of retirements per race distance raced, by cause
+(a cumulative hazard; the chance of retiring from that cause over a full distance is 1 − e<sup>−rate</sup>);
+<code>*_obs</code>: observed retirements per race distance raced</td></tr>
 </tbody></table>
 ```
 
