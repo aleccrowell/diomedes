@@ -964,6 +964,13 @@ end
         @test ws.Minv[γn][1:2] == collect(1.0:dim_old)[γo]                 # 2018 races, in the same order
         @test all(==(median(collect(1.0:dim_old)[γo])), ws.Minv[γn][3:4])  # 2019 races are new
         @test_throws DimensionMismatch lap_warm_start(fake, d, d)
+        # the target acceptance rate reaches the sampler, cold and warm-started (#62)
+        let dir = mktempdir()
+            c1 = fit_laps(d; n_samples = 10, n_adapts = 10, checkpoint = joinpath(dir, "cold"), δ = 0.7)
+            c2 = fit_laps(d; n_samples = 10, n_adapts = 10, checkpoint = joinpath(dir, "warm"), δ = 0.7, warm_start = ws)
+            @test size(c1[:σ]) == (10, 1) && size(c2[:σ]) == (10, 1)
+            @test Diomedes.lap_warm_sampler(ws.Minv, ws.ϵ; δ = 0.7).sampler.adaptor.ssa.δ == 0.7
+        end
         # without the tyre terms: β = 0, the fused rule still applies, and the layout and
         # warm start (from a fit with them) drop β
         θ0 = Base.structdiff(θ, (; β = nothing))

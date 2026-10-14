@@ -372,13 +372,16 @@ slopes from a per-race least-squares line (jittered per chain). Options as in
 `tyres`, `slopes` and `dev` as in `lap_effects`. With
 `warm_start = lap_warm_start(...)` (checkpointed fits), NUTS starts from that
 metric and step size (`lap_warm_sampler`) and adapts for `n_adapts` iterations.
+`δ` is NUTS's target acceptance rate (default 0.8). Lowering it a little enlarges
+the adapted step size; on large fits that can keep every chain at the same tree
+depth when some would otherwise adapt just past a doubling (#62).
 """
 function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                   sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                   progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
                   checkpoint::Union{Nothing,AbstractString} = nothing, seed::Int = 1,
                   warm_start = nothing, n_adapts::Int = 500, tyres::Bool = true, slopes::Bool = false,
-                  dev::Bool = false, kwargs...)
+                  dev::Bool = false, δ::Real = 0.8, kwargs...)
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     warm_start === nothing || checkpoint !== nothing ||
         throw(ArgumentError("warm_start is implemented for checkpointed fits"))
@@ -412,10 +415,10 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                             slopes ? (; τ_slope = 0.1 + 0.1 * rand(rng),
                                         u_slope = 0.1 .* randn(rng, length(d.competitors))) : (;),
                             dev ? (; τ_dev = 0.1 + 0.1 * rand(rng), u_dev = 0.1 .* randn(rng, length(d.machines))) : (;)))
-    external = warm_start === nothing ? nothing : lap_warm_sampler(warm_start.Minv, warm_start.ϵ)
+    external = warm_start === nothing ? nothing : lap_warm_sampler(warm_start.Minv, warm_start.ϵ; δ)
     checkpoint === nothing ||
         return run_nuts_checkpointed(model, init(), checkpoint; n_samples, n_adapts, seed, progress_log, log_every,
-                                     external, kwargs...)
+                                     external, δ, kwargs...)
     return run_nuts(model, [init() for _ in 1:n_chains]; n_samples, n_chains, ensemble, sampler, rng,
                     progress, progress_log, log_every, kwargs...)
 end
