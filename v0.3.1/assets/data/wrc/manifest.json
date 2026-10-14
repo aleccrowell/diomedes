@@ -1,0 +1,9 @@
+{
+    "model": "pl_dur_rw_kappa_cdrv_tdrv_fgam",
+    "fit": "gap_wrc2018-2025_pl_dur_rw_kappa_cdrv_tdrv_fgam",
+    "data": "WRC 2018–2025 stage times, top two tiers (Rally1 incl. WRC, Rally2 incl. R5), wrc.com timing API",
+    "convergence": "reported in https://github.com/aleccrowell/diomedes/pull/33",
+    "exported_by": "scripts/export_site.jl wrc",
+    "export_commit": "90063cd",
+    "date": "2026-10-11"
+}
