@@ -813,6 +813,8 @@ end
         @test resumed[:σ_car] == whole[:σ_car] && resumed[:z_drv] == whole[:z_drv]
         @test all(==(resumed[:step_size][6]), resumed[:step_size][6:end])     # adaptation off after block 1
         @test_throws ArgumentError fit_retirement(d; checkpoint = joinpath(dir, "c"), n_chains = 2)
+        # a compiled ReverseDiff tape gives wrong gradients through the fused rule (#62)
+        @test_throws ArgumentError fit_retirement(d; sampler = Diomedes.NUTS(0.8; adtype = Diomedes.AutoReverseDiff(; compile = true)))
     end
 
     @testset "partial-distance gaps of retirements (#13)" begin
