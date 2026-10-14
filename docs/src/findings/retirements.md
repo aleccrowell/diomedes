@@ -18,8 +18,13 @@ fetch(documenterBaseURL + "/assets/data/retire/manifest.json").then(r => r.json(
 
 ## Retirements by season and cause
 
-The model's expected retirements per start over a race distance (lines), and
-the observed rates (points), by cause. Collisions were rarely recorded as a
+The chance that a car running a full race distance retires from each cause
+(lines: the model's season level; points: observed). Both are computed from
+retirements per race distance raced, as 1 − e<sup>−rate</sup>, so a short
+race or an early retirement counts for its share of a distance. Each cause is
+shown on its own, as if it were the only risk. Over a full race distance, a
+1950s car had close to an even chance of a mechanical failure; since 2011 the
+chance has been under 10%. Collisions were rarely recorded as a
 cause before about 1990, and the season-level random walks absorb that.
 
 ```@raw html
@@ -32,15 +37,17 @@ diomedesFigure("fig-retire-seasons", {
   transform: [
     { fold: ["mech", "incident", "collision", "mech_obs", "incident_obs", "collision_obs"] },
     { calculate: "indexof(datum.key, '_obs') >= 0 ? 'observed' : 'model'", as: "kind" },
-    { calculate: "{mech: 'mechanical', incident: 'incident', collision: 'collision'}[replace(datum.key, '_obs', '')]", as: "cause" }
+    { calculate: "{mech: 'mechanical', incident: 'incident', collision: 'collision'}[replace(datum.key, '_obs', '')]", as: "cause" },
+    { calculate: "1 - exp(-datum.value)", as: "chance" }
   ],
   width: "container", height: 300,
   encoding: {
     x: { field: "season", type: "quantitative", title: "Season", axis: { format: "d" }, scale: { zero: false } },
-    y: { field: "value", type: "quantitative", title: "Retirements per start" },
+    y: { field: "chance", type: "quantitative", title: "Chance of retiring over a race distance", axis: { format: ".0%" } },
     color: { field: "cause", type: "nominal", title: "Cause", sort: ["mechanical", "incident", "collision"] },
     tooltip: [{ field: "season", title: "Season" }, { field: "cause", title: "Cause" }, { field: "kind", title: "" },
-              { field: "value", title: "Per start", format: ".3f" }]
+              { field: "chance", title: "Chance over a race", format: ".1%" },
+              { field: "value", title: "Per race distance", format: ".3f" }]
   },
   layer: [
     { transform: [{ filter: "datum.kind == 'observed'" }], mark: { type: "point", opacity: 0.45, size: 18 } },

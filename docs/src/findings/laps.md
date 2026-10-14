@@ -60,7 +60,9 @@ diomedesFigure("fig-laps-cars", {
   encoding: {
     x: { field: "race_mean", type: "quantitative", title: "Race model: car effect (%)" },
     y: { field: "lap_mean", type: "quantitative", title: "Lap model: car effect (%)" },
-    color: { field: "season", type: "ordinal", title: "Season", scale: { scheme: "viridis" } },
+    // a gradient legend: 30 seasons as separate entries would run past the plot's height
+    color: { field: "season", type: "quantitative", title: "Season", scale: { scheme: "viridis" },
+             legend: { format: "d", gradientLength: 300 } },
     tooltip: [{ field: "team", title: "Constructor" }, { field: "season", title: "Season" },
               { field: "race_mean", title: "Race model (%)", format: ".2f" },
               { field: "lap_mean", title: "Lap model (%)", format: ".2f" }, { field: "laps", title: "Laps" }]
