@@ -17,26 +17,32 @@
 # era effects to incident probability and loss size, `_kappa` a pace scale by
 # season (#15). The common race level is learned by default (#36); `_fgam` uses
 # the fixed race-intercept prior, `_hgam` hierarchical intercepts (see `model_spec`).
-# 1000 draws per chain after 500 warm-up iterations.
+# 1000 draws per chain after 500 warm-up iterations. `delta=<x>` sets the target
+# acceptance rate (default 0.8, #62).
 #
 # On a Raspberry Pi 5, running the chains as separate processes (`chain k`, one
 # per core, then `combine`) gives more total throughput than threads or serial.
 # Progress lines (including warm-up) with ETAs are printed every 100 iterations.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics
-using Turing: FlexiChains
+using Turing: FlexiChains, NUTS
 
-mode = get(ARGS, 1, "all")
-model = get(ARGS, 2, "t4")
-action = get(ARGS, 3, "serial")
+# `delta=<x>` (anywhere) sets NUTS's target acceptance rate (default 0.8, #62)
+δarg = findfirst(a -> startswith(a, "delta="), ARGS)
+δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
+args = filter(a -> !startswith(a, "delta="), ARGS)
+mode = get(args, 1, "all")
+model = get(args, 2, "t4")
+action = get(args, 3, "serial")
 data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
 spec = model_spec(model)
-fit(; kw...) = spec.family === :t4 ? fit_gaps(g; kw...) :
+sampler = NUTS(δ; adtype = Diomedes.gap_sampler().adtype)
+fit(; kw...) = spec.family === :t4 ? fit_gaps(g; sampler, kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                  centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
-                 race_hier = spec.race_hier, race_mean = spec.race_mean, kw...)
+                 race_hier = spec.race_hier, race_mean = spec.race_mean, sampler, kw...)
 
 include("gap_data.jl")
 res, g = gap_data(mode; data_dir)
@@ -44,14 +50,14 @@ println(g); flush(stdout)
 mkpath("output")
 
 if action == "chain"
-    k = parse(Int, ARGS[4])
+    k = parse(Int, args[4])
     t = @elapsed chain = fit(; rng = Xoshiro(k), progress = false, progress_log = stdout)
     serialize(chain_path(k), chain)
     println("chain $k: $(round(t / 60; digits = 1)) min, mean leapfrog steps per draw ",
             round(mean(chain[:n_steps]); digits = 1), ", step size ", round(mean(chain[:step_size]); digits = 4))
     exit()
 elseif action == "combine"
-    n = parse(Int, get(ARGS, 4, "4"))
+    n = parse(Int, get(args, 4, "4"))
     chain = reduce(hcat, [rehash_chain!(deserialize(chain_path(k))) for k in 1:n])
 else
     t = @elapsed chain = fit(; n_chains = 4, progress = false, progress_log = stdout)
