@@ -9,6 +9,19 @@ development trend per car-season, and no tyre terms. It is **in development**
 are close to, but not quite at, the convergence targets (R-hat 1.012, ESS about
 250).
 
+!!! note "What these numbers measure"
+    The headline results are the race model's: it measures the outcome that
+    counts, the time to finish a race. The lap model measures something narrower:
+    typical green-flag pace under race conditions. That includes traffic, blue
+    flags and the tyre, fuel and engine management drivers do when they don't need
+    to push, but not starts, pit-stop timing, strategy or safety-car periods. So
+    it **underrates drivers who win comfortably** (they manage their pace) and
+    flatters drivers who lose most of their time in the parts of a race it leaves
+    out. Read it as supporting evidence. Its car-season effects check the race
+    model's split between car and driver, from largely independent data. Its
+    in-season development trends are measured race by race. Don't read it as a
+    second driver ranking.
+
 ```@raw html
 <div id="manifest-laps"></div>
 <script>
