@@ -284,6 +284,10 @@ function fit_retirement(d::RetireData; n_samples::Int = 1000, n_chains::Int = 1,
                         sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                         progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
                         checkpoint::Union{Nothing,AbstractString} = nothing, seed::Int = 1, kwargs...)
+    adtype = hasproperty(sampler, :adtype) ? sampler.adtype : nothing
+    adtype isa AutoReverseDiff && adtype.compile &&
+        throw(ArgumentError("retirement_effects needs uncompiled ReverseDiff (see gap_sampler); " *
+                            "a compiled tape gives stale gradients for its custom rule"))
     model = retirement_effects(d)
     S = length(d.seasons)
     # observed events per race distance of exposure, per cause

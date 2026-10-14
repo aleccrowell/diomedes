@@ -1,39 +1,39 @@
 {
     "model": "retirement_effects (competing risks: mechanical, incident, collision)",
-    "fit": "retire",
-    "data": "F1 1950–2019 (Ergast CSV): 22478 starts: 6219 mech, 1756 incident, 828 collision, 13675 censored; 671 drivers, 919 machine-seasons, 1007 races, 70 seasons",
+    "fit": "retire_jolpica1950-2025",
+    "data": "F1 1950–2025 (Jolpica API; retirements with no recorded cause count under the total hazard): 25074 starts: 6308 mech, 1781 incident, 893 collision, 240 unknown cause, 15852 censored; 688 drivers, 979 machine-seasons, 1138 races, 76 seasons",
     "convergence": {
-        "max_rhat": 1.01,
-        "min_ess": 793,
-        "divergences": 1,
+        "max_rhat": 1.006,
+        "min_ess": 602,
+        "divergences": 0,
         "groups": {
             "cars": {
-                "max_rhat": 1.008,
-                "min_ess": 4225
+                "max_rhat": 1.005,
+                "min_ess": 3987
             },
             "mech level": {
                 "max_rhat": 1.003,
-                "min_ess": 2760
+                "min_ess": 2107
             },
             "scalars": {
-                "max_rhat": 1.01,
-                "min_ess": 793
+                "max_rhat": 1.006,
+                "min_ess": 602
             },
             "collision level": {
-                "max_rhat": 1.004,
-                "min_ess": 1959
+                "max_rhat": 1.003,
+                "min_ess": 2041
             },
             "drivers": {
                 "max_rhat": 1.005,
-                "min_ess": 4043
+                "min_ess": 3724
             },
             "incident level": {
                 "max_rhat": 1.003,
-                "min_ess": 2187
+                "min_ess": 1504
             }
         }
     },
     "exported_by": "scripts/export_site.jl retire",
-    "export_commit": "90063cd",
-    "date": "2026-10-11"
+    "export_commit": "ba697c6",
+    "date": "2026-10-14"
 }

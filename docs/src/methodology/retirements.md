@@ -2,9 +2,9 @@
 
 ## A competing-risks model of retirements
 
-The pace models drop retirements, which make up a large share of F1 starts:
-6,219 mechanical failures, 1,756 solo incidents and 828 collisions in 22,478
-starts from 1950 to 2019 ([#42](https://github.com/aleccrowell/diomedes/issues/42)). The retirement model treats each start as a
+Retirements make up a large share of F1 starts: 6,308 mechanical failures,
+1,781 solo incidents, 893 collisions and 240 retirements of unknown cause in
+25,074 starts from 1950 to 2025 (Jolpica data; [#42](https://github.com/aleccrowell/diomedes/issues/42), [#55](https://github.com/aleccrowell/diomedes/issues/55)). The retirement model treats each start as a
 survival record in laps. Each cause ``k`` has a hazard that is constant over the
 race, plus a jump on the first lap:
 
@@ -22,21 +22,22 @@ with linear predictors
 \end{aligned}
 ```
 
-Retirements with other causes (fuel, puncture, illness, unspecified) are
-treated as censored. Disqualified starts are dropped, since how they would
+A retirement recorded only as "Retired" (most of Jolpica's from 2023) counts
+under the total hazard, with no split between causes. Retirements with other
+causes (fuel, puncture, illness) are treated as censored. Disqualified starts are dropped, since how they would
 have ended is unknown ([#42](https://github.com/aleccrowell/diomedes/issues/42)).
 
-**Results** ([#42](https://github.com/aleccrowell/diomedes/issues/42)):
+**Results** (1950–2025; the 1950–2019 fit in [#42](https://github.com/aleccrowell/diomedes/issues/42) gave the same within uncertainty):
 
 - **Collisions are only partly a driver trait.** The driver's
   incident-proneness carries over to collisions with loading
-  ``\beta_\text{col}`` = 0.36 ± 0.11.
+  ``\beta_\text{col}`` = 0.37 ± 0.10.
 - **Car and driver spread.** Car-season reliability varies with
   ``\sigma_\text{car}`` = 0.50 ± 0.02 on the log-hazard scale, and driver
   proneness with ``\sigma_\text{drv}`` = 0.45 ± 0.04.
 - **Slow and unreliable go together.** Slower drivers are more incident-prone
-  (correlation 0.42 over 138 drivers), and slower car-seasons less reliable
-  (0.46 over 615).
+  (correlation 0.43 over 149 drivers with at least 50 starts), and slower
+  car-seasons less reliable (0.47 over 675 with at least 20 starts).
 
 ## Do the dropped retirements bias the pace effects?
 
