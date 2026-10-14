@@ -84,7 +84,7 @@ earlier enters here only at its end.</p>
 <p>Treat the drivers of 1996–97 with care. Ukyo Katayama, for example, is among
 the fastest on clean laps from 1,125 laps in 1996–97, but slow in the race
 model. At the edge of the data, a short career, its slope and the few team-mates
-linking its cars are hard to separate, and this is being checked
+linking its cars are hard to separate
 (<a href="https://github.com/aleccrowell/diomedes/issues/12">#12</a>).</p>
 ```
 
