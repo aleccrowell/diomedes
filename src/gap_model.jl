@@ -21,6 +21,14 @@
 "Whether a status string means a lapped finisher."
 is_lapped_status(s::AbstractString) = s == "Lapped" || occursin(r"^\+\d+ Laps?$", s)
 
+# A "+N Lap(s)" status that contradicts the lap counts (N ≠ the winner's laps minus
+# the car's: 20 rows in 1950–2025, mostly early races) leaves the car's interval
+# ambiguous; prepare_gaps drops it. "Lapped" (Jolpica from 2023) carries no N.
+function laps_down_agrees(status::AbstractString, down::Integer)
+    m = match(r"^\+(\d+) Laps?$", status)
+    return m === nothing || parse(Int, m[1]) == down
+end
+
 """
     GapData
 
@@ -56,18 +64,33 @@ function Base.show(io::IO, g::GapData)
           "$(length(g.races)) races)")
 end
 
+# a result over fewer laps than this has no racing pace in it (see prepare_gaps)
+const MIN_RACE_LAPS = 3
+
+# Of the rows `idx` of one race (timed rows), those that completed the most laps:
+# the winner is the fastest of them. A timed car with fewer laps (a retirement
+# timed when it stopped, as Jolpica does from 2023) is never the winner (#55).
+function most_laps(g, idx)
+    hasproperty(g, :laps) && any(i -> !ismissing(g.laps[i]), idx) || return idx
+    lmax = maximum(g.laps[i] for i in idx if !ismissing(g.laps[i]))
+    return filter(i -> !ismissing(g.laps[i]) && g.laps[i] == lmax, idx)
+end
+
 """
     prepare_gaps(results; include_lapped = true, machine_key)
 
 Build `GapData` from a results table. Per stage, the winner is the fastest
-timed row, and the race distance `L` is the winner's lap count. Timed rows get
+timed row among those that completed the most laps, and the race distance `L`
+is the winner's lap count. Timed rows get
 their % gap to the winner. With `include_lapped`, untimed rows with a lapped
 status (see `is_lapped_status`) that completed 2 ≤ l < L laps become intervals
 (see file header), or, when the source gives the car's own elapsed time
 (`own_time_ms`, Jolpica from 2023), timed rows at their exact constant-pace gap
 100·log((own racing time / l) / (winner's racing time / L)), marked by
-`rows.lapped_exact`; with `max_laps_down = k`, only those at most k laps down.
-Everything else is dropped.
+`rows.lapped_exact`; with `max_laps_down = k`, only those at most k laps down. A
+"+N Laps" status that contradicts the lap counts is dropped (see `laps_down_agrees`).
+Everything else is dropped, as are races whose winner completed fewer than
+`MIN_RACE_LAPS` (3) laps.
 """
 function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
                       max_laps_down::Union{Nothing,Int} = nothing,
@@ -85,10 +108,16 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
     for g in groupby(df, [:series, :event_id, :stage_id])
         timed = findall(!ismissing, g.race_ms)
         isempty(timed) && continue
-        # the winner is a real finisher: partial-gap rows (#13, see with_partial_rows) can be faster
+        # the winner is a real finisher: partial-gap rows (#13, see with_partial_rows) can be
+        # faster, and so can any timed car that stopped early (a source giving retirements
+        # a time, #55). So: the fastest of the timed cars that completed the most laps.
         cand = hasproperty(g, :partial) ? filter(i -> !g.partial[i], timed) : timed
         isempty(cand) && continue
+        cand = most_laps(g, cand)
         w = cand[argmin(g.race_ms[cand])]
+        # a result over fewer than MIN_RACE_LAPS laps carries no racing pace (2021
+        # Belgian GP: 1 lap counted, all behind the safety car); the race is dropped
+        !ismissing(g.laps[w]) && g.laps[w] < MIN_RACE_LAPS && continue
         T_w = g.race_ms[w]
         g.winner_ms .= T_w
         for i in timed
@@ -101,7 +130,7 @@ function prepare_gaps(results::AbstractDataFrame; include_lapped::Bool = true,
         for i in eachindex(g.kind)
             l = g.laps[i]
             if ismissing(g.time_ms[i]) && is_lapped_status(g.status[i]) && !ismissing(l) && 2 <= l < L &&
-               (max_laps_down === nothing || L - l <= max_laps_down)
+               laps_down_agrees(g.status[i], L - l) && (max_laps_down === nothing || L - l <= max_laps_down)
                 own = hasproperty(g, :own_time_ms) ? g.own_time_ms[i] : missing
                 if ismissing(own)
                     g.kind[i] = :lapped

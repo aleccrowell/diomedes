@@ -82,7 +82,7 @@ end
         @test_throws ArgumentError validate_results(select(empty_results(), Not(:machine_id)))
     end
 
-    @testset "Jolpica rows: lapped cars get no race time (#55)" begin
+    @testset "Jolpica rows: only lead-lap finishers get a race time (#55)" begin
         # from 2023 Jolpica gives lapped cars their own (shorter-distance) time
         race = JSON3.read("""{"season": "2024", "round": "8", "raceName": "Monaco Grand Prix", "date": "2024-05-26",
             "Results": [
@@ -93,10 +93,22 @@ end
               {"number": "14", "position": "11", "positionText": "11", "points": "0", "grid": "11", "laps": "76",
                "status": "Lapped", "Time": {"millis": "8599412", "time": "+2 Laps"},
                "Driver": {"driverId": "alonso", "givenName": "Fernando", "familyName": "Alonso", "dateOfBirth": "1981-07-29"},
-               "Constructor": {"constructorId": "aston_martin"}}]}""")
+               "Constructor": {"constructorId": "aston_martin"}},
+              {"number": "4", "position": "19", "positionText": "R", "points": "0", "grid": "4", "laps": "64",
+               "status": "Retired", "Time": {"millis": "7300000", "time": "2:01:40.000"},
+               "Driver": {"driverId": "norris", "givenName": "Lando", "familyName": "Norris", "dateOfBirth": "1999-11-13"},
+               "Constructor": {"constructorId": "mclaren"}}]}""")
         rows = [Diomedes.jolpica_row(race, r) for r in race.Results]
         @test rows[1].time_ms == 8595548.0
         @test ismissing(rows[2].time_ms) && rows[2].laps == 76 && rows[2].status == "Lapped"
+        # a retired car's time when it stopped is its own elapsed time, not a race time
+        # (as a race time it would beat the winner's)
+        @test ismissing(rows[3].time_ms) && rows[3].own_time_ms == 7300000.0 && rows[3].laps == 64
+        @test rows[2].own_time_ms == 8599412.0 && ismissing(rows[1].own_time_ms)
+        # hours dropped from lap time strings (Bahrain 2020: a 1:22:30 lap read as 22:30)
+        laps = [90_000.0, 22.5 * 60_000, 90_000.0]
+        @test Diomedes.lap_hours_lost(sum(laps) + 3_600_000, laps) == 3_600_000
+        @test Diomedes.lap_hours_lost(sum(laps) + 1_500, laps) == 0 && Diomedes.lap_hours_lost(sum(laps) - 9_000, laps) == 0
     end
 
     @testset "standardise_times!" begin
@@ -244,6 +256,8 @@ end
         # even when they carry a numeric position (as in Ergast)
         @test nrow(lapped) == count(r -> ismissing(r.time_ms) && Diomedes.is_lapped_status(r.status), eachrow(res))
         @test all(Diomedes.is_lapped_status, lapped.status)
+        @test Diomedes.laps_down_agrees("+2 Laps", 2) && !Diomedes.laps_down_agrees("+2 Laps", 3) &&
+              Diomedes.laps_down_agrees("Lapped", 5)
         @test Diomedes.is_lapped_status("+1 Lap") && Diomedes.is_lapped_status("+12 Laps") &&
               Diomedes.is_lapped_status("Lapped")
         @test !Diomedes.is_lapped_status("Suspension") && !Diomedes.is_lapped_status("Finished") &&
@@ -252,6 +266,17 @@ end
         k = findfirst(r -> ismissing(r.time_ms) && Diomedes.is_lapped_status(r.status), eachrow(retired))
         retired.status[k] = "Suspension"; retired.classified[k] = true   # retirement with a position
         @test nrow(prepare_gaps(retired).rows) == nrow(g.rows) - 1
+        # a timed car with fewer laps (a retirement timed when it stopped) is not the
+        # winner, however fast its time
+        early = copy(res); ev = first(early.event_id)
+        j = findfirst(k -> early.event_id[k] == ev && ismissing(early.time_ms[k]) && !ismissing(early.laps[k]), eachindex(early.event_id))
+        early.time_ms[j] = 1000.0
+        ge = prepare_gaps(early)
+        @test ge.rows.winner_ms[findfirst(==(ev), ge.rows.event_id)] == g.rows.winner_ms[findfirst(==(ev), g.rows.event_id)]
+        # a race whose winner completed fewer than 3 laps (2021 Belgian GP) is dropped
+        short = copy(res); ev = first(short.event_id)
+        short.laps[short.event_id .== ev] .= 1
+        @test length(prepare_gaps(short).races) == length(g.races) - 1
         r = first(lapped[lapped.laps .== 57, :])       # Australia 2019 (58 laps), 1 lap down
         @test r.lo ≈ 100 * log(58 / 57) && r.hi ≈ 100 * log(58 / 56)
         @test all(g.lo .< g.hi)

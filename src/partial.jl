@@ -73,7 +73,7 @@ function partial_gaps(results::AbstractDataFrame, cum; min_frac::Real = 0.25, tr
     out = DataFrame(event_id = String[], competitor_id = String[], n = Int[], L = Int[], y_n = Float64[],
                     shift = Float64[], y_hat = Float64[], cause = Symbol[], n_ref = Int[])
     for g in groupby(results, :event_id)
-        timed = findall(!ismissing, g.time_ms)
+        timed = most_laps(g, findall(!ismissing, g.time_ms))   # lead-lap finishers (see prepare_gaps)
         isempty(timed) && continue
         w = timed[argmin(g.time_ms[timed])]
         Cw = get(cum, (g.event_id[w], g.competitor_id[w]), nothing)
@@ -115,6 +115,7 @@ function with_partial_rows(results::AbstractDataFrame, pg::AbstractDataFrame)
     for g in groupby(df, :event_id)
         timed = findall(!ismissing, g.time_ms)
         isempty(timed) && continue
+        timed = most_laps(g, timed)                      # the winner as in prepare_gaps
         susp = coalesce(first(g.suspended_ms), 0.0)
         Tw = minimum(g.time_ms[timed]) - susp            # winner's racing time
         for i in eachindex(g.status)
