@@ -72,7 +72,7 @@ prior (`_fgam`), which gave the same out-of-sample fit.
 - [Retirements](retirements.md): retirement rates by cause and season,
   the most and least reliable cars, and incident-proneness.
 - [Lap times](laps.md): the lap-time model against the race model,
-  2011–2019.
+  1996–2025.
 - [Rallying (WRC)](wrc.md): drivers and cars from WRC stage
   times, 2018–2025.
 - [Data downloads](data.md): every table behind the charts, with its columns

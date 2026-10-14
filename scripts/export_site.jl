@@ -380,6 +380,12 @@ function export_laps(tag)
     c = round_floats!(CSV.read("output/$(tag)_cars.csv", DataFrame))
     rename!(d, :driver => :id)
     rename!(c, :machine => :id)
+    # career slopes and in-season development, if the fit has them (#12)
+    sl, dv = "output/$(tag)_slopes.csv", "output/$(tag)_dev.csv"
+    isfile(sl) && (d = leftjoin(d, select(round_floats!(CSV.read(sl, DataFrame)), :driver => :id, :first_season, :last_season,
+                                          :mean => :slope_mean, :sd => :slope_sd); on = :id, order = :left))
+    isfile(dv) && (c = leftjoin(c, select(round_floats!(CSV.read(dv, DataFrame)), :machine => :id, :mean => :dev_mean,
+                                          :sd => :dev_sd); on = :id, order = :left))
     CSV.write(joinpath(dir, "drivers.csv"), d)
     CSV.write(joinpath(dir, "cars.csv"), c)
     # the same levels in the race model (export `race` first)
@@ -393,9 +399,13 @@ function export_laps(tag)
               innerjoin(select(c, :id, :laps, :mean => :lap_mean, :sd => :lap_sd),
                         select(rc, :id, :constructor, :season, :mean => :race_mean, :sd => :race_sd); on = :id))
     log = "output/$(tag)_combine.txt"
-    yrs = match(r"(\d{4})-(\d{4})_(\w+)", tag)
-    write_manifest(dir, (; model = "lap_effects", fit = tag,
-                         data = "F1 $(yrs[1])–$(yrs[2]) clean laps (Ergast lap times, $(yrs[3]) pit stops): " * inner(first(readlines(log))),
+    m = match(r"(\d{4})-(\d{4})_(recorded|inferred)(_notyres)?(_slopes)?(_dev)?", tag)
+    first_y, last_y = parse(Int, m[1]), parse(Int, m[2])
+    src = last_y <= 2019 ? "Ergast lap times" : first_y > 2019 ? "Jolpica lap times" : "Ergast lap times to 2019, Jolpica from 2020"
+    terms = join(filter(!isempty, [m[4] === nothing ? "stint age" : "", m[5] === nothing ? "" : "career slopes",
+                                   m[6] === nothing ? "" : "in-season development"]), ", ")
+    write_manifest(dir, (; model = "lap_effects" * (isempty(terms) ? "" : " ($(terms))"), fit = tag,
+                         data = "F1 $(first_y)–$(last_y) clean laps ($(src), $(m[3]) pit stops): " * inner(first(readlines(log))),
                          race_model = JSON3.read(read(joinpath(race, "manifest.json"), String)).model,
                          convergence = log_convergence(log), exported_by = "scripts/export_site.jl laps"))
     println("wrote $dir")

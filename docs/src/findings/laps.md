@@ -1,9 +1,13 @@
 # Lap times
 
 Results of the lap-time model (see [The lap-time model](@ref)), fitted to
-clean green-flag laps from 2011 to 2019. It is **in development**
-([#12](https://github.com/aleccrowell/diomedes/issues/12)); these results cover
-only the seasons with recorded pit stops.
+clean green-flag laps from 1996 to 2025: Ergast lap times to 2019, Jolpica from
+2020, with pit laps inferred from the lap times. Besides driver and car effects,
+it has a career slope per driver (season-level age) and an in-season
+development trend per car-season, and no tyre terms. It is **in development**
+([#12](https://github.com/aleccrowell/diomedes/issues/12)): drivers and slopes
+are close to, but not quite at, the convergence targets (R-hat 1.012, ESS about
+250).
 
 ```@raw html
 <div id="manifest-laps"></div>
@@ -58,10 +62,17 @@ diomedesFigure("fig-laps-cars", {
 <p>Drivers agree less (correlation
 <span class="diomedes-stat" data-path="assets/data/laps/vs_race_drivers.csv" data-stat="corr" data-x="race_mean" data-y="lap_mean" data-filter="laps>=500">…</span>
 over the <span class="diomedes-stat" data-path="assets/data/laps/vs_race_drivers.csv" data-stat="count" data-filter="laps>=500" data-format="int">…</span>
-drivers with at least 500 clean laps). The race model's driver effects cover a
-whole career, with an age curve and career slopes, while the lap model sees only
-2011–2019. A driver whose best years were before 2011 is fast in the race model
-and ordinary here: Michael Schumacher's 2010–12 comeback, for example.</p>
+drivers with at least 500 clean laps), and the lap model's driver effects are
+less spread out. Race gaps include what clean laps leave out: starts, traffic,
+strategy and mistakes. So back-markers look faster on clean laps than in races,
+and the front-runners less dominant. The race model's effects also cover whole
+careers from 1950, while the lap model starts in 1996: a career that began
+earlier enters here only at its end.</p>
+<p>Treat the drivers of 1996–97 with care. Ukyo Katayama, for example, is among
+the fastest on clean laps from 1,125 laps in 1996–97, but slow in the race
+model. At the edge of the data, a short career, its slope and the few team-mates
+linking its cars are hard to separate, and this is being checked
+(<a href="https://github.com/aleccrowell/diomedes/issues/12">#12</a>).</p>
 ```
 
 ```@raw html
@@ -77,7 +88,7 @@ diomedesFigure("fig-laps-drivers", {
   mark: { type: "circle", opacity: 0.8 },
   encoding: {
     x: { field: "race_mean", type: "quantitative", title: "Race model: driver effect, whole career (%)" },
-    y: { field: "lap_mean", type: "quantitative", title: "Lap model: driver effect, 2011–2019 (%)" },
+    y: { field: "lap_mean", type: "quantitative", title: "Lap model: driver effect, 1996–2025 (%)" },
     size: { field: "laps", type: "quantitative", title: "Laps", scale: { range: [20, 300] } },
     tooltip: [{ field: "name", title: "Driver" }, { field: "laps", title: "Laps" },
               { field: "race_mean", title: "Race model (%)", format: ".2f" },
