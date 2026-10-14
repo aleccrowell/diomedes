@@ -57,7 +57,7 @@ Only its shape is identified: it has no constant or linear part</td></tr>
 ## Retirement-model files
 
 ```@raw html
-<p>F1 1950–2019, competing-risks hazards. Effects are on the log-hazard scale:
+<p>F1 1950–2025 (Jolpica API), competing-risks hazards. Effects are on the log-hazard scale:
 +0.5 is a rate 1.65× the average.
 <a class="diomedes-data" data-path="assets/data/retire/manifest.json">manifest.json</a></p>
 <table>

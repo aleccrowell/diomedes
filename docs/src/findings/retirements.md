@@ -2,7 +2,7 @@
 
 Results of the competing-risks retirement model (see
 [Retirements and selection bias](@ref)), fitted to every F1 start from 1950 to
-2019. Effects are on the **log-hazard scale**: +0.5 means a retirement rate
+2025 (Jolpica API). Effects are on the **log-hazard scale**: +0.5 means a retirement rate
 1.65× the season's average, −0.5 about 0.6×.
 
 ```@raw html
@@ -93,7 +93,7 @@ diomedesFigure("fig-retire-cars", {
 ## Incident-proneness
 
 Driver incident-proneness (solo incidents, and collisions with loading
-β_col ≈ 0.36), for drivers with at least 50 starts: the 15 least and 15 most
+β_col ≈ 0.37), for drivers with at least 50 starts: the 15 least and 15 most
 incident-prone.
 
 ```@raw html
@@ -129,9 +129,10 @@ diomedesFigure("fig-retire-drivers", {
 </script>
 ```
 
-Slower drivers tend to be more incident-prone (correlation 0.42 with the race
-model's driver effects), and slower car-seasons less reliable (0.46)
-([#42](https://github.com/aleccrowell/diomedes/pull/42)).
+Slower drivers tend to be more incident-prone (correlation 0.43 with the race
+model's driver effects, over 149 drivers with at least 50 starts), and slower
+car-seasons less reliable (0.47 over 675 with at least 20 starts), as in the
+1950–2019 fit ([#42](https://github.com/aleccrowell/diomedes/pull/42)).
 
 ## Download the data
 
