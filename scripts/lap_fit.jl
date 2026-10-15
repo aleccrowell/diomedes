@@ -110,7 +110,7 @@ function load_blocks(prefix)
     # LAP_MAX_BLOCKS=k combines only the first k blocks of each chain (chains still running
     # can be compared at equal length)
     haskey(ENV, "LAP_MAX_BLOCKS") && (files = files[1:min(end, parse(Int, ENV["LAP_MAX_BLOCKS"]))])
-    return reduce(vcat, [rehash_chain!(deserialize(joinpath(dir, f))) for f in files])
+    return reduce(vcat, [Diomedes.block_chain(joinpath(dir, f)) for f in files])
 end
 arg = get(args, 4, "4")              # chains 1..n, or a comma-separated list (e.g. 2,3,4)
 ks = occursin(",", arg) ? parse.(Int, split(arg, ",")) : 1:parse(Int, arg)
