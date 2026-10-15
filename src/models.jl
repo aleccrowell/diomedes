@@ -199,6 +199,48 @@ function run_nuts(model, inits; n_samples, n_chains, ensemble, sampler, rng, pro
 end
 
 """
+    step_size(state), with_step_size(state, ϵ)
+
+The leapfrog step size in a sampler state, and a copy of the state with it
+replaced: Turing's NUTS state, or a `TuringState` wrapping AdvancedHMC's (an
+`externalsampler` run).
+"""
+step_size(st) = hasproperty(st, :kernel) ? st.kernel.τ.integrator.ϵ :
+                hasproperty(st, :state) ? st.state.κ.τ.integrator.ϵ : st.κ.τ.integrator.ϵ
+with_step_size(st, ϵ) = hasproperty(st, :kernel) ? (@set st.kernel.τ.integrator.ϵ = Float64(ϵ)) :
+                        hasproperty(st, :state) ? (@set st.state.κ.τ.integrator.ϵ = Float64(ϵ)) :
+                        (@set st.κ.τ.integrator.ϵ = Float64(ϵ))
+
+"""
+    tune_step_size(model, state, sampler, δ; factors = (1.15, 1.3, 1.45, 1.6), iters = 15, seed = 1,
+                   external = false) -> (state, ϵ, probe)
+
+Raise the step size of an adapted sampler `state` to the largest of
+`ϵ₀ · factors` whose mean acceptance over `iters` iterations (adaptation off,
+from `state`) is at least `δ` with no divergences, stopping at the first factor
+that fails; keeps ϵ₀ if none passes. Stan-style warm-up ends on a step size
+whose acceptance in sampling is above the target (0.875 for δ = 0.8 on the
+1996–2025 lap fit); a step size that still meets δ can halve the leapfrog steps
+per draw at a tree-depth boundary (#62). The probe draws are discarded. `probe`
+lists (factor, step size, acceptance, tree depth, divergences).
+"""
+function tune_step_size(model, state, sampler, δ; factors = (1.15, 1.3, 1.45, 1.6), iters::Int = 15, seed::Int = 1,
+                        external::Bool = false)
+    ϵ0 = step_size(state)
+    best, probe = ϵ0, Tuple[]
+    for (k, f) in enumerate(factors)
+        c = run_nuts(model, nothing; n_samples = iters, n_chains = 1, ensemble = MCMCSerial(), sampler,
+                     rng = Xoshiro(seed + 10_000 + k), progress = false, progress_log = nothing, log_every = 100,
+                     initial_state = with_step_size(state, ϵ0 * f), (external ? (; n_adapts = 0) : (;))...)
+        acc, depth, div = mean(c[:acceptance_rate]), mean(c[:tree_depth]), count(c[:numerical_error] .> 0)
+        push!(probe, (f, ϵ0 * f, round(acc; digits = 3), round(depth; digits = 2), div))
+        (acc >= δ && div == 0) || break
+        best = ϵ0 * f
+    end
+    return with_step_size(state, best), best, probe
+end
+
+"""
     run_nuts_checkpointed(model, init, path; n_samples, n_adapts = 500, δ = 0.8, block = 100,
                           seed = 1, progress_log = nothing, log_every = 100) -> chain
 
@@ -213,12 +255,14 @@ resumed run gives the same draws as an uninterrupted one. A kill loses at most
 the block in progress (the warm-up, if it is in block 1). The sampler uses
 uncompiled ReverseDiff (see `gap_sampler`). `external`, an AdvancedHMC sampler
 wrapped by `externalsampler` (e.g. `lap_warm_sampler`), replaces Turing's NUTS.
-Returns the blocks concatenated.
+With `tune_step = true`, the step size is raised after warm-up to the largest
+that still meets the target acceptance (`tune_step_size`, #62); the probe is
+written to `"\$(path)_steptune.txt"`. Returns the blocks concatenated.
 """
 function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int, n_adapts::Int = 500,
                                δ::Real = 0.8, block::Int = 100, seed::Int = 1,
                                progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
-                               external = nothing)
+                               external = nothing, tune_step::Bool = false)
     adtype = gap_sampler().adtype
     chains, state = [], nothing
     for j in 1:cld(n_samples, block)
@@ -247,6 +291,19 @@ function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int
         end
         push!(chains, ch)
         state = only(Turing.loadstate(ch))
+        # after warm-up, once: before block 2 is first sampled (a resumed run whose
+        # block 2 exists keeps the step size saved in it)
+        if tune_step && j == 1 && cld(n_samples, block) > 1 && !isfile("$(path)_block2.jls")
+            sampler = external === nothing ? NUTS(0, δ; adtype) : external
+            state, ϵ, rows = tune_step_size(model, state, sampler, δ; seed, external = external !== nothing)
+            open("$(path)_steptune.txt", "w") do io
+                println(io, "factor\tstep_size\tacceptance\ttree_depth\tdivergences")
+                for r in rows; println(io, join(r, "\t")); end
+                println(io, "chosen\t", ϵ)
+            end
+            progress_log === nothing ||
+                (println(progress_log, "step size tuned: ", round(ϵ; sigdigits = 3), " (probe in $(path)_steptune.txt)"); flush(progress_log))
+        end
     end
     return reduce(vcat, chains)
 end

@@ -907,6 +907,27 @@ end
         @test c[("2024-01", "a")] == [90.0, 181.0, 273.0] && !haskey(c, ("2024-01", "b"))
     end
 
+    @testset "step-size tuning after warm-up (#62)" begin
+        Turing.@model function toy(y)
+            m ~ Normal(0, 10)
+            s ~ Distributions.truncated(Normal(0, 5); lower = 0)
+            y .~ Normal(m, s)
+        end
+        model = toy(randn(Xoshiro(3), 200) .+ 2)
+        dir = mktempdir()
+        ch = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir, "t");
+                                            n_samples = 40, n_adapts = 100, block = 20, tune_step = true)
+        @test size(ch[:m]) == (40, 1)
+        probe = readlines(joinpath(dir, "t_steptune.txt"))
+        @test startswith(probe[1], "factor") && startswith(probe[end], "chosen")
+        ϵ1 = Diomedes.step_size(only(Turing.loadstate(Diomedes.rehash_chain!(deserialize(joinpath(dir, "t_block1.jls"))))))
+        ϵ2 = Diomedes.step_size(only(Turing.loadstate(Diomedes.rehash_chain!(deserialize(joinpath(dir, "t_block2.jls"))))))
+        @test ϵ2 == parse(Float64, split(probe[end], "\t")[2]) && ϵ2 >= ϵ1
+        # with_step_size replaces only the step size
+        st = only(Turing.loadstate(Diomedes.rehash_chain!(deserialize(joinpath(dir, "t_block1.jls")))))
+        @test Diomedes.step_size(Diomedes.with_step_size(st, 0.123)) == 0.123 && Diomedes.step_size(st) == ϵ1
+    end
+
     @testset "lap-time model (#12)" begin
         # pit inference: 90 s laps, a stop with in-lap +5 s and out-lap +18 s at laps 20/21, a spin (+8 s) at 40
         t = fill(90_000.0, 60); t[20] += 5_000; t[21] += 18_000; t[40] += 8_000

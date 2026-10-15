@@ -16,6 +16,8 @@
 # if there is one, else from the plain fit (with tyres, without slopes or dev).
 # `combine` also writes output/<tag>_slopes.csv and <tag>_dev.csv for those terms.
 # `delta=<x>` (chain) sets NUTS's target acceptance rate (default 0.8; see fit_laps, #62).
+# After warm-up the step size is raised to the largest that still meets that target
+# (`tune_step_size`, #62; output/<tag>_chain<k>_steptune.txt); `notune` turns it off.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
@@ -26,7 +28,8 @@ slopes = "slopes" ∈ ARGS
 dev = "dev" ∈ ARGS
 δarg = findfirst(a -> startswith(a, "delta="), ARGS)
 δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
-args = filter(a -> a ∉ ("notyres", "slopes", "dev") && !startswith(a, "delta="), ARGS)
+tune_step = "notune" ∉ ARGS
+args = filter(a -> a ∉ ("notyres", "slopes", "dev", "notune") && !startswith(a, "delta="), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
 pits = Symbol(args[2])
@@ -88,7 +91,7 @@ if action == "chain"
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
     end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k,
-                                  progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, δ)
+                                  progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, δ, tune_step)
     # adapted metric and step size, for warm starts of later fits (see above)
     try
         serialize("output/$(tag)_chain$(k)_warmstate.jls", Diomedes.lap_adapted(only(Turing.loadstate(chain))))
