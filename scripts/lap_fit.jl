@@ -13,7 +13,8 @@
 # without the stint-age terms, `slopes` adds per-driver career slopes and `dev`
 # in-season car development (tags laps_<first>-<last>_<pits>[_notyres][_slopes][_dev]);
 # a warm start comes from an earlier fit over the warm seasons: one with the same terms,
-# else the same without lead/tyremgmt, else the plain fit (with tyres, without slopes or dev).
+# else the same without starts, else the same without lead/tyremgmt/starts, else the plain
+# fit (with tyres, without slopes or dev).
 # `combine` also writes output/<tag>_slopes.csv and <tag>_dev.csv for those terms.
 # `lead` adds the lead-lap effect and `tyremgmt` driver and car-season tyre-slope
 # deviations (#66; tags …_lead, …_tyremgmt; combine writes <tag>_tyremgmt_{drivers,cars}.csv);
@@ -69,8 +70,9 @@ if action == "chain"
     ws, n_adapts = nothing, 500
     if warm !== nothing
         old_seasons = parse(Int, warm[1]):parse(Int, warm[2])
-        # the old fit: the first that exists of: the same terms; the same without the
-        # lead-lap and tyre-management terms (#66); the plain fit (tyres, nothing else).
+        # the old fit: the first that exists of: the same terms; the same without starts;
+        # the same without the lead-lap, tyre-management and start terms (#66); the plain
+        # fit (tyres, nothing else).
         # A fit with the same terms has adapted every block, so it is the best start.
         chains_of(t) = sort(unique(parse(Int, m[1]) for f in readdir("output")
                                    for m in (match(Regex("^$(t)_chain(\\d+)_(block|warmstate)"), f),) if m !== nothing))
@@ -78,6 +80,9 @@ if action == "chain"
         cands = [((tyres, slopes, dev, lead, tyre_mgmt, starts),
                   (tyres ? "" : "_notyres") * (slopes ? "_slopes" : "") * (dev ? "_dev" : "") * (lead ? "_lead" : "") *
                   (tyre_mgmt ? "_tyremgmt" : "") * (starts ? "_starts" : "")),
+                 ((tyres, slopes, dev, lead, tyre_mgmt, false),
+                  (tyres ? "" : "_notyres") * (slopes ? "_slopes" : "") * (dev ? "_dev" : "") * (lead ? "_lead" : "") *
+                  (tyre_mgmt ? "_tyremgmt" : "")),
                  ((tyres, slopes, dev, false, false, false), (tyres ? "" : "_notyres") * (slopes ? "_slopes" : "") * (dev ? "_dev" : "")),
                  ((true, false, false, false, false, false), "")]
         old_flags, sfx = cands[something(findfirst(c -> !isempty(chains_of(stem * c[2])), cands), length(cands))]
