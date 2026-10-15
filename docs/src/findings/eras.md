@@ -16,7 +16,7 @@ fetch(documenterBaseURL + "/assets/data/race/manifest.json").then(r => r.json())
      Mode ${kept.map(name).join(", ")} has much higher posterior density, and the pooled tables use it.
      ${dropped.map(name).join(", ")}, a local mode with a negligible share of the posterior, is drawn dashed
      for comparison. Where the lines overlap, the conclusion doesn't depend on the mode (see
-     <a href="../../methodology/noise/#Two-modes-in-the-loss-mixture">Two modes in the loss mixture</a>).</p></div></div>`;
+     <a href="../../methodology/noise/#Checking-for-multiple-modes">Checking for multiple modes</a>).</p></div></div>`;
 });
 </script>
 ```
