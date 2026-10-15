@@ -33,7 +33,7 @@ fetch(documenterBaseURL + "/assets/data/race/manifest.json").then(r => r.json())
       ${m.modes.filter(x => x.kept).map(x => x.label).join(", ")} has much higher posterior density, so these pages use
       chains ${m.chains_used.join(", ")} of ${m.chains_fitted}; the convergence above is over those. The other mode is
       reported for comparison (<a href="eras/">Eras</a>,
-      <a href="../methodology/noise/#Two-modes-in-the-loss-mixture">Two modes in the loss mixture</a>).</p></div></div>` : "");
+      <a href="../methodology/noise/#Checking-for-multiple-modes">Checking for multiple modes</a>).</p></div></div>` : "");
 });
 </script>
 ```

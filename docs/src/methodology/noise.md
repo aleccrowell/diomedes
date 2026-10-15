@@ -105,12 +105,14 @@ pull at equal out-of-sample fit (2.9 ± 6.0 elpd), and is the default ([#36](htt
 The remaining uncertainty is honest: the incident intercept ``a_\pi`` has
 posterior sd 0.19 ([#32](https://github.com/aleccrowell/diomedes/issues/32)). The driver and car effects don't depend on the split.
 
-## Two modes in the loss mixture
+## Checking for multiple modes
 
-The Jolpica refit of 1950–2025 ([#55](https://github.com/aleccrowell/diomedes/issues/55)) adds the 2020–2025 seasons,
-lapped cars at exact gaps (from 2023, when their own times are recorded), and
-retirements as partial gaps (from 1996). Its chains didn't all settle in the same
-place:
+The pace noise and the two loss components can trade off: a slow result can be
+read as noise, a routine loss or a big loss. A fit whose chains settle in
+different splits can still show converged driver and car effects. So the export
+groups the chains by where their loss scalars settled (`chain_modes`), reports
+each mode, and builds the tables from the modes within 10 of the best mean log
+density ([#64](https://github.com/aleccrowell/diomedes/issues/64)). For the current fit:
 
 ```@raw html
 <div id="noise-modes"><p>(The exported fit has a single mode.)</p></div>
@@ -135,9 +137,8 @@ fetch(documenterBaseURL + "/assets/data/race/manifest.json").then(r => r.json())
 </script>
 ```
 
-Both modes describe the same slow tail of results, split differently between
-the two loss components. Each row below is one chain (posterior mean and 90%
-interval):
+Each row below is one chain (posterior mean and 90% interval); in a fit with a
+single mode they overlap:
 
 ```@raw html
 <div id="fig-modes"></div>
@@ -169,32 +170,14 @@ interval):
 </script>
 ```
 
-```@raw html
-<p>In mode A, <span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==rho &amp; mode==A" data-format="pct"></span>
-of incidents are big losses and the routine loss averages
-<span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==lambda_base &amp; mode==A"></span>%.
-In mode B, <span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==rho &amp; mode==B" data-format="pct"></span>
-are big and the routine loss averages
-<span class="diomedes-stat" data-path="assets/data/race/modes.csv" data-stat="mean" data-x="mean" data-filter="quantity==lambda_base &amp; mode==B"></span>%:
-fewer big losses and larger routine ones, with slightly less pace noise.</p>
-```
-
-**Mode B is the posterior; A is a local mode.** B's mean log density is about
-150 higher, its log-likelihood about 145 higher, and it predicts better out of
-sample (PSIS-LOO, 130 ± 25 elpd; [#55](https://github.com/aleccrowell/diomedes/issues/55)). A difference that size means A holds a
-negligible share of the posterior: chains that start near it stay there, but the
-correct posterior summary is B alone. So the tables on these pages use B's
-chains, and the export drops any mode whose mean log density is more than 10
-below the best one's ([#64](https://github.com/aleccrowell/diomedes/issues/64)). Mode A is still shown, here and dashed in [Eras](../findings/eras.md).
-
-**What depends on the mode.** The driver and car effects barely do (the list
-above), so this choice doesn't move the rankings. The loss scalars, the season
-paths of π and λ, and the big-loss share and size do.
-
-**Why it can happen.** A retirement row is a car that was running slower than
-its effects predict before it stopped ([Do the dropped retirements bias the pace effects?](@ref)).
-These rows add a block of moderately slow results, and either loss component
-can absorb it: a few more big losses, or a wider routine one. A refit without
-those rows will show whether they cause the second mode ([#55](https://github.com/aleccrowell/diomedes/issues/55)). Half the chains
-landing in a local mode also means a fit like this needs more than one chain per
-mode to be trusted: R-hat over all chains is what flagged it.
+**An earlier export had two modes, caused by a data error.** The first Jolpica
+refit (v0.3.0–0.3.1) had half its chains in a split with more big losses and
+smaller routine ones, at much lower posterior density. Without the retirement
+rows, its chains split four ways. The cause was in the 2023–2025 data: Jolpica
+times retired cars when they stopped, and those times were read as race times.
+In 16 races a retiree's time became the winner's, putting whole fields up to
+108% behind ([#55](https://github.com/aleccrowell/diomedes/issues/55), [#70](https://github.com/aleccrowell/diomedes/pull/70)). On the corrected data all four chains agree. The loss
+mixture is close to the Ergast 1950–2019 fit's: σ about 0.41, routine losses in
+about 63% of results with a mean of about 1.6%, and big losses about 2% of
+incidents. Running several chains and comparing them, not only their pooled
+R-hat, is what found this.

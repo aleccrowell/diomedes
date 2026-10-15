@@ -65,5 +65,4 @@ finishers are a selected sample. The test ([#43](https://github.com/aleccrowell/
 
 So the models fitted to the Ergast data (1950–2019) kept dropping retirements.
 The Jolpica refit of 1950–2025 includes them, measured 3 laps before the car
-stopped: they still leave the effects in place, and they make the pace model's
-loss mixture less well determined ([Two modes in the loss mixture](@ref)).
+stopped: they still leave the effects in place.
