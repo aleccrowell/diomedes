@@ -89,7 +89,7 @@ loadchain(v) = reduce(hcat, [run_nuts_loaded(chain_prefix(v, k)) for k in (v == 
 function run_nuts_loaded(prefix)
     blocks = sort(filter(f -> startswith(f, basename(prefix) * "_block"), readdir(dirname(prefix))),
                   by = f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]))
-    return reduce(vcat, [rehash_chain!(deserialize(joinpath(dirname(prefix), f))) for f in blocks])
+    return reduce(vcat, [Diomedes.block_chain(joinpath(dirname(prefix), f)) for f in blocks])
 end
 
 ca, cb = loadchain("a"), loadchain("b")

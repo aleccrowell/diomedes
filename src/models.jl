@@ -260,6 +260,17 @@ function read_block(file::AbstractString)
 end
 
 """
+    block_chain(file) -> FlexiChain
+
+The draws of a block saved by `run_nuts_checkpointed`, in either format. Unlike
+`read_block`, it doesn't load the sampler state of an earlier-format block.
+"""
+function block_chain(file::AbstractString)
+    x = deserialize(file)
+    return rehash_chain!(x isa NamedTuple ? x.chain : x)
+end
+
+"""
     checkpoint_adapted(path) -> (; Minv, ϵ)
 
 The metric and step size in the last saved block of a `run_nuts_checkpointed` run

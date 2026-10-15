@@ -932,6 +932,8 @@ end
         ch2 = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir2, "t");
                                              n_samples = 40, n_adapts = 100, block = 20, tune_step = true)
         @test vec(ch2[:m]) == vec(ch[:m])
+        # combines read the draws alone
+        @test vec(Diomedes.block_chain(joinpath(dir, "t_block2.jls"))[:m]) == vec(b2.chain[:m]) == vec(ch[:m])[21:40]
         # with_step_size replaces only the step size
         st = only(Turing.loadstate(Diomedes.run_nuts(model, [Turing.InitFromParams((; m = 0.0, s = 1.0))]; n_samples = 5,
                                                       n_chains = 1, ensemble = Turing.MCMCSerial(),
