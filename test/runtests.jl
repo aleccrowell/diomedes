@@ -1150,6 +1150,36 @@ end
                 @test o == LDP.dimension(rdm)
             end
         end
+        # one shared stint curve per era: a refuelling season (2008) and a later one
+        re08(e) = replace(e, "2018-" => "2008-")
+        lt6 = copy(lt5); lt6.season = [s == 2018 ? 2008 : s for s in lt6.season]; lt6.event_id = re08.(lt6.event_id)
+        rows6 = copy(rows3); rows6.season = [s == 2018 ? 2008 : s for s in rows6.season]; rows6.event_id = re08.(rows6.event_id)
+        rows6.event_date = [Date(r.season, 3, 1) + Day(14 * parse(Int, last(r.event_id))) for r in eachrow(rows6)]
+        d6 = prepare_laps(lt6, rows6; pits = :inferred)
+        @test d6.eras == [:refuel, :norefuel] && d6.era == [s <= 2009 ? 1 : 2 for s in d6.rows.season]
+        @test length(d3.eras) == 1 && Diomedes.lap_layout(d6)[findfirst(p -> first(p) === :β, Diomedes.lap_layout(d6))][2][1] == 4
+        model6 = lap_effects(d6)
+        β6 = [0.03, 0.01, 0.02, -0.005]
+        θ6 = merge(θ, (; β = β6))
+        b6 = Diomedes.sum_to_zero_by(θ.b_mach, d6.mach_season, Diomedes.lap_mach_counts(d6))
+        h6 = [a[d6.comp[j]] + b6[d6.mach[j]] + β6[2d6.era[j] - 1] * d6.stint[j] / 10 + β6[2d6.era[j]] * (d6.stint[j] / 10)^2
+              for j in eachindex(d6.y)]
+        h6bar = [mean(h6[d6.race .== r]) for r in 1:nr]
+        f6bar = [mean(d6.frac[d6.race .== r]) for r in 1:nr]
+        ll6 = sum(Diomedes.paceloss_logpdf(d6.y[j] - (θ.γ[d6.race[j]] + θ.δ[d6.race[j]] * (d6.frac[j] - f6bar[d6.race[j]]) +
+                                                       h6[j] - h6bar[d6.race[j]]),
+                                           θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d6.y))
+        @test Turing.DynamicPPL.loglikelihood(model6, θ6) ≈ ll6
+        let m = lap_effects(d6; slopes = true, tyre_mgmt = true)
+            rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            x6 = 0.5 .* randn(rng, LDP.dimension(rdm))
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_td, :τ_tm)
+                haskey(rg, k) && (x6[rg[k].range] .= 0.2 + rand(rng))
+            end
+            @test LDP.logdensity_and_gradient(rdm, x6)[2] ≈ LDP.logdensity_and_gradient(fdm, x6)[2]
+            @test length(rg.β.range) == 4
+        end
         ws5 = lap_warm_start(fake, d_old, d5; slopes_new = true, dev_new = true, lead_new = true, tyre_mgmt_new = true)
         r5 = NamedTuple(getfield(LDF(model5), :_varname_ranges))
         @test length(ws5.Minv) == LDP.dimension(LDF(model5))

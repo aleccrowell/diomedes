@@ -22,6 +22,11 @@
 # and whether the car led the race on that lap (`lead`, from its position at the
 # end of the lap; #66).
 
+# Seasons with in-race refuelling (1994–2009): the fuel load jumps back up at each
+# stop, so within a stint fuel burn follows stint age as tyre wear does. The shared
+# stint-age curve is separate for these seasons and the rest (#66).
+const REFUEL_SEASONS = 1994:2009
+
 const SLOW_RACE = 1.25      # race-wide slow lap: field median over this × race median lap
 const STOPPAGE = 2.0        # a car's lap over this × its median lap is excluded
 const PIT_EXCESS_MS = 12_000.0   # inferred stop: in-lap + out-lap this much slower than neighbouring laps
@@ -76,6 +81,8 @@ struct LapData
     lead::Vector{Float64}         # 1 if the car led the race at the end of the lap, else 0 (#66)
     stint_cd::Vector{Float64}     # stint/10 minus its mean over the driver's laps (tyre management, #66)
     stint_cm::Vector{Float64}     # stint/10 minus its mean over the car-season's laps
+    era::Vector{Int}              # index into `eras` of the lap's season: refuelling or not (#66)
+    eras::Vector{Symbol}          # eras present, in order: :refuel (1994–2009), :norefuel
     mach_season::Vector{Int}      # season index of each machine level
     race_season::Vector{Int}      # season index of each race
     seasons::Vector{Int}
@@ -213,9 +220,12 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
     for (k, m, s) in zip(comp, mach, s10); sd_[k] += s; nd_[k] += 1; sm_[m] += s; nm_[m] += 1; end
     stint_cd = s10 .- (sd_ ./ max.(nd_, 1))[comp]
     stint_cm = s10 .- (sm_ ./ max.(nm_, 1))[mach]
+    eralab = [s in REFUEL_SEASONS ? :refuel : :norefuel for s in keep.season]
+    eras = [e for e in (:refuel, :norefuel) if e in eralab]
+    era = [findfirst(==(e), eras) for e in eralab]
     return LapData(keep.y, comp, mach,
                    race, keep.frac, keep.frac .- fbar[race], Float64.(keep.stint), agec, posc, keep.lead, stint_cd, stint_cm,
-                   mach_season, race_season, seasons, comps, machs, races, race_n, keep, excl)
+                   era, eras, mach_season, race_season, seasons, comps, machs, races, race_n, keep, excl)
 end
 
 """
@@ -226,7 +236,7 @@ with per-lap mean
 
     μ = γ[race] + δ[race]·(frac - mean frac of the race) + h - (mean h of the race),
     h = a[driver] + sl[driver]·agec + b[machine] + dv[machine]·posc + η[1]·lead
-        + β[1]·s + β[2]·s² + td[driver]·s_d + tm[machine]·s_m,   s = stint/10
+        + β[2e-1]·s + β[2e]·s² + td[driver]·s_d + tm[machine]·s_m,   s = stint/10, e = the lap's era
 
 (stint age in tens of laps, which keeps β's two terms on similar scales; `sl`
 are the drivers' career slopes in % per decade of age and `dv` the cars'
@@ -259,7 +269,8 @@ function lap_h(a, b, β, sl, dv, η, td, tm, d::LapData)
     for j in eachindex(d.y)
         st = d.stint[j] / 10
         h[j] = a[d.comp[j]] + sl[d.comp[j]] * d.agec[j] + b[d.mach[j]] + dv[d.mach[j]] * d.posc[j] +
-               η[1] * d.lead[j] + β[1] * st + β[2] * st^2 + td[d.comp[j]] * d.stint_cd[j] + tm[d.mach[j]] * d.stint_cm[j]
+               η[1] * d.lead[j] + β[2d.era[j] - 1] * st + β[2d.era[j]] * st^2 +
+               td[d.comp[j]] * d.stint_cd[j] + tm[d.mach[j]] * d.stint_cm[j]
         hbar[d.race[j]] += h[j]
     end
     hbar ./= d.race_n
@@ -270,7 +281,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, d)
     N = length(d.y)
     gμ = zeros(N)
-    gγ, gδ, ga, gb, gβ = zeros(length(γ)), zeros(length(δ)), zeros(length(a)), zeros(length(b)), zeros(2)
+    gγ, gδ, ga, gb, gβ = zeros(length(γ)), zeros(length(δ)), zeros(length(a)), zeros(length(b)), zeros(length(β))
     gsl, gdv = zeros(length(sl)), zeros(length(dv))
     gη, gtd, gtm = zeros(length(η)), zeros(length(td)), zeros(length(tm))
     gσ, gπ, gλ, val = 0.0, 0.0, 0.0, 0.0
@@ -290,7 +301,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
         ga[d.comp[j]] += gh; gb[d.mach[j]] += gh
         gsl[d.comp[j]] += gh * d.agec[j]
         gdv[d.mach[j]] += gh * d.posc[j]
-        gβ[1] += gh * st; gβ[2] += gh * st^2
+        gβ[2d.era[j] - 1] += gh * st; gβ[2d.era[j]] += gh * st^2
         gη[1] += gh * d.lead[j]
         gtd[d.comp[j]] += gh * d.stint_cd[j]; gtm[d.mach[j]] += gh * d.stint_cm[j]
     end
@@ -324,7 +335,11 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
   other terms are centred within the race, see `lap_loglik`). Race slopes
   δ ~ N(μ_δ, τ_δ): the change in lap time from the start to the end of a race
   (fuel burn, track evolution), partially pooled.
-- Tyres: β[1]·s + β[2]·s² with s = stint age / 10 laps, in %. With
+- Tyres: β[1]·s + β[2]·s² with s = stint age / 10 laps, in %, one curve per era
+  present (`d.eras`: refuelling 1994–2009, or not; β has 2 entries per era).
+  With refuelling, fuel burn within a stint follows stint age too, so the
+  curve is a within-stint pace change (tyres and fuel), kept out of the driver
+  and car effects (#66). With
   `tyres = false` there are no tyre terms (β = 0): a check of whether they move
   the effects at all.
 - Career slopes (`slopes = true`, #15 in the race model): a linear trend per
@@ -372,9 +387,9 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     τ_δ ~ truncated(Normal(0, 2); lower = 0)
     δ ~ filldist(Normal(μ_δ, τ_δ), length(d.races))
     if tyres
-        β ~ filldist(Normal(0, 1), 2)
+        β ~ filldist(Normal(0, 1), 2length(d.eras))
     else
-        β = zeros(2)
+        β = zeros(2length(d.eras))
     end
     if slopes
         τ_slope ~ truncated(Normal(0, 0.5); lower = 0)
@@ -453,7 +468,8 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
     # size at ~1e-4 and every iteration at maximum tree depth)
     res0 = d.y .- γ0[d.race] .- δ0[d.race] .* d.fracc
     sv = d.stint ./ 10
-    X = tyres ? hcat(sv, sv .^ 2) : zeros(length(sv), 0)
+    X = tyres ? reduce(hcat, [hcat(sv .* (d.era .== e), sv .^ 2 .* (d.era .== e)) for e in eachindex(d.eras)]) :
+        zeros(length(sv), 0)
     β0 = tyres ? (X' * X) \ (X' * res0) : Float64[]
     e0 = res0 .- X * β0
     σ0 = 1.4826 * median(abs.(e0 .- median(e0)))
@@ -465,7 +481,7 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                              μ_δ = mean(δ0), τ_δ = std(δ0) * (0.9 + 0.2 * rand(rng)),
                              δ = δ0 .+ 0.05 .* randn(rng, length(δ0)),
                              a_π = -1.5 + 0.1 * randn(rng), a_λ = 0.1 * randn(rng)),
-                            tyres ? (; β = β0 .+ 0.01 .* randn(rng, 2)) : (;),
+                            tyres ? (; β = β0 .+ 0.01 .* randn(rng, length(β0))) : (;),
                             slopes ? (; τ_slope = 0.1 + 0.1 * rand(rng),
                                         u_slope = 0.1 .* randn(rng, length(d.competitors))) : (;),
                             dev ? (; τ_dev = 0.1 + 0.1 * rand(rng), u_dev = 0.1 .* randn(rng, length(d.machines))) : (;),
@@ -494,7 +510,8 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                          [:σ_comp => (1, nothing), :σ_mach => (1, nothing), :σ => (1, nothing),
                           :a_comp => (length(d.competitors), d.competitors), :b_mach => (length(d.machines), d.machines),
                           :μ_γ => (1, nothing), :γ => (length(d.races), d.races), :μ_δ => (1, nothing),
-                          :τ_δ => (1, nothing), :δ => (length(d.races), d.races), :β => (2, nothing),
+                          :τ_δ => (1, nothing), :δ => (length(d.races), d.races),
+                          :β => (2length(d.eras), [string(e, "_", t) for e in d.eras for t in ("s", "s2")]),
                           :τ_slope => (1, nothing), :u_slope => (length(d.competitors), d.competitors),
                           :τ_dev => (1, nothing), :u_dev => (length(d.machines), d.machines),
                           :η => (1, nothing),

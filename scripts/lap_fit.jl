@@ -154,7 +154,7 @@ end
 println("divergences: ", count(chain[:numerical_error] .> 0))
 flat(A) = reshape(A, ni * nc, :)
 println("\nscalars (mean ± sd):")
-for (j, nm) in enumerate((string.(scal_names)..., (tyres ? ("β_stint", "β_stint²/10") : ())..., (slopes ? ("τ_slope",) : ())...,
+for (j, nm) in enumerate((string.(scal_names)..., (tyres ? Tuple(n for e in d.eras for n in ("β_stint[$e]", "β_stint²/10[$e]")) : ())..., (slopes ? ("τ_slope",) : ())...,
                           (dev ? ("τ_dev",) : ())..., (lead ? ("η_lead",) : ())..., (tyre_mgmt ? ("τ_td", "τ_tm") : ())...))
     v = flat(scal)[:, j]
     println(rpad(nm, 12), round(mean(v); digits = 4), " ± ", round(std(v); digits = 4))
