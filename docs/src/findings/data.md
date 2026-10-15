@@ -57,7 +57,7 @@ Only its shape is identified: it has no constant or linear part</td></tr>
 ## Retirement-model files
 
 ```@raw html
-<p>F1 1950–2019, competing-risks hazards. Effects are on the log-hazard scale:
+<p>F1 1950–2025 (Jolpica API), competing-risks hazards. Effects are on the log-hazard scale:
 +0.5 is a rate 1.65× the average.
 <a class="diomedes-data" data-path="assets/data/retire/manifest.json">manifest.json</a></p>
 <table>
@@ -70,23 +70,25 @@ Only its shape is identified: it has no constant or linear part</td></tr>
 <td><code>id</code>, <code>name</code>; <code>effect</code>, <code>sd</code>: incident-proneness log-hazard relative to the average driver;
 <code>starts</code>, <code>incidents</code>, <code>collisions</code></td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/retire/seasons.csv">seasons.csv</a></td><td>season</td>
-<td><code>mech</code>, <code>incident</code>, <code>collision</code>: modelled retirements per start over a race distance, by cause;
-<code>*_obs</code>: observed rates</td></tr>
+<td><code>mech</code>, <code>incident</code>, <code>collision</code>: the model's season-level rate of retirements per race distance raced, by cause
+(a cumulative hazard; the chance of retiring from that cause over a full distance is 1 − e<sup>−rate</sup>);
+<code>*_obs</code>: observed retirements per race distance raced</td></tr>
 </tbody></table>
 ```
 
 ## Lap-model files
 
 ```@raw html
-<p>F1 2011–2019, clean laps, recorded pit stops. Effects are % of the race's median clean lap.
+<p>F1 1996–2025, clean laps (Ergast to 2019, Jolpica from 2020), pit laps inferred from lap times. Effects are % of the race's median clean lap.
 <a class="diomedes-data" data-path="assets/data/laps/manifest.json">manifest.json</a></p>
 <table>
 <thead><tr><th>File</th><th>One row per</th><th>Columns</th></tr></thead>
 <tbody>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/drivers.csv">drivers.csv</a></td><td>driver</td>
-<td><code>id</code>, <code>name</code>, <code>mean</code>, <code>sd</code>, <code>laps</code></td></tr>
+<td><code>id</code>, <code>name</code>, <code>mean</code>, <code>sd</code>, <code>laps</code>; <code>first_season</code>, <code>last_season</code>;
+<code>slope_mean</code>, <code>slope_sd</code>: career slope, % per decade of age, relative to the average driver</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/cars.csv">cars.csv</a></td><td>car-season</td>
-<td><code>id</code>, <code>mean</code>, <code>sd</code>, <code>laps</code></td></tr>
+<td><code>id</code>, <code>mean</code>, <code>sd</code>, <code>laps</code>; <code>dev_mean</code>, <code>dev_sd</code>: in-season development, % from the season's first round to its last, relative to the field</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv">vs_race_drivers.csv</a></td><td>driver in both models</td>
 <td><code>lap_mean</code>, <code>lap_sd</code>: lap model; <code>race_mean</code>, <code>race_sd</code>: race model (whole career)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv">vs_race_cars.csv</a></td><td>car-season in both models</td>

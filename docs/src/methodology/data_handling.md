@@ -75,8 +75,7 @@ disqualifications Jolpica codes and the dump doesn't). Two things change from
   over the full distance gives an exact gap, not an interval.
 - **Retirement causes are mostly "Retired".** The retirement model takes these
   as retirements of unknown cause, through the total hazard with no split
-  between causes ([A competing-risks model of retirements](@ref)). Its refit on
-  Jolpica data is still to run; the retirement pages show the 1950–2019 fit.
+  between causes ([A competing-risks model of retirements](@ref)).
 
 The 1950–2025 race refit also adds retirements from 1996 as partial gaps,
 measured 3 laps before the car stopped, from lap times (Ergast to 2019, Jolpica

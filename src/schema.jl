@@ -34,7 +34,7 @@ const RESULT_SCHEMA = [
     :entrant       => Union{Missing,String},    # rallying: entering team (works or privateer); missing in F1
     :time_ms       => Union{Missing,Float64},   # official stage/race time; missing if not timed
     :suspended_ms  => Union{Missing,Float64},   # red-flag suspension included in time_ms (per race); missing = unknown
-    :own_time_ms   => Union{Missing,Float64},   # a car not on the lead lap: its elapsed time over the laps it completed, if the source has it
+    :own_time_ms   => Union{Missing,Float64},   # a car that didn't finish on the lead lap (lapped, retired, disqualified): its elapsed time over the laps it completed, if the source has it
     :position      => Union{Missing,Int},
     :laps          => Union{Missing,Int},       # laps completed (circuit racing); missing for rally stages
     :status        => String,                   # source status text ("Finished", "+1 Lap", "DNF", ...)

@@ -63,14 +63,42 @@ function jolpica_season(src::JolpicaF1, season::Integer)
             g.suspended_ms .= missing
             continue
         end
+        timed = most_laps(g, timed)               # the winner as in prepare_gaps (see gap_model.jl)
         w = timed[argmin(g.time_ms[timed])]
-        g.suspended_ms .= suspect_suspension(g.time_ms[w], g.laps[w], fastest[eid]) ?
-            suspension_ms(jolpica_laps(src, season, first(g.round))) : 0.0
+        # From 2023 "Lapped" also covers classified cars that stopped before the flag
+        # (Norris, Austria 2024: 64 of 71 laps). A lapped car crosses the line after
+        # the winner, so its own time is at least the winner's; one below it stopped
+        # early and is a retirement (cause not given), not a lapped finisher (#55).
+        for i in eachindex(g.status)
+            if is_lapped_status(g.status[i]) && !ismissing(g.own_time_ms[i]) && g.own_time_ms[i] < g.time_ms[w]
+                g.status[i] = "Retired"
+            end
+        end
+        g.suspended_ms .= if suspect_suspension(g.time_ms[w], g.laps[w], fastest[eid])
+            car_laps = jolpica_laps(src, season, first(g.round))
+            s = suspension_ms(values(car_laps))
+            # Jolpica's lap times drop whole hours ("22:30.5" for a 1:22:30.5 lap with
+            # a red flag in it: Bahrain 2020, Japan 2022). The winner's official time
+            # minus its laps' sum recovers them; complete laps otherwise sum to it exactly.
+            wl = get(car_laps, g.competitor_id[w], nothing)
+            s + (wl === nothing || ismissing(g.laps[w]) || length(wl) != g.laps[w] ? 0.0 : lap_hours_lost(g.time_ms[w], wl))
+        else
+            0.0
+        end
     end
     return rows
 end
 
-# Lap times of one race, per car (vectors ordered by lap).
+"""
+    lap_hours_lost(official_ms, laps_ms) -> Float64
+
+Whole hours missing from a car's lap times (ms), from its official race time:
+Jolpica's lap time strings drop the hours of a lap with a red flag in it
+("22:30.5" for 1:22:30.5). Complete lap times otherwise sum to the official time.
+"""
+lap_hours_lost(official_ms, laps_ms) = 3_600_000 * max(round((official_ms - sum(laps_ms)) / 3_600_000), 0)
+
+# Lap times of one race, per car (driver id => vector ordered by lap).
 function jolpica_laps(src::JolpicaF1, season, round)
     laps = Dict{String,Vector{Tuple{Int,Float64}}}()
     offset, total = 0, 1
@@ -85,7 +113,7 @@ function jolpica_laps(src::JolpicaF1, season, round)
         end
         offset += JOLPICA_PAGE
     end
-    return [last.(sort(v)) for v in values(laps)]
+    return Dict(k => last.(sort(v)) for (k, v) in laps)
 end
 
 function jolpica_row(race, r)
@@ -111,14 +139,18 @@ function jolpica_row(race, r)
         class = missing,
         manufacturer = missing,
         entrant = missing,
-        # Ergast convention: a race time only for cars on the lead lap. From 2023
-        # Jolpica also gives lapped cars their own time over fewer laps, which read
-        # as a lead-lap time would put them a fraction of a percent behind (#55); it
-        # goes to own_time_ms, from which prepare_gaps gets their exact gap.
-        time_ms = time === nothing || is_lapped_status(String(r.status)) ? missing :
+        # Ergast convention: a race time only for cars that finished on the lead lap.
+        # From 2023 Jolpica also times every other car over the laps it completed:
+        # lapped cars at the flag, retired and disqualified cars when they stopped.
+        # That is the car's own elapsed time, not a race time (read as one, a
+        # retirement beat the winner's time and became the race's reference, #55), so
+        # it goes to own_time_ms. prepare_gaps uses it for lapped cars' exact gaps; for
+        # retirements it equals the cumulative lap time at the last lap (checked on
+        # 2023-25), which partial_gaps already uses.
+        time_ms = time === nothing || String(r.status) != "Finished" ? missing :
                   maybefloat(get(time, :millis, nothing)),
-        own_time_ms = time !== nothing && is_lapped_status(String(r.status)) ?
-                      maybefloat(get(time, :millis, nothing)) : missing,
+        own_time_ms = time === nothing || String(r.status) == "Finished" ? missing :
+                      maybefloat(get(time, :millis, nothing)),
         suspended_ms = missing,                # filled per race in jolpica_season
         position = classified ? maybeint(r.position) : missing,
         laps = maybeint(get(r, :laps, nothing)),
