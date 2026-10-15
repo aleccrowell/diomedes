@@ -82,7 +82,7 @@ if action == "chain"
         else
             blocks = filter(f -> startswith(f, old_tag * "_block"), readdir("output"))
             last_block = argmax(f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]), blocks)
-            st = only(Turing.loadstate(rehash_chain!(deserialize(joinpath("output", last_block)))))
+            st = (b = Diomedes.read_block(joinpath("output", last_block)); (; Minv = b.Minv, ϵ = b.ϵ))
         end
         od = src_data(old_seasons)
         d_old = prepare_laps(od.laps, od.res; pits, pit_stops = od.pits)
@@ -94,7 +94,7 @@ if action == "chain"
                                   progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, δ, tune_step)
     # adapted metric and step size, for warm starts of later fits (see above)
     try
-        serialize("output/$(tag)_chain$(k)_warmstate.jls", Diomedes.lap_adapted(only(Turing.loadstate(chain))))
+        serialize("output/$(tag)_chain$(k)_warmstate.jls", Diomedes.checkpoint_adapted("output/$(tag)_chain$(k)"))
     catch err
         @warn "could not save the warm-start state" err
     end
