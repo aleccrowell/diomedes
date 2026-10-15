@@ -20,6 +20,7 @@ module Diomedes
 
 using ADTypes: AutoReverseDiff
 import AdvancedHMC
+using Accessors: @set
 using CSV
 using ChainRulesCore: ChainRulesCore, NoTangent
 using DataFrames
