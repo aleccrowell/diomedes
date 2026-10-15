@@ -1180,6 +1180,43 @@ end
             @test LDP.logdensity_and_gradient(rdm, x6)[2] ≈ LDP.logdensity_and_gradient(fdm, x6)[2]
             @test length(rg.β.range) == 4
         end
+        # starts (#66): lap 1 with the grid slot; pit-lane starts (grid 0) left out
+        rows7 = copy(rows3); rows7.grid = Union{Missing,Int}[c == "e" ? 0 : findfirst(==(c), ["a", "b", "c", "e"]) for c in rows7.competitor_id]
+        d7 = prepare_laps(lt5, rows7; pits = :inferred)
+        @test length(d7.s_y) == 4 * 3 && all(!=(findfirst(==("e"), d7.competitors)), d7.s_comp)
+        for r in unique(d7.s_race)
+            @test median(d7.s_y[d7.s_race .== r]) ≈ 0 atol = 1e-12
+        end
+        @test sort(unique(d7.s_grid)) ≈ [0.0, 0.1, 0.2] && isempty(d5.s_y)
+        model7 = lap_effects(d7; starts = true)
+        θ7 = merge(θ, (; γ1 = 0.1 .* randn(rng, nr), τ_sd = 0.3, u_sd = randn(rng, nc), τ_sc = 0.2, u_sc = randn(rng, nm),
+                       g1 = [0.5, -0.1], σ1 = 0.8, a_π1 = -1.0, a_λ1 = 0.5))
+        sdv = 0.3 .* (θ7.u_sd .- mean(θ7.u_sd))
+        b7 = Diomedes.sum_to_zero_by(θ.b_mach, d7.mach_season, Diomedes.lap_mach_counts(d7))
+        scv = 0.2 .* Diomedes.sum_to_zero_by(θ7.u_sc, d7.mach_season, Diomedes.lap_mach_counts(d7))
+        h7 = [a[d7.s_comp[j]] + b7[d7.s_mach[j]] + sdv[d7.s_comp[j]] + scv[d7.s_mach[j]] + 0.5 * d7.s_grid[j] - 0.1 * d7.s_grid[j]^2
+              for j in eachindex(d7.s_y)]
+        h7bar = [mean(h7[d7.s_race .== r]) for r in 1:nr]
+        ll7s = sum(Diomedes.paceloss_logpdf(d7.s_y[j] - (θ7.γ1[d7.s_race[j]] + h7[j] - h7bar[d7.s_race[j]]), 0.8,
+                                            Diomedes.logistic(-1.0), exp(0.5)) for j in eachindex(d7.s_y))
+        @test Turing.DynamicPPL.loglikelihood(model7, θ7) ≈ Turing.DynamicPPL.loglikelihood(lap_effects(d7), θ) + ll7s
+        let m = lap_effects(d7; slopes = true, starts = true)
+            rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            x7 = 0.5 .* randn(rng, LDP.dimension(rdm))
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_sd, :τ_sc, :σ1)
+                haskey(rg, k) && (x7[rg[k].range] .= 0.2 + rand(rng))
+            end
+            @test LDP.logdensity_and_gradient(rdm, x7)[2] ≈ LDP.logdensity_and_gradient(fdm, x7)[2]
+            @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), x7).tape) < 1000
+            let o = 0
+                for (name, (n, _)) in Diomedes.lap_layout(d7; slopes = true, starts = true)
+                    @test rg[name].range == (o + 1):(o + n)
+                    o += n
+                end
+                @test o == LDP.dimension(rdm)
+            end
+        end
         ws5 = lap_warm_start(fake, d_old, d5; slopes_new = true, dev_new = true, lead_new = true, tyre_mgmt_new = true)
         r5 = NamedTuple(getfield(LDF(model5), :_varname_ranges))
         @test length(ws5.Minv) == LDP.dimension(LDF(model5))

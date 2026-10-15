@@ -36,6 +36,7 @@ const RESULT_SCHEMA = [
     :suspended_ms  => Union{Missing,Float64},   # red-flag suspension included in time_ms (per race); missing = unknown
     :own_time_ms   => Union{Missing,Float64},   # a car that didn't finish on the lead lap (lapped, retired, disqualified): its elapsed time over the laps it completed, if the source has it
     :position      => Union{Missing,Int},
+    :grid          => Union{Missing,Int},       # starting grid slot (circuit racing); 0 = pit lane; missing if unknown
     :laps          => Union{Missing,Int},       # laps completed (circuit racing); missing for rally stages
     :status        => String,                   # source status text ("Finished", "+1 Lap", "DNF", ...)
     :classified    => Bool,                     # counted as a finisher by the series

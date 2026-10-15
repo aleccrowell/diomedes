@@ -55,6 +55,7 @@ function fetch_results(src::ErgastCSV, seasons::AbstractVector{<:Integer})
         suspended_ms = Vector{Union{Missing,Float64}}([get(susp, id, missing) for id in df.raceId]),
         own_time_ms = Vector{Union{Missing,Float64}}(missing, nrow(df)),
         position = Vector{Union{Missing,Int}}(maybeint.(df.position)),
+        grid = Vector{Union{Missing,Int}}(maybeint.(df.grid)),
         laps = Vector{Union{Missing,Int}}(maybeint.(df.laps)),
         status = String.(df.status),
         classified = .!ismissing.(df.position),

@@ -153,6 +153,7 @@ function jolpica_row(race, r)
                       maybefloat(get(time, :millis, nothing)),
         suspended_ms = missing,                # filled per race in jolpica_season
         position = classified ? maybeint(r.position) : missing,
+        grid = maybeint(get(r, :grid, nothing)),
         laps = maybeint(get(r, :laps, nothing)),
         status = String(r.status),
         classified,
