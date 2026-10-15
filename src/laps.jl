@@ -74,6 +74,8 @@ struct LapData
     agec::Vector{Float64}         # season age minus the driver's mean age over their laps, decades
     posc::Vector{Float64}         # race's season position (0 first round … 1 last) minus its car's mean
     lead::Vector{Float64}         # 1 if the car led the race at the end of the lap, else 0 (#66)
+    stint_cd::Vector{Float64}     # stint/10 minus its mean over the driver's laps (tyre management, #66)
+    stint_cm::Vector{Float64}     # stint/10 minus its mean over the car-season's laps
     mach_season::Vector{Int}      # season index of each machine level
     race_season::Vector{Int}      # season index of each race
     seasons::Vector{Int}
@@ -203,9 +205,17 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
     fbar = zeros(length(races))
     for (r, f) in zip(race, keep.frac); fbar[r] += f; end
     fbar ./= race_n
+    # stint age centred per driver and per car-season (tyre-management slopes, #66):
+    # uncentred, a driver's slope would also shift its level (mean stint ≈ 12 laps)
+    # and trade off against its effect, as an uncentred age did for career slopes
+    s10 = keep.stint ./ 10
+    sd_, nd_ = zeros(length(comps)), zeros(length(comps)); sm_, nm_ = zeros(length(machs)), zeros(length(machs))
+    for (k, m, s) in zip(comp, mach, s10); sd_[k] += s; nd_[k] += 1; sm_[m] += s; nm_[m] += 1; end
+    stint_cd = s10 .- (sd_ ./ max.(nd_, 1))[comp]
+    stint_cm = s10 .- (sm_ ./ max.(nm_, 1))[mach]
     return LapData(keep.y, comp, mach,
-                   race, keep.frac, keep.frac .- fbar[race], Float64.(keep.stint), agec, posc, keep.lead, mach_season, race_season,
-                   seasons, comps, machs, races, race_n, keep, excl)
+                   race, keep.frac, keep.frac .- fbar[race], Float64.(keep.stint), agec, posc, keep.lead, stint_cd, stint_cm,
+                   mach_season, race_season, seasons, comps, machs, races, race_n, keep, excl)
 end
 
 """
@@ -216,13 +226,14 @@ with per-lap mean
 
     μ = γ[race] + δ[race]·(frac - mean frac of the race) + h - (mean h of the race),
     h = a[driver] + sl[driver]·agec + b[machine] + dv[machine]·posc + η[1]·lead
-        + (β[1] + td[driver] + tm[machine])·s + β[2]·s²,   s = stint/10
+        + β[1]·s + β[2]·s² + td[driver]·s_d + tm[machine]·s_m,   s = stint/10
 
 (stint age in tens of laps, which keeps β's two terms on similar scales; `sl`
 are the drivers' career slopes in % per decade of age and `dv` the cars'
 in-season development trends in % per season; η the lead-lap effect in %; `td`
 and `tm` the drivers' and cars' deviations from the shared tyre slope, in % per
-10 laps of stint age; see `lap_effects`). As in
+10 laps of stint age, on s_d and s_m: s centred on the driver's and on the
+car-season's mean; see `lap_effects`). As in
 the race-time model, centring within each race makes γ the race's mean lap, so
 the intercepts are not correlated with the slopes and effects: with ~1,000 laps
 per race the uncentred form had near-degenerate directions that kept NUTS at
@@ -248,7 +259,7 @@ function lap_h(a, b, β, sl, dv, η, td, tm, d::LapData)
     for j in eachindex(d.y)
         st = d.stint[j] / 10
         h[j] = a[d.comp[j]] + sl[d.comp[j]] * d.agec[j] + b[d.mach[j]] + dv[d.mach[j]] * d.posc[j] +
-               η[1] * d.lead[j] + (β[1] + td[d.comp[j]] + tm[d.mach[j]]) * st + β[2] * st^2
+               η[1] * d.lead[j] + β[1] * st + β[2] * st^2 + td[d.comp[j]] * d.stint_cd[j] + tm[d.mach[j]] * d.stint_cm[j]
         hbar[d.race[j]] += h[j]
     end
     hbar ./= d.race_n
@@ -281,7 +292,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
         gdv[d.mach[j]] += gh * d.posc[j]
         gβ[1] += gh * st; gβ[2] += gh * st^2
         gη[1] += gh * d.lead[j]
-        gtd[d.comp[j]] += gh * st; gtm[d.mach[j]] += gh * st
+        gtd[d.comp[j]] += gh * d.stint_cd[j]; gtm[d.mach[j]] += gh * d.stint_cm[j]
     end
     pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* gδ, Δ .* ga, Δ .* gb, Δ .* gβ, Δ .* gsl, Δ .* gdv, Δ .* gη, Δ .* gtd, Δ .* gtm,
                    Δ * gσ, Δ * gπ, Δ * gλ, NoTangent())
@@ -337,9 +348,10 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
   coincide; with the driver and car effects in the model it is the within-driver
   difference between leading and not. η ~ N(0, 1).
 - Tyre management (`tyre_mgmt = true`, #66): driver and car-season deviations
-  from the shared tyre slope, (td[driver] + tm[machine])·s. Centred as the career
-  slopes (drivers) and the development trends (cars within season), so they
-  don't absorb the shared slope β[1]: td = τ_td·(u - mean u),
+  from the shared tyre slope, td[driver]·s_d + tm[machine]·s_m, with the stint
+  age s centred on the driver's (s_d) and the car-season's (s_m) mean, so a slope
+  doesn't also move the level (as agec for the career slopes). Centred across
+  drivers and within season, so they don't absorb the shared slope β[1]: td = τ_td·(u - mean u),
   tm = τ_tm·(u - season mean u), u ~ N(0, 1), τ ~ half-N(0, 0.5) in % per 10
   laps. Without compound data they mix tyre management with compound choice.
 - Noise: pace + loss (`paceloss_logpdf`) with one σ, incident probability π

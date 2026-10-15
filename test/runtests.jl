@@ -1093,7 +1093,11 @@ end
         θ5 = merge(θ4, (; η = [0.4], τ_td = 0.2, u_td = randn(rng, nc), τ_tm = 0.3, u_tm = randn(rng, nm3)))
         tdv = 0.2 .* (θ5.u_td .- mean(θ5.u_td))
         tmv = 0.3 .* Diomedes.sum_to_zero_by(θ5.u_tm, d5.mach_season, Diomedes.lap_mach_counts(d5))
-        h5 = h4 .+ [0.4 * d5.lead[j] + (tdv[d5.comp[j]] + tmv[d5.mach[j]]) * d5.stint[j] / 10 for j in eachindex(d5.y)]
+        s10 = d5.stint ./ 10
+        scd = s10 .- [mean(s10[d5.comp .== d5.comp[j]]) for j in eachindex(d5.y)]
+        scm = s10 .- [mean(s10[d5.mach .== d5.mach[j]]) for j in eachindex(d5.y)]
+        @test d5.stint_cd ≈ scd && d5.stint_cm ≈ scm
+        h5 = h4 .+ [0.4 * d5.lead[j] + tdv[d5.comp[j]] * scd[j] + tmv[d5.mach[j]] * scm[j] for j in eachindex(d5.y)]
         h5bar = [mean(h5[d5.race .== r]) for r in 1:nr]
         ll5 = sum(Diomedes.paceloss_logpdf(d5.y[j] - (θ.γ[d5.race[j]] + θ.δ[d5.race[j]] * (d5.frac[j] - fbar[d5.race[j]]) +
                                                        h5[j] - h5bar[d5.race[j]]),
