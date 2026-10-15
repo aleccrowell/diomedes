@@ -1,59 +1,61 @@
 {
     "model": "pl_dur_rw_kappa_age_big_slope_dev",
     "fit": "gap_jolpica1950-2025+partial_pl_dur_rw_kappa_age_big_slope_dev",
-    "chains": 2,
+    "chains": 4,
     "draws_per_chain": 1000,
     "chains_fitted": 4,
     "chains_used": [
+        1,
         2,
-        3
+        3,
+        4
     ],
     "data": "F1 1950–2025, Jolpica API, all classified finishers (lapped as intervals, or at exact gaps from their own times from 2023), plus retirements from 1996 as partial gaps",
     "rows": {
-        "timed": 7906,
-        "lapped": 7200,
-        "lapped_exact": 235,
-        "partial": 1699
+        "timed": 7859,
+        "lapped": 7185,
+        "lapped_exact": 297,
+        "partial": 1722
     },
     "convergence": {
-        "max_rhat": 1.018,
-        "min_ess": 272.6,
-        "divergences": 0,
+        "max_rhat": 1.011,
+        "min_ess": 223.6,
+        "divergences": 3,
         "groups": {
             "cars": {
-                "max_rhat": 1.007,
-                "min_ess": 846.6,
-                "worst": "team_lotus_1960"
+                "max_rhat": 1.005,
+                "min_ess": 1589.6,
+                "worst": "ferrari_1960"
             },
             "age": {
                 "max_rhat": 1.003,
-                "min_ess": 1302.5,
-                "worst": "age 20"
+                "min_ess": 2604.2,
+                "worst": "age 48"
             },
             "races": {
-                "max_rhat": 1.018,
-                "min_ess": 279.8,
-                "worst": "π f1/1954-04/race"
+                "max_rhat": 1.009,
+                "min_ess": 303.8,
+                "worst": "π f1/1991-09/race"
             },
             "scalars": {
-                "max_rhat": 1.013,
-                "min_ess": 272.6,
+                "max_rhat": 1.011,
+                "min_ess": 223.6,
                 "worst": "a_π"
             },
             "slopes": {
-                "max_rhat": 1.013,
-                "min_ess": 633,
-                "worst": "alonso"
+                "max_rhat": 1.008,
+                "min_ess": 1734,
+                "worst": "hamilton"
             },
             "dev": {
-                "max_rhat": 1.013,
-                "min_ess": 2431.9,
-                "worst": "tyrrell_1991"
+                "max_rhat": 1.008,
+                "min_ess": 4316.3,
+                "worst": "minardi_1996"
             },
             "drivers": {
-                "max_rhat": 1.012,
-                "min_ess": 458,
-                "worst": "ricciardo"
+                "max_rhat": 1.005,
+                "min_ess": 830.1,
+                "worst": "vettel"
             }
         }
     },
@@ -62,66 +64,33 @@
             "label": "A",
             "chains": [
                 1,
+                2,
+                3,
                 4
             ],
-            "draws": 2000,
-            "kept": false,
-            "mean_logjoint": -28593,
-            "mean_loglikelihood": -21274.2,
-            "loss": {
-                "sigma": 0.4884,
-                "pi_base": 0.5456,
-                "lambda_base": 1.5552,
-                "rho": 0.0649,
-                "lambda_big": 13.9594
-            },
-            "convergence": {
-                "max_rhat": 1.072,
-                "min_ess": 26.5
-            }
-        },
-        {
-            "label": "B",
-            "chains": [
-                2,
-                3
-            ],
-            "draws": 2000,
+            "draws": 4000,
             "kept": true,
-            "mean_logjoint": -28438.6,
-            "mean_loglikelihood": -21128.5,
+            "mean_logjoint": -27431.9,
+            "mean_loglikelihood": -20135.8,
             "loss": {
-                "sigma": 0.4671,
-                "pi_base": 0.5161,
-                "lambda_base": 1.9485,
-                "rho": 0.0288,
-                "lambda_big": 15.4848
+                "sigma": 0.4078,
+                "pi_base": 0.634,
+                "lambda_base": 1.5797,
+                "rho": 0.0229,
+                "lambda_big": 14.2604
             },
             "convergence": {
-                "max_rhat": 1.018,
-                "min_ess": 272.6
+                "max_rhat": 1.011,
+                "min_ess": 223.6
             }
         }
     ],
     "kept_modes": [
-        "B"
+        "A"
     ],
     "effects_by_mode": [
-        {
-            "modes": "B vs A",
-            "drivers": {
-                "corr": 0.9995,
-                "max_diff": 0.161,
-                "max_diff_sd": 0.3
-            },
-            "cars": {
-                "corr": 0.9996,
-                "max_diff": 0.168,
-                "max_diff_sd": 0.33
-            }
-        }
     ],
     "exported_by": "scripts/export_site.jl race",
-    "export_commit": "fc7ed1f",
-    "date": "2026-10-13"
+    "export_commit": "6d4d329",
+    "date": "2026-10-14"
 }
