@@ -920,12 +920,24 @@ end
         @test size(ch[:m]) == (40, 1)
         probe = readlines(joinpath(dir, "t_steptune.txt"))
         @test startswith(probe[1], "factor") && startswith(probe[end], "chosen")
-        ϵ1 = Diomedes.step_size(only(Turing.loadstate(Diomedes.rehash_chain!(deserialize(joinpath(dir, "t_block1.jls"))))))
-        ϵ2 = Diomedes.step_size(only(Turing.loadstate(Diomedes.rehash_chain!(deserialize(joinpath(dir, "t_block2.jls"))))))
-        @test ϵ2 == parse(Float64, split(probe[end], "\t")[2]) && ϵ2 >= ϵ1
+        b1, b2 = Diomedes.read_block(joinpath(dir, "t_block1.jls")), Diomedes.read_block(joinpath(dir, "t_block2.jls"))
+        @test b2.ϵ == parse(Float64, split(probe[end], "\t")[2]) && b2.ϵ >= b1.ϵ && b2.Minv == b1.Minv
+        @test Diomedes.checkpoint_adapted(joinpath(dir, "t")) == (; Minv = b2.Minv, ϵ = b2.ϵ)
+        # blocks hold no sampler state (it embeds the model and its data, #66)
+        @test !occursin("TuringState", String(read(joinpath(dir, "t_block1.jls")))) &&
+              !occursin("HMCState", String(read(joinpath(dir, "t_block2.jls"))))
+        # a run resumed after block 1 gives the same draws as one run
+        dir2 = mktempdir()
+        cp(joinpath(dir, "t_block1.jls"), joinpath(dir2, "t_block1.jls"))
+        ch2 = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir2, "t");
+                                             n_samples = 40, n_adapts = 100, block = 20, tune_step = true)
+        @test vec(ch2[:m]) == vec(ch[:m])
         # with_step_size replaces only the step size
-        st = only(Turing.loadstate(Diomedes.rehash_chain!(deserialize(joinpath(dir, "t_block1.jls")))))
-        @test Diomedes.step_size(Diomedes.with_step_size(st, 0.123)) == 0.123 && Diomedes.step_size(st) == ϵ1
+        st = only(Turing.loadstate(Diomedes.run_nuts(model, [Turing.InitFromParams((; m = 0.0, s = 1.0))]; n_samples = 5,
+                                                      n_chains = 1, ensemble = Turing.MCMCSerial(),
+                                                      sampler = Turing.NUTS(10, 0.8), rng = Xoshiro(1), progress = false,
+                                                      progress_log = nothing, log_every = 100, save_state = true)))
+        @test Diomedes.step_size(Diomedes.with_step_size(st, 0.123)) == 0.123
     end
 
     @testset "lap-time model (#12)" begin
