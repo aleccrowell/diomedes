@@ -7,7 +7,7 @@
 # Run several copies at once (one per core) to see how much they slow each other
 # (shared memory bandwidth) against one copy alone.
 
-using Diomedes, Turing, Statistics, Printf, Random
+using Diomedes, Turing, Statistics, Printf, Random, DataFrames
 const DynamicPPL = Turing.DynamicPPL
 const LogDensityProblems = Turing.LogDensityProblems
 

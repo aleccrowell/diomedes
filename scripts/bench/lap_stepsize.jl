@@ -9,7 +9,7 @@
 # the target δ, so running a few ϵ at once shows which δ keeps the tree depth
 # below a doubling. One copy per core.
 
-using Diomedes, Turing, AdvancedHMC, Serialization, Statistics, Printf, Random
+using Diomedes, Turing, AdvancedHMC, Serialization, Statistics, Printf, Random, DataFrames
 const DynamicPPL = Turing.DynamicPPL
 
 ϵ = parse(Float64, ARGS[1])
