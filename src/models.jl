@@ -212,90 +212,161 @@ with_step_size(st, ϵ) = hasproperty(st, :kernel) ? (@set st.kernel.τ.integrato
                         (@set st.κ.τ.integrator.ϵ = Float64(ϵ))
 
 """
-    tune_step_size(model, state, sampler, δ; factors = (1.15, 1.3, 1.45, 1.6), iters = 15, seed = 1,
-                   external = false) -> (state, ϵ, probe)
+    fixed_nuts(Minv, ϵ)
 
-Raise the step size of an adapted sampler `state` to the largest of
-`ϵ₀ · factors` whose mean acceptance over `iters` iterations (adaptation off,
-from `state`) is at least `δ` with no divergences, stopping at the first factor
-that fails; keeps ϵ₀ if none passes. Stan-style warm-up ends on a step size
-whose acceptance in sampling is above the target (0.875 for δ = 0.8 on the
+NUTS (AdvancedHMC, via `externalsampler`, uncompiled ReverseDiff) with a fixed
+diagonal inverse metric `Minv` and step size `ϵ`: no adaptation. The sampler of
+every block after the first in `run_nuts_checkpointed`.
+"""
+function fixed_nuts(Minv::AbstractVector, ϵ::Real)
+    metric = AdvancedHMC.DiagEuclideanMetric(Vector{Float64}(Minv))
+    κ = AdvancedHMC.HMCKernel(AdvancedHMC.Trajectory{AdvancedHMC.MultinomialTS}(AdvancedHMC.Leapfrog(Float64(ϵ)),
+                                                                               AdvancedHMC.GeneralisedNoUTurn()))
+    return externalsampler(AdvancedHMC.HMCSampler(κ, metric, AdvancedHMC.NoAdaptation()); adtype = gap_sampler().adtype)
+end
+
+# `n` draws from `last` (a chain's final draw) with a fixed metric and step size. The
+# sampler's first transition is its starting point, a repeat of `last`'s, so one
+# extra iteration is drawn and the first dropped.
+function draws_from(model, last, Minv, ϵ, n; rng)
+    c = run_nuts(model, [InitFromParams(last, Turing.FlexiChains.niters(last), 1)]; n_samples = n + 1, n_chains = 1,
+                 ensemble = MCMCSerial(), sampler = fixed_nuts(Minv, ϵ), rng, progress = false, progress_log = nothing,
+                 log_every = 100, n_adapts = 0)
+    return c[iter = 2:(n + 1)]
+end
+
+# A copy of a chain without the sampler state, which would embed the model and its data
+# (a later change to the data's type would then make the file unreadable).
+strip_state(ch::Turing.FlexiChains.FlexiChain{T}) where {T} =
+    Turing.FlexiChains.FlexiChain{T}(Turing.FlexiChains.niters(ch), Turing.FlexiChains.nchains(ch), ch._data; structures = ch._structures,
+                              iter_indices = collect(Turing.FlexiChains.iter_indices(ch)),
+                              chain_indices = collect(Turing.FlexiChains.chain_indices(ch)),
+                              sampling_time = Turing.FlexiChains.sampling_time(ch),
+                              last_sampler_state = fill(missing, Turing.FlexiChains.nchains(ch)))
+
+"""
+    read_block(file) -> (; chain, Minv, ϵ)
+
+A block saved by `run_nuts_checkpointed`: its draws and the metric and step size
+to continue with. Reads blocks of the earlier format too (a chain carrying the
+sampler state), as long as the types the state embeds haven't changed.
+"""
+function read_block(file::AbstractString)
+    x = deserialize(file)
+    x isa NamedTuple && return (; chain = rehash_chain!(x.chain), Minv = x.Minv, ϵ = x.ϵ)
+    ch = rehash_chain!(x)
+    ad = lap_adapted(only(Turing.loadstate(ch)))
+    return (; chain = ch, Minv = ad.Minv, ϵ = ad.ϵ)
+end
+
+"""
+    checkpoint_adapted(path) -> (; Minv, ϵ)
+
+The metric and step size in the last saved block of a `run_nuts_checkpointed` run
+(e.g. for a later warm start).
+"""
+function checkpoint_adapted(path::AbstractString)
+    dir, base = dirname(path), basename(path) * "_block"
+    files = filter(f -> startswith(f, base) && endswith(f, ".jls"), readdir(isempty(dir) ? "." : dir))
+    isempty(files) && throw(ArgumentError("no saved blocks for $path"))
+    last = argmax(f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]), files)
+    b = read_block(joinpath(dir, last))
+    return (; Minv = b.Minv, ϵ = b.ϵ)
+end
+
+"""
+    tune_step_size(model, last, Minv, ϵ0, δ; factors = (1.15, 1.3, 1.45, 1.6), iters = 15, seed = 1)
+        -> (ϵ, probe)
+
+Raise an adapted step size `ϵ0` to the largest of `ϵ0 · factors` whose mean
+acceptance over `iters` draws (metric `Minv`, no adaptation, from the chain
+`last`'s final draw) is at least `δ` with no divergences, stopping at the first
+factor that fails; keeps ϵ0 if none passes. Stan-style warm-up ends on a step
+size whose acceptance in sampling is above the target (0.875 for δ = 0.8 on the
 1996–2025 lap fit); a step size that still meets δ can halve the leapfrog steps
 per draw at a tree-depth boundary (#62). The probe draws are discarded. `probe`
 lists (factor, step size, acceptance, tree depth, divergences).
 """
-function tune_step_size(model, state, sampler, δ; factors = (1.15, 1.3, 1.45, 1.6), iters::Int = 15, seed::Int = 1,
-                        external::Bool = false)
-    ϵ0 = step_size(state)
+function tune_step_size(model, last, Minv, ϵ0, δ; factors = (1.15, 1.3, 1.45, 1.6), iters::Int = 15, seed::Int = 1)
     best, probe = ϵ0, Tuple[]
     for (k, f) in enumerate(factors)
-        c = run_nuts(model, nothing; n_samples = iters, n_chains = 1, ensemble = MCMCSerial(), sampler,
-                     rng = Xoshiro(seed + 10_000 + k), progress = false, progress_log = nothing, log_every = 100,
-                     initial_state = with_step_size(state, ϵ0 * f), (external ? (; n_adapts = 0) : (;))...)
+        c = draws_from(model, last, Minv, ϵ0 * f, iters; rng = Xoshiro(seed + 10_000 + k))
         acc, depth, div = mean(c[:acceptance_rate]), mean(c[:tree_depth]), count(c[:numerical_error] .> 0)
         push!(probe, (f, ϵ0 * f, round(acc; digits = 3), round(depth; digits = 2), div))
         (acc >= δ && div == 0) || break
         best = ϵ0 * f
     end
-    return with_step_size(state, best), best, probe
+    return best, probe
 end
 
 """
     run_nuts_checkpointed(model, init, path; n_samples, n_adapts = 500, δ = 0.8, block = 100,
-                          seed = 1, progress_log = nothing, log_every = 100) -> chain
+                          seed = 1, progress_log = nothing, log_every = 100, external = nothing,
+                          tune_step = false) -> chain
 
-One NUTS chain sampled in blocks, each saved to `"\$(path)_block<j>.jls"` with
-the sampler's final state, so a run that is killed can be resumed by calling
-this again: saved blocks are loaded and sampling continues from the last one.
+One NUTS chain sampled in blocks, each saved to `"\$(path)_block<j>.jls"`, so a
+run that is killed can be resumed by calling this again: saved blocks are loaded
+and sampling continues from the last one.
 
 Block 1 holds the `n_adapts` warm-up iterations (discarded) and the first
-`block` draws. Later blocks resume from the saved state (step size and mass
-matrix as adapted) with adaptation off. Block j uses `Xoshiro(seed + j)`, so a
-resumed run gives the same draws as an uninterrupted one. A kill loses at most
-the block in progress (the warm-up, if it is in block 1). The sampler uses
-uncompiled ReverseDiff (see `gap_sampler`). `external`, an AdvancedHMC sampler
-wrapped by `externalsampler` (e.g. `lap_warm_sampler`), replaces Turing's NUTS.
-With `tune_step = true`, the step size is raised after warm-up to the largest
-that still meets the target acceptance (`tune_step_size`, #62); the probe is
-written to `"\$(path)_steptune.txt"`. Returns the blocks concatenated.
+`block` draws, sampled with Turing's NUTS or `external` (an AdvancedHMC sampler
+wrapped by `externalsampler`, e.g. `lap_warm_sampler`). Every later block is
+sampled with `fixed_nuts` at the adapted metric and step size, from the previous
+block's last draw. A block file holds its draws and that metric and step size as
+plain numbers (`read_block`), not the sampler's state: the state embeds the
+model and its data, so a later change to their types made earlier blocks
+unreadable. Block j uses `Xoshiro(seed + j)` and every block after the first is
+sampled the same way whether or not the run was resumed, so a resumed run gives
+the same draws as an uninterrupted one. A kill loses at most the block in
+progress (the warm-up, if it is in block 1). With `tune_step = true`, the step
+size is raised after warm-up to the largest that still meets the target
+acceptance (`tune_step_size`, #62); the probe is written to
+`"\$(path)_steptune.txt"`. Returns the blocks concatenated.
 """
 function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int, n_adapts::Int = 500,
                                δ::Real = 0.8, block::Int = 100, seed::Int = 1,
                                progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
                                external = nothing, tune_step::Bool = false)
     adtype = gap_sampler().adtype
-    chains, state = [], nothing
+    chains = []
+    Minv, ϵ = nothing, nothing
     for j in 1:cld(n_samples, block)
         file = "$(path)_block$(j).jls"
         if isfile(file)
-            ch = rehash_chain!(deserialize(file))
+            b = read_block(file)
+            ch, Minv, ϵ = b.chain, b.Minv, b.ϵ
             progress_log === nothing || (println(progress_log, "block $j: loaded from $file"); flush(progress_log))
         else
             nj = min(block, n_samples - (j - 1) * block)
-            first = state === nothing
-            ch = if external === nothing
-                run_nuts(model, first ? [init] : nothing; n_samples = nj, n_chains = 1, ensemble = MCMCSerial(),
-                         sampler = NUTS(first ? n_adapts : 0, δ; adtype), rng = Xoshiro(seed + j), progress = false,
-                         progress_log, log_every, save_state = true,
-                         (first ? (;) : (; initial_state = state))...)
-            else        # an AdvancedHMC sampler (externalsampler): warm-up run, then trimmed here
-                c = run_nuts(model, first ? [init] : nothing; n_samples = nj + (first ? n_adapts : 0), n_chains = 1,
-                             ensemble = MCMCSerial(), sampler = external, rng = Xoshiro(seed + j), progress = false,
-                             progress_log, log_every, save_state = true, n_adapts = first ? n_adapts : 0,
-                             (first ? (;) : (; initial_state = state))...)
-                first ? c[iter = (n_adapts + 1):(n_adapts + nj)] : c   # (`discard_initial` is not applied to external samplers)
+            if j == 1
+                ch = if external === nothing
+                    run_nuts(model, [init]; n_samples = nj, n_chains = 1, ensemble = MCMCSerial(),
+                             sampler = NUTS(n_adapts, δ; adtype), rng = Xoshiro(seed + j), progress = false,
+                             progress_log, log_every, save_state = true)
+                else        # warm-up run, then trimmed here (`discard_initial` is not applied to external samplers)
+                    c = run_nuts(model, [init]; n_samples = nj + n_adapts, n_chains = 1, ensemble = MCMCSerial(),
+                                 sampler = external, rng = Xoshiro(seed + j), progress = false, progress_log, log_every,
+                                 save_state = true, n_adapts)
+                    c[iter = (n_adapts + 1):(n_adapts + nj)]
+                end
+                ad = lap_adapted(only(Turing.loadstate(ch)))
+                Minv, ϵ = ad.Minv, ad.ϵ
+                ch = strip_state(ch)
+            else
+                ch = draws_from(model, last(chains), Minv, ϵ, nj; rng = Xoshiro(seed + j))
+                ch = strip_state(ch)
+                progress_log === nothing ||
+                    (println(progress_log, "  thread 1: iter $nj/$nj (block $j)"); flush(progress_log))
             end
-            serialize(file * ".tmp", ch)
+            serialize(file * ".tmp", (; chain = ch, Minv, ϵ, format = 2))
             mv(file * ".tmp", file; force = true)      # a kill mid-write leaves no partial block
             progress_log === nothing || (println(progress_log, "block $j: saved $file"); flush(progress_log))
         end
         push!(chains, ch)
-        state = only(Turing.loadstate(ch))
         # after warm-up, once: before block 2 is first sampled (a resumed run whose
         # block 2 exists keeps the step size saved in it)
         if tune_step && j == 1 && cld(n_samples, block) > 1 && !isfile("$(path)_block2.jls")
-            sampler = external === nothing ? NUTS(0, δ; adtype) : external
-            state, ϵ, rows = tune_step_size(model, state, sampler, δ; seed, external = external !== nothing)
+            ϵ, rows = tune_step_size(model, ch, Minv, ϵ, δ; seed)
             open("$(path)_steptune.txt", "w") do io
                 println(io, "factor\tstep_size\tacceptance\ttree_depth\tdivergences")
                 for r in rows; println(io, join(r, "\t")); end
