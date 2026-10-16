@@ -66,8 +66,14 @@ tested separately (see [Retirements and selection bias](@ref)).
 
 The current fits use the Jolpica API, Ergast's successor, which continues the
 same tables past 2019 ([#55](https://github.com/aleccrowell/diomedes/issues/55)). Over 1950–2019 it matches the Ergast dump: the same
-drivers, cars and races, identical lap times, and 17 rows that differ (mostly
-disqualifications Jolpica codes and the dump doesn't). Two things change from
+drivers, cars and races, and 17 rows that differ (mostly disqualifications
+Jolpica codes and the dump doesn't). Its lap times for 1996–2019 match the dump's
+on all but 76 of 472,504 laps, single laps whose times differ, over half of them
+in five races (Australia 2014; Bahrain, Italy and the United States 2018; Germany
+2019). Jolpica also has 16 stray timings, each after a gap in a car's laps and
+with no running position (Vettel, Australia 2014: laps 1–3, retired, then a lap
+26). Each would make its car's laps unusable, so they are dropped: a car keeps its
+laps up to its first gap. Two things change from
 2023:
 
 - **Lapped cars have their own time.** Jolpica records "Lapped" with no race
@@ -116,7 +122,8 @@ incident on about 15% of stages ([#10](https://github.com/aleccrowell/diomedes/i
 
 ## Lap times
 
-Ergast lap times (1996–) and pit stops (2011–) feed the lap-time model and the
-retirement selection check. Pit stops before 2011 are inferred from lap times
+Lap times (1996–) and pit stops (2011–) feed the lap-time model and the
+retirement selection check. They come from Jolpica, like the results; the lap fits
+published so far read 1996–2019 from the Ergast dump. Pit stops before 2011 are inferred from lap times
 ([`infer_pit_stops`](@ref)). Over 2011–2019, the inferred stops give the same
 effects as the recorded ones (driver correlation 0.998) ([#12](https://github.com/aleccrowell/diomedes/issues/12)).

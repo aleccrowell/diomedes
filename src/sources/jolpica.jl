@@ -184,7 +184,10 @@ end
 Lap times (`LAP_SCHEMA`) from Jolpica's laps endpoint, which has them from 1996:
 about 11 paged requests per race (100 timings per page), cached. Ids match
 `fetch_results(src, …)` and `ErgastCSV`, so seasons from the two sources can be
-combined. Races without lap data are skipped.
+combined. Races without lap data are skipped. A car's laps after the first gap in
+its lap numbers are dropped (`contiguous_laps`): in 1996–2019, 13 cars have a stray
+timing with no running position after their last lap (e.g. Vettel, Australia 2014:
+laps 1–3, retired, then a lap 26), which the Ergast dump doesn't have.
 """
 function fetch_laps(src::JolpicaF1, seasons::AbstractVector{<:Integer})
     out = DataFrame([name => T[] for (name, T) in LAP_SCHEMA])
@@ -198,7 +201,28 @@ function fetch_laps(src::JolpicaF1, seasons::AbstractVector{<:Integer})
         end
     end
     sort!(out, [:season, :event_id, :competitor_id, :lap])
-    return validate_schema(out, LAP_SCHEMA, "laps")
+    return validate_schema(contiguous_laps(out), LAP_SCHEMA, "laps")
+end
+
+"""
+    contiguous_laps(laps) -> DataFrame
+
+`laps` (sorted by event, competitor and lap) with each car's laps after the first
+gap in its lap numbers removed: laps 1–k are kept where lap k + 1 is missing.
+"""
+function contiguous_laps(laps::AbstractDataFrame)
+    keep = trues(nrow(laps))
+    prev_key, expect = nothing, 1
+    for (i, r) in enumerate(eachrow(laps))
+        key = (r.event_id, r.competitor_id)
+        key == prev_key || ((prev_key, expect) = (key, 1))
+        if expect > 0 && r.lap == expect
+            expect += 1
+        else
+            keep[i] = false; expect = 0                 # past a gap: drop the rest
+        end
+    end
+    return laps[keep, :]
 end
 
 """

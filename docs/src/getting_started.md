@@ -57,9 +57,9 @@ API responses are cached under `data/cache/` (override with the
 allows 500 unauthenticated requests per hour, and a full 1950–present history
 needs about 300. The WRC API needs about 300 requests per season.
 
-Lap times and pit stops ([`fetch_laps`](@ref), [`fetch_pit_stops`](@ref)) are
-currently read from an Ergast CSV dump (`lap_times.csv`, 1996–; `pit_stops.csv`,
-2011–).
+Lap times and pit stops ([`fetch_laps`](@ref), [`fetch_pit_stops`](@ref)) come
+from `JolpicaF1()` (lap times 1996–, pit stops 2011–; about 11 requests per race,
+cached) or from an Ergast CSV dump (`lap_times.csv`, `pit_stops.csv`).
 
 ## Tests
 
