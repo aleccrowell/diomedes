@@ -5,7 +5,7 @@
 #   julia --project scripts/selection_check.jl compare [n=4] [n_b]    # residuals and effect shifts
 #                                         (chains 1..n, or lists per fit, e.g. `compare 1,2,3,4 1,2,4`)
 #
-# F1 1996–2019 (lap times exist), model MODEL. Retirements that completed at
+# F1 1996–2019 (lap times exist; results and laps from Jolpica), model MODEL. Retirements that completed at
 # least a quarter of the distance enter as calibrated partial gaps (see
 # src/partial.jl). Both fits use one GapData (finishers + partial rows), so their
 # parameters line up:
@@ -18,7 +18,7 @@
 #      bias (from `calib`): direct evidence of selection on race-day pace;
 #   2. how much driver and car effects move from a to b, in posterior sds, and
 #      whether the moves line up with incident-proneness and unreliability
-#      (output/retire_drivers.csv, retire_cars.csv from scripts/retire_fit.jl).
+#      (output/retire_jolpica1950-2025_{drivers,cars}.csv from scripts/retire_fit.jl).
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics
 using Diomedes: _row_means, season_counts, LossCovariates, draw, model_param_names, sum_to_zero,
@@ -27,11 +27,11 @@ using Diomedes: _row_means, season_counts, LossCovariates, draw, model_param_nam
 const MODEL = "pl_dur_rw_kappa_age_big_slope_dev"
 const SEASONS = 1996:2019
 action = get(ARGS, 1, "compare")
-data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 mkpath("output")
 
-res = fetch_results(ErgastCSV(data_dir), SEASONS)
-cum = ergast_cumulative_laps(data_dir)
+# results and lap times from Jolpica (#55)
+res = fetch_results(JolpicaF1(), SEASONS)
+cum = cumulative_laps(fetch_laps(JolpicaF1(), collect(SEASONS)))
 pg = partial_gaps(res, cum)
 g = prepare_gaps(with_partial_rows(res, pg))
 partial = partial_mask(g)
@@ -199,9 +199,9 @@ CSV.write("output/selection_driver_shifts.csv", dshift)
 CSV.write("output/selection_car_shifts.csv", mshift)
 
 # do the shifts line up with retirement-proneness?
-if isfile("output/retire_drivers.csv")
-    rdv = Dict(r.driver => r.effect for r in eachrow(CSV.read("output/retire_drivers.csv", DataFrame)))
-    rcr = Dict(r.machine => r.effect for r in eachrow(CSV.read("output/retire_cars.csv", DataFrame)))
+if isfile("output/retire_jolpica1950-2025_drivers.csv")
+    rdv = Dict(r.driver => r.effect for r in eachrow(CSV.read("output/retire_jolpica1950-2025_drivers.csv", DataFrame)))
+    rcr = Dict(r.machine => r.effect for r in eachrow(CSV.read("output/retire_jolpica1950-2025_cars.csv", DataFrame)))
     kd = [haskey(rdv, l) for l in dshift.level]
     km = [haskey(rcr, l) for l in mshift.level]
     println("\ncorrelation of shift (b - a) with incident-proneness (drivers): ",

@@ -4,15 +4,14 @@
 #                                                            # rerun after a kill to resume from saved blocks
 #   julia --project scripts/retire_fit.jl combine [n=4]      # combine saved chains 1..n (or a list: 2,3,4), write tables
 #
-# Data: the local Ergast dump (1950–2019) by default; a `jolpica<first>-<last>`
-# argument (anywhere, e.g. jolpica1950-2025) uses the Jolpica API (#55) and names
-# every output retire_jolpica<first>-<last>_… instead of retire_….
+# Data: the Jolpica API (#55), 1950–2025 by default; a `jolpica<first>-<last>`
+# argument (anywhere) sets the seasons. Outputs are named retire_jolpica<first>-<last>_….
 #
 # 1000 draws per chain after 500 warm-up iterations. Run the chains as separate
 # processes (one per core), then `combine`. Writes, under output/:
-#   retire_cars.csv     car-season mechanical reliability (log-hazard effect within season)
-#   retire_drivers.csv  driver incident-proneness (log-hazard effect)
-#   retire_seasons.csv  expected retirements per race distance by cause and season
+#   retire_<data>_cars.csv     car-season mechanical reliability (log-hazard effect within season)
+#   retire_<data>_drivers.csv  driver incident-proneness (log-hazard effect)
+#   retire_<data>_seasons.csv  expected retirements per race distance by cause and season
 # and prints convergence of the identified quantities and the scalar parameters.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics
@@ -20,18 +19,13 @@ using Diomedes: sum_to_zero, sum_to_zero_by, rw_path, retire_counts
 import MCMCDiagnosticTools
 
 jol = something(findfirst(a -> occursin(r"^jolpica\d{4}-\d{4}$", a), ARGS), 0)
-src_arg = jol > 0 ? ARGS[jol] : nothing
+src_arg = jol > 0 ? ARGS[jol] : "jolpica1950-2025"
 args = jol > 0 ? ARGS[setdiff(eachindex(ARGS), jol)] : ARGS
-pre = src_arg === nothing ? "output/retire" : "output/retire_$(src_arg)"
+pre = "output/retire_$(src_arg)"
 action = get(args, 1, "combine")
-data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 chain_path(k) = "$(pre)_chain$(k).jls"
-res = if src_arg === nothing
-    fetch_results(ErgastCSV(data_dir), 1950:2100)
-else
-    m = match(r"^jolpica(\d{4})-(\d{4})$", src_arg)
-    fetch_results(JolpicaF1(), parse(Int, m[1]):parse(Int, m[2]))
-end
+m = match(r"^jolpica(\d{4})-(\d{4})$", src_arg)
+res = fetch_results(JolpicaF1(), parse(Int, m[1]):parse(Int, m[2]))
 d = prepare_retirements(res)
 println(d); flush(stdout)
 mkpath("output")

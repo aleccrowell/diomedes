@@ -431,9 +431,9 @@ end
 
 mode = get(ARGS, 1, "race")
 if mode == "race"
-    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev_fgam"), get(ARGS, 3, "all"))
+    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev"), get(ARGS, 3, "jolpica1950-2025+partial"))
 elseif mode == "retire"
-    export_retire(get(ARGS, 2, "retire"))
+    export_retire(get(ARGS, 2, "retire_jolpica1950-2025"))
 elseif mode == "laps"
     export_laps(get(ARGS, 2, "laps_2011-2019_recorded"))
 elseif mode == "wrc"

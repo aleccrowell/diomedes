@@ -1,10 +1,12 @@
 # Grouped K-fold cross-validation of the gap models (#18).
 #
-#   julia --project scripts/kfold.jl fold <model> <K> <k> [n_samples=1000]
+#   julia --project scripts/kfold.jl fold <model> <K> <k> [n_samples=1000] [data=<mode>]
 #       fit <model> without fold k (one chain) and save the held-out rows'
-#       log-likelihood draws to output/kfold_<model>_K<K>_fold<k>.jls
-#   julia --project scripts/kfold.jl compare <K> <model>...
+#       log-likelihood draws to output/kfold_<data>_<model>_K<K>_fold<k>.jls
+#   julia --project scripts/kfold.jl compare <K> <model>... [data=<mode>]
 #       elpd from all K folds of each model, and paired differences
+#
+# `data`: the data mode (scripts/gap_data.jl; default the published fit's).
 #
 # Folds are the same for every model (fixed seed per K) and stratified within
 # races (see `kfold_folds`). Folds are independent processes, so run several
@@ -12,13 +14,14 @@
 
 using Diomedes, Random, Serialization, Statistics
 
-data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
-g = prepare_gaps(fetch_results(ErgastCSV(data_dir), 1950:2100))
-path(model, K, k) = "output/kfold_$(model)_K$(K)_fold$(k).jls"
+include("gap_data.jl")
+mode, args = data_arg(ARGS)
+_, g = gap_data(mode)
+path(model, K, k) = "output/kfold_$(mode)_$(model)_K$(K)_fold$(k).jls"
 
-if ARGS[1] == "fold"
-    model, K, k = ARGS[2], parse(Int, ARGS[3]), parse(Int, ARGS[4])
-    n_samples = parse(Int, get(ARGS, 5, "1000"))
+if args[1] == "fold"
+    model, K, k = args[2], parse(Int, args[3]), parse(Int, args[4])
+    n_samples = parse(Int, get(args, 5, "1000"))
     folds = kfold_folds(g, K; rng = Xoshiro(2026 + K))
     train = folds .!= k
     gt = subset_gaps(g, train)
@@ -34,11 +37,11 @@ if ARGS[1] == "fold"
     serialize(path(model, K, k), (; test = findall(!, train), ll))
     println("fold $k: $(round(t / 60; digits = 1)) min; held-out elpd $(round(sum(elpd_rows(ll)); digits = 1))")
     println(convergence_summary(chain))
-elseif ARGS[1] == "compare"
-    K = parse(Int, ARGS[2])
+elseif args[1] == "compare"
+    K = parse(Int, args[2])
     n = length(g.y) + length(g.lo)
     elpd = Dict{String,Vector{Float64}}()
-    for model in ARGS[3:end]
+    for model in args[3:end]
         e = fill(NaN, n)
         for k in 1:K
             isfile(path(model, K, k)) || (println("$model: fold $k missing"); continue)
@@ -50,7 +53,7 @@ elseif ARGS[1] == "compare"
                 "$(round(sqrt(count(done) * var(e[done])); digits = 1)) over $(count(done)) of $n rows")
         elpd[model] = e
     end
-    models = ARGS[3:end]
+    models = args[3:end]
     best = models[argmax([sum(filter(!isnan, elpd[m])) for m in models])]
     for m in models
         m == best && continue

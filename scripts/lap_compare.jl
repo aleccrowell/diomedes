@@ -5,7 +5,7 @@
 #       (the test of inferred pit stops: do the effects agree?)
 #   julia --project scripts/lap_compare.jl <tag> race [race_tag]
 #       a lap-model fit against the race-time model's effects (default race_tag:
-#       gap_all_pl_dur_rw_kappa_age_big_slope_dev_fgam) for the same drivers and
+#       gap_jolpica1950-2025+partial_pl_dur_rw_kappa_age_big_slope_dev) for the same drivers and
 #       car-seasons
 #
 # LAP_SEASONS=<first>-<last> restricts the car-season comparison to those seasons.
@@ -48,7 +48,7 @@ if length(ARGS) >= 2 && ARGS[2] != "race"
     cj = cj[(cj.laps .>= 500) .& (cj.laps_1 .>= 500), :]
     report("car-seasons (≥ 500 laps)", cj.mean, cj.sd, cj.mean_1, cj.sd_1, cj.machine)
 else
-    race_tag = get(ARGS, 3, "gap_all_pl_dur_rw_kappa_age_big_slope_dev_fgam")
+    race_tag = get(ARGS, 3, "gap_jolpica1950-2025+partial_pl_dur_rw_kappa_age_big_slope_dev")
     da, ca = read2(tagA)
     rd = CSV.read("output/$(race_tag)_competitor_effects.csv", DataFrame)
     rc = CSV.read("output/$(race_tag)_machine_effects.csv", DataFrame)
