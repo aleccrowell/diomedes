@@ -20,9 +20,9 @@ function gap_data(mode; data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__D
         res = fetch_results(JolpicaF1(), yrs)
         if jol[3] !== nothing
             # retirements as calibrated partial gaps (#13), taken 3 laps before the car
-            # stopped (leaving out laps it may have limped through), from lap times:
-            # the Ergast dump to 2019, Jolpica after (cached by fetch_jolpica.jl)
-            cum = merge(ergast_cumulative_laps(data_dir), cumulative_laps(fetch_laps(JolpicaF1(), filter(>(2019), yrs))))
+            # stopped (leaving out laps it may have limped through), from Jolpica's lap
+            # times (1996 on; cached by fetch_jolpica.jl)
+            cum = cumulative_laps(fetch_laps(JolpicaF1(), filter(>=(1996), yrs)))
             pg = partial_gaps(res, cum; min_frac = 0.25, trim = 3)
             res = with_partial_rows(res, pg)
             println(io, "partial-gap rows (retirements): $(nrow(pg))"); flush(io)

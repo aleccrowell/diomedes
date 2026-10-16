@@ -16,9 +16,7 @@ const DynamicPPL = Turing.DynamicPPL
 iters = parse(Int, get(ARGS, 2, "20"))
 k = parse(Int, get(ARGS, 3, "1"))
 tag = "laps_1996-2025_inferred_notyres_slopes_dev"
-data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "..", "data"))
-ergast, jolpica = ErgastCSV(data_dir), JolpicaF1()
-src(f) = reduce(vcat, filter(p -> nrow(p) > 0, [f(ergast, collect(1996:2019)), f(jolpica, collect(2020:2025))]))
+src(f) = f(JolpicaF1(), collect(1996:2025))
 d = prepare_laps(src(fetch_laps), src(fetch_results); pits = :inferred)
 model = lap_effects(d; tyres = false, slopes = true, dev = true)
 ldf = DynamicPPL.LogDensityFunction(model, DynamicPPL.getlogjoint_internal, DynamicPPL.LinkAll();

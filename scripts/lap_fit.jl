@@ -1,4 +1,4 @@
-# Fit the lap-time model (#12) on F1 lap times (Ergast to 2019, Jolpica from 2020).
+# Fit the lap-time model (#12) on F1 lap times (Jolpica, 1996 on).
 #
 #   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> chain <k> [warm=<first>-<last>]
 #                                                       # one chain, checkpointed; optionally warm-started
@@ -34,19 +34,14 @@ m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
 pits = Symbol(args[2])
 action = get(args, 3, "combine")
-data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 tag = "laps_$(args[1])_$(pits)" * (tyres ? "" : "_notyres") * (slopes ? "_slopes" : "") * (dev ? "_dev" : "")
-# Seasons to 2019 come from the local Ergast dump; later ones from the Jolpica API
-# (#55; same ids, laps checked equal on 2019-01). Run scripts/fetch_jolpica.jl
-# first so the Jolpica responses are cached.
-const ERGAST_LAST = 2019
-ergast, jolpica = ErgastCSV(data_dir), JolpicaF1()
-function by_source(f, ss)
-    parts = [f(ergast, filter(<=(ERGAST_LAST), collect(ss))), f(jolpica, filter(>(ERGAST_LAST), collect(ss)))]
-    return reduce(vcat, filter(p -> nrow(p) > 0, parts); init = first(parts)[1:0, :])
-end
-src_data(ss) = (res = by_source(fetch_results, ss), laps = by_source(fetch_laps, ss),
-                pits = pits === :recorded ? by_source(fetch_pit_stops, ss) : nothing)
+# All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
+# dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
+# (laps_from=1996) so the responses are cached; `recorded` pit stops are fetched on
+# first use.
+jolpica = JolpicaF1()
+src_data(ss) = (res = fetch_results(jolpica, collect(ss)), laps = fetch_laps(jolpica, collect(ss)),
+                pits = pits === :recorded ? fetch_pit_stops(jolpica, collect(ss)) : nothing)
 sd = src_data(seasons)
 res = sd.res
 d = prepare_laps(sd.laps, res; pits, pit_stops = sd.pits)
