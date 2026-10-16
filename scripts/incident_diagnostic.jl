@@ -1,6 +1,8 @@
 # Per-season incident rate and loss size implied by a fitted pace + loss model (#9).
 #
-#   julia --project scripts/incident_diagnostic.jl [model=pl] [n_draws=200]
+#   julia --project scripts/incident_diagnostic.jl [model=pl_dur_rw_kappa_age_big_slope_dev] [n_draws=200] [data=<mode>]
+#
+# `data`: the fit's data mode (scripts/gap_data.jl; default the published fit's).
 #
 # For each result and posterior draw:
 #   r    = P(incident | data), the posterior probability that the result
@@ -14,17 +16,19 @@
 # fine for reading trends. (Gauss–Laguerre quadrature was tried first and was
 # off by up to 300% for intervals far in the tail.)
 # Averages by season show where incident frequency and size change, as a guide
-# to era structure. Writes output/incidents_by_season_<model>.csv.
+# to era structure. Writes output/incidents_by_season_<data>_<model>.csv.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics
 using Diomedes: _row_means, season_counts, LossCovariates, draw, logdiffΦ, race_loss,
                 loss_param_names, paceloss_logpdf, paceloss_loginterval
 using StatsFuns: normlogpdf, normlogcdf
 
-model = get(ARGS, 1, "pl_fgam")
-n_draws = parse(Int, get(ARGS, 2, "200"))
-g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
-chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))
+include("gap_data.jl")
+mode, args = data_arg(ARGS)
+model = get(args, 1, "pl_dur_rw_kappa_age_big_slope_dev")
+n_draws = parse(Int, get(args, 2, "200"))
+_, g = gap_data(mode)
+chain = gap_chains(mode, model)
 sc, cov = season_counts(g), LossCovariates(g)
 spec = model_spec(model)
 names = Diomedes.model_param_names(spec)
@@ -81,7 +85,7 @@ by = combine(groupby(df, :season), nrow => :results, :lapped => mean => :lapped_
              [:r, :rl] => ((r, rl) -> sum(rl) / sum(r)) => :loss_if_incident)
 sort!(by, :season)
 mkpath("output")
-CSV.write("output/incidents_by_season_$(model).csv", by)
+CSV.write("output/incidents_by_season_$(mode)_$(model).csv", by)
 for row in eachrow(by)
     bar = repeat("█", round(Int, 40 * row.incident_rate))
     println(row.season, "  n=", lpad(row.results, 3), "  lapped ", lpad(round(Int, 100 * row.lapped_share), 3),

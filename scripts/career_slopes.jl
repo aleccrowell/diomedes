@@ -1,6 +1,8 @@
 # Per-driver career slopes from a pace + loss fit with `_slope` (#15 stage 2b).
 #
-#   julia --project scripts/career_slopes.jl [model=pl_dur_rw_kappa_age_slope_fgam] [min_rows=40]
+#   julia --project scripts/career_slopes.jl [model=pl_dur_rw_kappa_age_big_slope_dev] [min_rows=40] [data=<mode>]
+#
+# `data`: the fit's data mode (scripts/gap_data.jl; default the published fit's).
 #
 # Prints the drivers whose pace changed most over their careers relative to
 # the average driver, in % of race time per decade of age (average-season
@@ -9,11 +11,13 @@
 # `CareerRows`), so they rank trajectories, not absolute improvement.
 
 using Diomedes, CSV, DataFrames, Serialization, Statistics
+include("gap_data.jl")
 
-model = get(ARGS, 1, "pl_dur_rw_kappa_age_slope_fgam")
-min_rows = parse(Int, get(ARGS, 2, "40"))
-g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
-chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))
+mode, args = data_arg(ARGS)
+model = get(args, 1, "pl_dur_rw_kappa_age_big_slope_dev")
+min_rows = parse(Int, get(args, 2, "40"))
+_, g = gap_data(mode)
+chain = gap_chains(mode, model)
 ni, nc = size(chain[:τ_slope])
 S = reduce(vcat, [career_slopes(chain[:τ_slope][i, c], chain[:u_slope][i, c])' for c in 1:nc for i in 1:ni])
 
@@ -28,7 +32,7 @@ df = DataFrame(id = g.competitors, name = [names[c] for c in g.competitors],
                mean = vec(mean(S; dims = 1)), sd = vec(std(S; dims = 1)),
                q05 = [quantile(c, 0.05) for c in eachcol(S)], q95 = [quantile(c, 0.95) for c in eachcol(S)])
 mkpath("output")
-CSV.write("output/career_slopes_$(model).csv", df)
+CSV.write("output/career_slopes_$(mode)_$(model).csv", df)
 
 println("τ_slope = $(round(mean(chain[:τ_slope]); digits = 3)) ± $(round(std(chain[:τ_slope]); digits = 3)) % per decade")
 big = filter(r -> r.rows >= min_rows, df)
