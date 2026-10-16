@@ -905,6 +905,12 @@ end
                        lap = [2, 1, 3, 1, 3], time_ms = [91.0, 90.0, 92.0, 95.0, 95.0], position = Union{Missing,Int}[missing for _ in 1:5])
         c = cumulative_laps(lt)
         @test c[("2024-01", "a")] == [90.0, 181.0, 273.0] && !haskey(c, ("2024-01", "b"))
+        # Jolpica's stray timings after a gap (#55): each car keeps laps 1–k up to its first gap
+        lt2 = sort(vcat(lt, DataFrame(series = "f1", season = 2024, event_id = "2024-01", competitor_id = ["c", "c", "c"],
+                                      lap = [1, 2, 26], time_ms = [97.0, 96.0, 97.0], position = Union{Missing,Int}[3, 3, missing])),
+                   [:event_id, :competitor_id, :lap])
+        kept = Diomedes.contiguous_laps(lt2)
+        @test [(r.competitor_id, r.lap) for r in eachrow(kept)] == [("a", 1), ("a", 2), ("a", 3), ("b", 1), ("c", 1), ("c", 2)]
     end
 
     @testset "step-size tuning after warm-up (#62)" begin
