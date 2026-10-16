@@ -1,14 +1,14 @@
 # Fit the gap-to-winner model (#9) on F1 data and write effect tables.
 #
-#   julia --project scripts/gap_fit.jl <timed|all> <model>                  # 4 chains, one after another
-#   julia --project scripts/gap_fit.jl <timed|all> <model> chain <k>        # one chain (seed k), saved to output/
-#   julia --project scripts/gap_fit.jl <timed|all> <model> combine [n=4]    # combine saved chains 1..n
+#   julia --project scripts/gap_fit.jl <data> <model>                  # 4 chains, one after another
+#   julia --project scripts/gap_fit.jl <data> <model> chain <k>        # one chain (seed k), saved to output/
+#   julia --project scripts/gap_fit.jl <data> <model> combine [n=4]    # combine saved chains 1..n
 #
 # Data modes (built by scripts/gap_data.jl):
-# `timed`: lead-lap finishers only; `all`: plus lapped cars as intervals (both from
-# the local Ergast dump, 1950–2019). `jolpica<first>-<last>` (e.g. jolpica1950-2025):
-# all rows from the Jolpica API (#55); `jolpica<first>-<last>+partial` adds
-# retirements as calibrated partial gaps (1996 on, where lap times exist).
+# `jolpica<first>-<last>` (e.g. jolpica1950-2025): all rows from the Jolpica API
+# (#55); `jolpica<first>-<last>+partial` adds retirements as calibrated partial gaps
+# (1996 on, where lap times exist; the published fit's data); `+timed` keeps only
+# lead-lap finishers.
 # `wrc<first>-<last>` (e.g. wrc2023-2025): WRC stage times in the top two tiers
 # (Rally1 incl. WRC, Rally2 incl. R5; see `wrc_top_tiers`), each special stage
 # a "race", cars grouped by manufacturer × tier × season (#10).
@@ -31,10 +31,9 @@ using Turing: FlexiChains, NUTS
 δarg = findfirst(a -> startswith(a, "delta="), ARGS)
 δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
 args = filter(a -> !startswith(a, "delta="), ARGS)
-mode = get(args, 1, "all")
+mode = get(args, 1, "jolpica1950-2025+partial")
 model = get(args, 2, "t4")
 action = get(args, 3, "serial")
-data_dir = get(ENV, "DIOMEDES_ERGAST_DIR", joinpath(@__DIR__, "..", "data"))
 chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
 spec = model_spec(model)
 sampler = NUTS(δ; adtype = Diomedes.gap_sampler().adtype)
@@ -45,7 +44,7 @@ fit(; kw...) = spec.family === :t4 ? fit_gaps(g; sampler, kw...) :
                  race_hier = spec.race_hier, race_mean = spec.race_mean, sampler, kw...)
 
 include("gap_data.jl")
-res, g = gap_data(mode; data_dir)
+res, g = gap_data(mode)
 println(g); flush(stdout)
 mkpath("output")
 

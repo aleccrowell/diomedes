@@ -1,24 +1,28 @@
 # Inferred era paths from a random-walk pace + loss fit (#9).
 #
-#   julia --project scripts/era_paths.jl [model=pl_rw]
+#   julia --project scripts/era_paths.jl [model=pl_dur_rw_kappa_age_big_slope_dev] [data=<mode>]
+#
+# `data`: the fit's data mode (scripts/gap_data.jl; default the published fit's).
 #
 # For each season: posterior mean and 90% interval of the incident probability
 # π and the mean incident loss λ (both at average race duration). Then the
 # largest year-to-year steps in logit π and log λ (the inferred era
 # boundaries), marking those that fall on an a-priori regulation boundary
 # (REGIME_STARTS). With a pace scale (`_kappa`, #15), also the per-season
-# κ. Writes output/era_paths_<model>.csv.
+# κ. Writes output/era_paths_<data>_<model>.csv.
 
 using Diomedes, CSV, DataFrames, Serialization, Statistics
 using Diomedes: rw_path, draw, loss_param_names
 using LogExpFunctions: logistic
 
-model = get(ARGS, 1, "pl_rw_fgam")
+include("gap_data.jl")
+mode, args = data_arg(ARGS)
+model = get(args, 1, "pl_dur_rw_kappa_age_big_slope_dev")
 spec = model_spec(model)
 spec.era === :rw || error("era_paths needs a random-walk model (pl[_dur]_rw)")
-g = prepare_gaps(fetch_results(ErgastCSV(joinpath(@__DIR__, "..", "data")), 1950:2100))
+_, g = gap_data(mode)
 cov = LossCovariates(g)
-chain = reduce(hcat, rehash_chain!.(deserialize.(filter(isfile, ["output/gap_all_$(model)_chain$(k).jls" for k in 1:8]))))
+chain = gap_chains(mode, model)
 names = Diomedes.model_param_names(spec)
 
 function paths(chain, names, cov, pace_scale)
@@ -43,7 +47,7 @@ df = DataFrame(season = seasons,
                λ_mean = vec(mean(exp.(ll); dims = 1)), λ_q05 = exp.(q(ll, 0.05)), λ_q95 = exp.(q(ll, 0.95)),
                κ_mean = vec(mean(exp.(lk); dims = 1)), κ_q05 = exp.(q(lk, 0.05)), κ_q95 = exp.(q(lk, 0.95)))
 mkpath("output")
-CSV.write("output/era_paths_$(model).csv", df)
+CSV.write("output/era_paths_$(mode)_$(model).csv", df)
 
 println("season   incident prob π [90%]        mean loss λ % [90%]", spec.pace_scale ? "       pace scale κ [90%]" : "")
 for r in eachrow(df)

@@ -26,18 +26,18 @@ and a `combine` mode:
 
 ```
 for k in 1 2 3 4; do
-    julia --project scripts/gap_fit.jl all pl_dur_rw_kappa chain $k > output/log_$k.txt 2>&1 &
+    julia --project scripts/gap_fit.jl jolpica1950-2025+partial pl_dur_rw_kappa chain $k > output/log_$k.txt 2>&1 &
 done
 # when all four finish:
-julia --project scripts/gap_fit.jl all pl_dur_rw_kappa combine
+julia --project scripts/gap_fit.jl jolpica1950-2025+partial pl_dur_rw_kappa combine
 ```
 
 ## Checkpoints and resuming
 
 With `checkpoint = "<path prefix>"`, [`fit_paceloss`](@ref),
 [`fit_retirement`](@ref) and [`fit_laps`](@ref) sample one chain in blocks
-(default 100 draws), each saved as `<prefix>_block<j>.jls` with the sampler state
-(see [`run_nuts_checkpointed`](@ref Diomedes.run_nuts_checkpointed)).
+(default 100 draws), each saved as `<prefix>_block<j>.jls` with the adapted metric
+and step size to continue from (see [`run_nuts_checkpointed`](@ref Diomedes.run_nuts_checkpointed)).
 
 - Rerunning the same call after a kill resumes from the last saved block.
 - Block `j` uses its own seeded RNG, so a resumed run gives the same draws as
