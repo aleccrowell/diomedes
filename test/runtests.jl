@@ -938,6 +938,15 @@ end
         ch2 = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir2, "t");
                                              n_samples = 40, n_adapts = 100, block = 20, tune_step = true)
         @test vec(ch2[:m]) == vec(ch[:m])
+        # resumed with a fixed step size: later blocks use it, saved ones keep theirs (#66)
+        dir3 = mktempdir()
+        cp(joinpath(dir, "t_block1.jls"), joinpath(dir3, "t_block1.jls"))
+        ch3 = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir3, "t");
+                                             n_samples = 40, n_adapts = 100, block = 20, tune_step = true,
+                                             fixed_step = 0.5b1.ϵ)
+        b3 = Diomedes.read_block(joinpath(dir3, "t_block2.jls"))
+        @test b3.ϵ == 0.5b1.ϵ && b3.Minv == b1.Minv && vec(ch3[:m])[1:20] == vec(ch[:m])[1:20]
+        @test all(vec(b3.chain[:step_size]) .== 0.5b1.ϵ) && !isfile(joinpath(dir3, "t_steptune.txt"))
         # combines read the draws alone
         @test vec(Diomedes.block_chain(joinpath(dir, "t_block2.jls"))[:m]) == vec(b2.chain[:m]) == vec(ch[:m])[21:40]
         # with_step_size replaces only the step size
