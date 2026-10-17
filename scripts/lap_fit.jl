@@ -66,7 +66,7 @@ if action == "chain"
     k = parse(Int, args[4])
     # warm=<first>-<last>: start from the adapted metric and step size of chain k of that
     # (finished, same-pits) fit, and adapt for 300 iterations instead of 500
-    warm = something(match(r"^warm=(\d{4})-(\d{4})$", get(args, 5, "")), nothing)
+    warm = match(r"^warm=(\d{4})-(\d{4})$", get(args, 5, ""))
     ws, n_adapts = nothing, 500
     if warm !== nothing
         old_seasons = parse(Int, warm[1]):parse(Int, warm[2])
