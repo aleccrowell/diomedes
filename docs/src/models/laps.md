@@ -26,12 +26,22 @@ Inferred stops give the same effects as recorded ones over 2011–2019
 ## Model
 
 ```
-y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁·s + β₂·s² − (race mean) + noise
+y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁[era]·s + β₂[era]·s²
+    + η·lead + tyre_driver·s_d + tyre_car·s_m − (race mean) + noise
 ```
 
 - `frac` is the lap's fraction of the race distance. The per-race slope δ
   (partially pooled) absorbs fuel burn and track evolution.
-- `s` is stint age in tens of laps, a tyre-wear term.
+- `s` is stint age in tens of laps. With `tyres`, its curve (β₁, β₂) is shared
+  within an era: the refuelling era (1994–2009) and since 2010.
+- `lead = true` adds η, the effect of leading the race on the lap.
+- `tyre_mgmt = true` adds driver and car-season slopes on stint age, centred per
+  driver (`s_d`) and per car-season (`s_m`), as deviations from the era's curve.
+- `starts = true` adds lap 1 as its own term ([`lap_effects`](@ref)): its time
+  against the race's median lap 1, with the drivers' and cars' pace effects, a
+  quadratic in the grid slot, and driver and car-season start effects. Pit-lane
+  starts are left out. The term has its own pace + loss noise.
+- `slopes` and `dev` add career slopes and in-season development, as in the race model.
 - Noise is pace + loss, as in the race model. Traffic, mistakes and damage are
   incident losses.
 - Driver and car-season effects are centred as in the race model. Every term is
@@ -51,10 +61,12 @@ d = prepare_laps(fetch_laps(src, 2011:2019), fetch_results(src, 2011:2019); pits
 chain = fit_laps(d; checkpoint = "output/laps_2011-2019_chain1", seed = 1000)
 ```
 
-## Known issues before 1996–2019 results are usable
+## Known issues
 
 - **Refuelling (1994–2009):** the car lightens as fuel from its last stop burns
-  off, which cancels the tyre-wear signal. The single stint term collapses, and
-  the car effects shift.
-- **Driver pace is constant across the fitted range**, unlike the race model's
-  career slopes.
+  off. A single stint curve shared across eras collapsed. The curves are now
+  separate per era, and before 2010 the driver and car stint slopes mix tyre
+  management with fuel strategy.
+- **Two modes in the 1996–2025 fit:** they differ in the spread of the per-race
+  trends (τ_δ) and in the lap-noise mixture. The effects agree across them; see
+  [Lap times](../findings/laps.md).

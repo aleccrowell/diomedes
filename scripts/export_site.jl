@@ -72,7 +72,8 @@ function log_convergence(path)
     i = findfirst(l -> startswith(l, "convergence"), lines)
     groups = Dict{String,Any}()
     for l in lines[(i + 1):end]
-        m = match(r"^(\S.*?)\s+([\d.]+)\s+([\d.]+)\s*$", l)
+        # labels may run into the R-hat (e.g. "tyre (drv)1.031  188")
+        m = match(r"^(.*?[^\s\d.])\s*([\d.]+)\s+([\d.]+)\s*$", l)
         m === nothing && break
         groups[strip(m[1])] = (; max_rhat = parse(Float64, m[2]), min_ess = parse(Float64, m[3]))
     end
@@ -373,7 +374,62 @@ function export_retire(pre)
     println("wrote $dir")
 end
 
-function export_laps(tag)
+# The lap fit's chains (checkpoint blocks, one file per 100 draws, #62/#73)
+function lap_chains(tag)
+    chain_files(k) = sort(filter(f -> occursin(Regex("^$(tag)_chain$(k)_block\\d+\\.jls\$"), f), readdir("output")),
+                          by = f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]))
+    ks = [k for k in 1:8 if !isempty(chain_files(k))]
+    return [reduce(vcat, [Diomedes.block_chain(joinpath("output", f)) for f in chain_files(k)]) for k in ks]
+end
+
+# Chains grouped into modes on the scalars that split them (as for the race model, #64):
+# the per-race trend spread and the lap-noise mixture. Per-mode effect tables come
+# from `lap_fit.jl … combine <chains of the mode>`, saved as <tag>_mode<X>_<table>.csv.
+function export_lap_modes(tag, dir)
+    chs = lap_chains(tag)
+    length(chs) < 2 && return nothing
+    all = reduce(hcat, chs)
+    modes = chain_modes(all, [:τ_δ, :σ, :a_π, :a_λ])
+    labels = unique(modes)
+    idx(m) = findall(==(m), modes)
+    lj = Dict(m => mean(mean(vec(chs[c][:logjoint])) for c in idx(m)) for m in labels)
+    best = maximum(values(lj))
+    kept = [m for m in labels if lj[m] > best - MODE_DROP_NATS]
+    quantities(c) = [("tau_delta", "Spread of per-race lap-time trends (τ_δ)", vec(c[:τ_δ])),
+                     ("sigma", "Lap noise σ (%)", vec(c[:σ])),
+                     ("pi_base", "Lost-time lap probability", logistic.(vec(c[:a_π]))),
+                     ("lambda_base", "Lost-time lap mean (%)", exp.(vec(c[:a_λ])))]
+    mt = DataFrame(chain = Int[], mode = String[], kept = Bool[], quantity = String[], label = String[],
+                   mean = Float64[], q05 = Float64[], q95 = Float64[])
+    for c in eachindex(chs), (key, label, x) in quantities(chs[c])
+        push!(mt, (c, modes[c], modes[c] in kept, key, label, mean(x), quantile(x, 0.05), quantile(x, 0.95)))
+    end
+    CSV.write(joinpath(dir, "modes.csv"), round_floats!(mt))
+    # do the effects depend on the mode?
+    ref = labels[argmax([lj[m] for m in labels])]
+    tables = (drivers = :driver, cars = :machine, tyremgmt_drivers = :driver, tyremgmt_cars = :machine,
+              starts_drivers = :driver, starts_cars = :machine)
+    function agree(t, key, a, b)
+        fa, fb = "output/$(tag)_mode$(a)_$(t).csv", "output/$(tag)_mode$(b)_$(t).csv"
+        (isfile(fa) && isfile(fb)) || return missing
+        j = innerjoin(select(CSV.read(fa, DataFrame), key, :mean, :sd), select(CSV.read(fb, DataFrame), key, :mean => :mb); on = key)
+        d = abs.(j.mean .- j.mb)
+        (; n = nrow(j), corr = round(cor(j.mean, j.mb); digits = 4), max_diff = round(maximum(d); digits = 3),
+         median_diff_sd = round(median(d ./ j.sd); digits = 2), max_diff_sd = round(maximum(d ./ j.sd); digits = 2))
+    end
+    effects_by_mode = [(; modes = "$(ref) vs $(m)", NamedTuple(t => agree(t, k, ref, m) for (t, k) in pairs(tables))...)
+                       for m in labels if m != ref]
+    mlog(m) = "output/$(tag)_mode$(m)_combine.txt"
+    info = [(; label = m, chains = idx(m), draws = sum(length(vec(chs[c][:logjoint])) for c in idx(m)), kept = m in kept,
+             mean_logjoint = round(lj[m]; digits = 1),
+             scalars = NamedTuple(Symbol(k) => round(mean(x); digits = 4) for (k, _, x) in quantities(reduce(hcat, chs[idx(m)]))),
+             convergence = isfile(mlog(m)) ? log_convergence(mlog(m)) : missing) for m in labels]
+    return (; modes = info, kept, effects_by_mode, drop_nats = MODE_DROP_NATS)
+end
+
+# `source`: where the fit's lap times came from. Fits from #75 on read every season
+# from Jolpica (`jolpica`); the default infers the earlier split from the seasons.
+function export_laps(tag; source = nothing)
     dir = joinpath(OUT, "laps")
     mkpath(dir)
     d = round_floats!(CSV.read("output/$(tag)_drivers.csv", DataFrame))
@@ -386,6 +442,16 @@ function export_laps(tag)
                                           :mean => :slope_mean, :sd => :slope_sd); on = :id, order = :left))
     isfile(dv) && (c = leftjoin(c, select(round_floats!(CSV.read(dv, DataFrame)), :machine => :id, :mean => :dev_mean,
                                           :sd => :dev_sd); on = :id, order = :left))
+    # tyre management and starts, if the fit has them (#66)
+    for (t, cols) in (("tyremgmt", (:tyre_mean, :tyre_sd)), ("starts", (:start_mean, :start_sd)))
+        fd, fc = "output/$(tag)_$(t)_drivers.csv", "output/$(tag)_$(t)_cars.csv"
+        extra = t == "starts" ? [:starts] : Symbol[]
+        isfile(fd) && (d = leftjoin(d, select(round_floats!(CSV.read(fd, DataFrame)), :driver => :id, extra...,
+                                              :mean => cols[1], :sd => cols[2]); on = :id, order = :left))
+        isfile(fc) && (c = leftjoin(c, select(round_floats!(CSV.read(fc, DataFrame)), :machine => :id,
+                                              (t == "starts" ? [:starts] : Symbol[])...,
+                                              :mean => cols[1], :sd => cols[2]); on = :id, order = :left))
+    end
     CSV.write(joinpath(dir, "drivers.csv"), d)
     CSV.write(joinpath(dir, "cars.csv"), c)
     # the same levels in the race model (export `race` first)
@@ -399,15 +465,22 @@ function export_laps(tag)
               innerjoin(select(c, :id, :laps, :mean => :lap_mean, :sd => :lap_sd),
                         select(rc, :id, :constructor, :season, :mean => :race_mean, :sd => :race_sd); on = :id))
     log = "output/$(tag)_combine.txt"
-    m = match(r"(\d{4})-(\d{4})_(recorded|inferred)(_notyres)?(_slopes)?(_dev)?", tag)
+    m = match(r"(\d{4})-(\d{4})_(recorded|inferred)(_notyres)?(_slopes)?(_dev)?(_lead)?(_tyremgmt)?(_starts)?", tag)
     first_y, last_y = parse(Int, m[1]), parse(Int, m[2])
-    src = last_y <= 2019 ? "Ergast lap times" : first_y > 2019 ? "Jolpica lap times" : "Ergast lap times to 2019, Jolpica from 2020"
+    src = source == "jolpica" ? "Jolpica lap times" :
+          last_y <= 2019 ? "Ergast lap times" : first_y > 2019 ? "Jolpica lap times" : "Ergast lap times to 2019, Jolpica from 2020"
     terms = join(filter(!isempty, [m[4] === nothing ? "stint age" : "", m[5] === nothing ? "" : "career slopes",
-                                   m[6] === nothing ? "" : "in-season development"]), ", ")
+                                   m[6] === nothing ? "" : "in-season development", m[7] === nothing ? "" : "lead laps",
+                                   m[8] === nothing ? "" : "tyre management", m[9] === nothing ? "" : "starts"]), ", ")
+    modes = export_lap_modes(tag, dir)
     write_manifest(dir, (; model = "lap_effects" * (isempty(terms) ? "" : " ($(terms))"), fit = tag,
                          data = "F1 $(first_y)–$(last_y) clean laps ($(src), $(m[3]) pit stops): " * inner(first(readlines(log))),
                          race_model = JSON3.read(read(joinpath(race, "manifest.json"), String)).model,
-                         convergence = log_convergence(log), exported_by = "scripts/export_site.jl laps"))
+                         convergence = log_convergence(log),
+                         (modes === nothing ? (;) : (; modes = modes.modes, kept_modes = modes.kept,
+                                                     effects_by_mode = modes.effects_by_mode,
+                                                     mode_drop_nats = modes.drop_nats))...,
+                         exported_by = "scripts/export_site.jl laps"))
     println("wrote $dir")
 end
 
@@ -435,7 +508,7 @@ if mode == "race"
 elseif mode == "retire"
     export_retire(get(ARGS, 2, "retire_jolpica1950-2025"))
 elseif mode == "laps"
-    export_laps(get(ARGS, 2, "laps_2011-2019_recorded"))
+    export_laps(get(ARGS, 2, "laps_1996-2025_inferred_slopes_dev_lead_tyremgmt_starts"); source = get(ARGS, 3, nothing))
 elseif mode == "wrc"
     export_wrc(get(ARGS, 2, "pl_dur_rw_kappa_cdrv_tdrv_fgam"))
 else
