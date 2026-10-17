@@ -2,7 +2,7 @@
 #
 #   julia --project scripts/bench/lap_gradient.jl <first>-<last> [reps=30] [terms...]
 #
-# `terms` are lap_fit.jl's: notyres, slopes, dev, lead, tyremgmt, starts (with none
+# `terms` are lap_fit.jl's: notyres, slopes, dev, lead, tyremgmt, starts, age, circuits (with none
 # given: notyres slopes dev, the model these timings were first taken for).
 # Prints the median time of a log density and of a log density + gradient at a
 # point near the prior centre, with the sampler's AD (uncompiled ReverseDiff).
@@ -13,17 +13,19 @@ using Diomedes, Turing, Statistics, Printf, Random, DataFrames
 const DynamicPPL = Turing.DynamicPPL
 const LogDensityProblems = Turing.LogDensityProblems
 
-terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts")
+terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits")
 has = any(in(terms), ARGS) ? Set(filter(in(terms), ARGS)) : Set(["notyres", "slopes", "dev"])
 args = filter(∉(terms), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
 reps = parse(Int, get(args, 2, "30"))
 src(f) = f(JolpicaF1(), collect(seasons))
-d = prepare_laps(src(fetch_laps), src(fetch_results); pits = :inferred)
+d = prepare_laps(src(fetch_laps), src(fetch_results); pits = :inferred,
+                 circuits = "circuits" ∈ has ? circuit_table() : nothing)
 println(d)
 model = lap_effects(d; tyres = "notyres" ∉ has, slopes = "slopes" ∈ has, dev = "dev" ∈ has, lead = "lead" ∈ has,
-                    tyre_mgmt = "tyremgmt" ∈ has, starts = "starts" ∈ has)
+                    tyre_mgmt = "tyremgmt" ∈ has, starts = "starts" ∈ has, age = "age" ∈ has,
+                    circuits = "circuits" ∈ has)
 println("terms: ", join(sort(collect(has)), " "))
 ldf = DynamicPPL.LogDensityFunction(model, DynamicPPL.getlogjoint_internal, DynamicPPL.LinkAll();
                                     adtype = Diomedes.gap_sampler().adtype)
