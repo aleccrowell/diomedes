@@ -1,36 +1,224 @@
 {
-    "model": "lap_effects (career slopes, in-season development)",
-    "fit": "laps_1996-2025_inferred_notyres_slopes_dev",
-    "data": "F1 1996–2025 clean laps (Ergast lap times to 2019, Jolpica from 2020, inferred pit stops): 531729 laps, 145 drivers, 320 machine-seasons, 567 races; excluded lap1 11506, no_machine 0, pit 40223, slow_race 32156, stoppage 124",
+    "model": "lap_effects (stint age, career slopes, in-season development, lead laps, tyre management, starts)",
+    "fit": "laps_1996-2025_inferred_slopes_dev_lead_tyremgmt_starts",
+    "data": "F1 1996–2025 clean laps (Jolpica lap times, inferred pit stops): 531737 laps, 145 drivers, 320 machine-seasons, 567 races; excluded lap1 11506, no_machine 0, pit 40218, slow_race 32156, stoppage 124",
     "race_model": "pl_dur_rw_kappa_age_big_slope_dev",
     "convergence": {
-        "max_rhat": 1.012,
-        "min_ess": 244,
+        "max_rhat": 1.708,
+        "min_ess": 12,
         "divergences": 0,
         "groups": {
             "cars": {
-                "max_rhat": 1.009,
-                "min_ess": 907
+                "max_rhat": 1.016,
+                "min_ess": 762
+            },
+            "start (drv)": {
+                "max_rhat": 1.003,
+                "min_ess": 2278
             },
             "scalars": {
-                "max_rhat": 1.007,
-                "min_ess": 541
+                "max_rhat": 1.708,
+                "min_ess": 12
+            },
+            "tyre (drv)": {
+                "max_rhat": 1.031,
+                "min_ess": 188
+            },
+            "tyre (car)": {
+                "max_rhat": 1.322,
+                "min_ess": 19
+            },
+            "start (car)": {
+                "max_rhat": 1.005,
+                "min_ess": 2990
             },
             "drivers": {
-                "max_rhat": 1.012,
-                "min_ess": 248
+                "max_rhat": 1.042,
+                "min_ess": 119
             },
             "slopes": {
-                "max_rhat": 1.012,
-                "min_ess": 244
+                "max_rhat": 1.033,
+                "min_ess": 136
             },
             "dev": {
                 "max_rhat": 1.007,
-                "min_ess": 3455
+                "min_ess": 3245
             }
         }
     },
+    "modes": [
+        {
+            "label": "A",
+            "chains": [
+                1,
+                4
+            ],
+            "draws": 2000,
+            "kept": true,
+            "mean_logjoint": -861234.1,
+            "scalars": {
+                "tau_delta": 4.6009,
+                "sigma": 0.7563,
+                "pi_base": 0.1557,
+                "lambda_base": 3.5193
+            },
+            "convergence": {
+                "max_rhat": 1.069,
+                "min_ess": 43,
+                "divergences": 0,
+                "groups": {
+                    "cars": {
+                        "max_rhat": 1.017,
+                        "min_ess": 361
+                    },
+                    "start (drv)": {
+                        "max_rhat": 1.006,
+                        "min_ess": 969
+                    },
+                    "scalars": {
+                        "max_rhat": 1.012,
+                        "min_ess": 192
+                    },
+                    "tyre (drv)": {
+                        "max_rhat": 1.005,
+                        "min_ess": 559
+                    },
+                    "tyre (car)": {
+                        "max_rhat": 1.007,
+                        "min_ess": 511
+                    },
+                    "start (car)": {
+                        "max_rhat": 1.008,
+                        "min_ess": 1351
+                    },
+                    "drivers": {
+                        "max_rhat": 1.069,
+                        "min_ess": 43
+                    },
+                    "slopes": {
+                        "max_rhat": 1.05,
+                        "min_ess": 50
+                    },
+                    "dev": {
+                        "max_rhat": 1.01,
+                        "min_ess": 1622
+                    }
+                }
+            }
+        },
+        {
+            "label": "B",
+            "chains": [
+                2,
+                3
+            ],
+            "draws": 2000,
+            "kept": true,
+            "mean_logjoint": -861225.4,
+            "scalars": {
+                "tau_delta": 4.1169,
+                "sigma": 0.7575,
+                "pi_base": 0.1538,
+                "lambda_base": 3.5661
+            },
+            "convergence": {
+                "max_rhat": 1.032,
+                "min_ess": 92,
+                "divergences": 0,
+                "groups": {
+                    "cars": {
+                        "max_rhat": 1.01,
+                        "min_ess": 374
+                    },
+                    "start (drv)": {
+                        "max_rhat": 1.005,
+                        "min_ess": 1049
+                    },
+                    "scalars": {
+                        "max_rhat": 1.006,
+                        "min_ess": 269
+                    },
+                    "tyre (drv)": {
+                        "max_rhat": 1.008,
+                        "min_ess": 529
+                    },
+                    "tyre (car)": {
+                        "max_rhat": 1.005,
+                        "min_ess": 548
+                    },
+                    "start (car)": {
+                        "max_rhat": 1.01,
+                        "min_ess": 1470
+                    },
+                    "drivers": {
+                        "max_rhat": 1.032,
+                        "min_ess": 92
+                    },
+                    "slopes": {
+                        "max_rhat": 1.029,
+                        "min_ess": 104
+                    },
+                    "dev": {
+                        "max_rhat": 1.009,
+                        "min_ess": 1519
+                    }
+                }
+            }
+        }
+    ],
+    "kept_modes": [
+        "A",
+        "B"
+    ],
+    "effects_by_mode": [
+        {
+            "modes": "B vs A",
+            "drivers": {
+                "n": 145,
+                "corr": 0.9999,
+                "max_diff": 0.024,
+                "median_diff_sd": 0.04,
+                "max_diff_sd": 0.23
+            },
+            "cars": {
+                "n": 320,
+                "corr": 1,
+                "max_diff": 0.025,
+                "median_diff_sd": 0.04,
+                "max_diff_sd": 0.32
+            },
+            "tyremgmt_drivers": {
+                "n": 145,
+                "corr": 0.9998,
+                "max_diff": 0.015,
+                "median_diff_sd": 0.03,
+                "max_diff_sd": 0.47
+            },
+            "tyremgmt_cars": {
+                "n": 320,
+                "corr": 0.999,
+                "max_diff": 0.064,
+                "median_diff_sd": 0.03,
+                "max_diff_sd": 1.65
+            },
+            "starts_drivers": {
+                "n": 145,
+                "corr": 0.9995,
+                "max_diff": 0.021,
+                "median_diff_sd": 0.02,
+                "max_diff_sd": 0.13
+            },
+            "starts_cars": {
+                "n": 320,
+                "corr": 0.9998,
+                "max_diff": 0.026,
+                "median_diff_sd": 0.02,
+                "max_diff_sd": 0.09
+            }
+        }
+    ],
+    "mode_drop_nats": 10,
     "exported_by": "scripts/export_site.jl laps",
-    "export_commit": "6d4d329",
-    "date": "2026-10-14"
+    "export_commit": "75dd295",
+    "date": "2026-10-17"
 }
