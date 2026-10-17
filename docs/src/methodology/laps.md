@@ -1,7 +1,7 @@
 # The lap-time model
 
 The race-time models get one number per driver per race. Lap times
-(Ergast to 2019, Jolpica from 2020) give about 50 per driver per race, including the
+(Jolpica, 1996 on) give about 50 per driver per race, including the
 laps a car completed before retiring. The lap-time model ([#12](https://github.com/aleccrowell/diomedes/issues/12)) fits
 
 ```math
@@ -10,11 +10,23 @@ y = 100\log\frac{t}{\text{median clean lap}} = \gamma_r + \delta_r\,(f - \bar f_
 
 with ``f`` the lap's fraction of the race distance (fuel burn, track
 evolution), ``s`` the tyres' stint age, and the same pace + loss noise as the
-race model. The current fit (1996–2025) drops the stint-age terms and adds a
-career slope per driver (on season-level age) and an in-season development trend
-per car-season, as in the race model. It is fitted to green-flag laps.
+race model. The current fit (1996–2025, [#66](https://github.com/aleccrowell/diomedes/issues/66)) adds:
+- a career slope per driver (on season-level age) and an in-season development
+  trend per car-season, as in the race model;
+- separate stint-age curves for the refuelling era (1994–2009) and since 2010.
+  Before 2010 the car also lightens as the fuel from its last stop burns off, so
+  the curve mixes tyre wear with fuel load;
+- driver and car-season deviations from those curves (tyre management), on stint
+  age centred per driver and per car-season;
+- an effect of leading the race on the lap (clean air against managing a lead;
+  the two can't be told apart);
+- lap 1 as its own term: its time against the race's median lap 1, with the
+  drivers' and cars' pace effects, a curve in the grid slot, and driver and
+  car-season start effects, with its own noise.
+
+It is fitted to green-flag laps.
 Excluded:
-- lap 1;
+- lap 1 from the pace term (it enters the start term);
 - safety-car, VSC and red-flag laps, detected as race-wide slow laps;
 - pit in- and out-laps.
 
@@ -23,15 +35,16 @@ them.
 
 ## What it measures
 
-Typical green-flag pace under race conditions, not peak pace and not race
-results. A driver well ahead lifts and coasts and saves tyres, so the lap
-model underrates comfortable winners. Starts, pit-stop timing, strategy and
-safety-car periods are left out entirely. So its driver effects are less
-spread out than the race model's, compressed most at the front. The race model
-stays the primary result. The lap model is supporting evidence for the
-split between car and driver, from about 50 times more observations, and for
-in-season development. Including starts, and driver and car effects on tyre
-management, would bring it closer to the race outcome
+Typical green-flag pace under race conditions, plus the start, not peak pace
+and not race results. A driver well ahead lifts and coasts and saves tyres, so
+the lap model underrates comfortable winners. Pit-stop timing, strategy and
+safety-car periods are left out. So its driver effects are less spread out than
+the race model's, compressed most at the front. The race model stays the primary
+result. The lap model is supporting evidence for the split between car and
+driver, from about 50 times more observations, and for in-season development.
+Adding starts, lead laps and tyre management did not reduce the compression: the
+slope of lap-model driver effects on race-model ones stayed about 0.41 over
+1996–2025, while the correlation rose slightly, from 0.67 to 0.69
 ([#66](https://github.com/aleccrowell/diomedes/issues/66)).
 
 ## Status
@@ -53,3 +66,9 @@ This model is in development; see [#12](https://github.com/aleccrowell/diomedes/
 - **1996–2025, with career slopes and development, no tyre terms.** Cars agree
   with the race model at 0.96 over 320 car-seasons, drivers at 0.68–0.70. The
   drivers of 1996–97, at the edge of the data, are the least reliable.
+- **1996–2025 with the #66 terms (the current fit).** Its drivers correlate 0.977 with
+  the fit without them. Laps get faster through a stint in the refuelling era
+  (−0.31 % per 10 laps, as fuel burns off) and slower since 2010 (+0.60 %). The
+  chains settle in two modes of equal log density. The modes differ in the spread
+  of the per-race trends and in the lap-noise mixture. The driver, car,
+  tyre-management and start effects agree across them (correlation ≥ 0.998).

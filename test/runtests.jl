@@ -938,6 +938,15 @@ end
         ch2 = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir2, "t");
                                              n_samples = 40, n_adapts = 100, block = 20, tune_step = true)
         @test vec(ch2[:m]) == vec(ch[:m])
+        # resumed with a fixed step size: later blocks use it, saved ones keep theirs (#66)
+        dir3 = mktempdir()
+        cp(joinpath(dir, "t_block1.jls"), joinpath(dir3, "t_block1.jls"))
+        ch3 = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir3, "t");
+                                             n_samples = 40, n_adapts = 100, block = 20, tune_step = true,
+                                             fixed_step = 0.5b1.ϵ)
+        b3 = Diomedes.read_block(joinpath(dir3, "t_block2.jls"))
+        @test b3.ϵ == 0.5b1.ϵ && b3.Minv == b1.Minv && vec(ch3[:m])[1:20] == vec(ch[:m])[1:20]
+        @test all(vec(b3.chain[:step_size]) .== 0.5b1.ϵ) && !isfile(joinpath(dir3, "t_steptune.txt"))
         # combines read the draws alone
         @test vec(Diomedes.block_chain(joinpath(dir, "t_block2.jls"))[:m]) == vec(b2.chain[:m]) == vec(ch[:m])[21:40]
         # with_step_size replaces only the step size
@@ -1130,6 +1139,117 @@ end
                 @test o == LDP.dimension(rdm)
             end
         end
+        # lead laps and tyre management (#66): the lead indicator comes from the lap's
+        # position; η·lead and (td + tm)·s enter h, with td centred across drivers and
+        # tm within season
+        lt5 = copy(lt2); lt5.position = Vector{Union{Missing,Int}}(missing, nrow(lt5))
+        lt5.position[lt5.competitor_id .== "a"] .= 1
+        d5 = prepare_laps(lt5, rows3; pits = :inferred)
+        @test d5.y == d3.y && d5.lead == [c == "a" ? 1.0 : 0.0 for c in d5.rows.competitor_id] && all(iszero, d3.lead)
+        model5 = lap_effects(d5; slopes = true, dev = true, lead = true, tyre_mgmt = true)
+        θ5 = merge(θ4, (; η = [0.4], τ_td = 0.2, u_td = randn(rng, nc), τ_tm = 0.3, u_tm = randn(rng, nm3)))
+        tdv = 0.2 .* (θ5.u_td .- mean(θ5.u_td))
+        tmv = 0.3 .* Diomedes.sum_to_zero_by(θ5.u_tm, d5.mach_season, Diomedes.lap_mach_counts(d5))
+        s10 = d5.stint ./ 10
+        scd = s10 .- [mean(s10[d5.comp .== d5.comp[j]]) for j in eachindex(d5.y)]
+        scm = s10 .- [mean(s10[d5.mach .== d5.mach[j]]) for j in eachindex(d5.y)]
+        @test d5.stint_cd ≈ scd && d5.stint_cm ≈ scm
+        h5 = h4 .+ [0.4 * d5.lead[j] + tdv[d5.comp[j]] * scd[j] + tmv[d5.mach[j]] * scm[j] for j in eachindex(d5.y)]
+        h5bar = [mean(h5[d5.race .== r]) for r in 1:nr]
+        ll5 = sum(Diomedes.paceloss_logpdf(d5.y[j] - (θ.γ[d5.race[j]] + θ.δ[d5.race[j]] * (d5.frac[j] - fbar[d5.race[j]]) +
+                                                       h5[j] - h5bar[d5.race[j]]),
+                                           θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d5.y))
+        @test Turing.DynamicPPL.loglikelihood(model5, θ5) ≈ ll5
+        for (m, flags) in ((model5, (; slopes = true, dev = true, lead = true, tyre_mgmt = true)),
+                           (lap_effects(d5; tyres = false, lead = true), (; tyres = false, lead = true)),
+                           (lap_effects(d5; tyre_mgmt = true), (; tyre_mgmt = true)))
+            rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            x5 = 0.5 .* randn(rng, LDP.dimension(rdm))
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_dev, :τ_td, :τ_tm)
+                haskey(rg, k) && (x5[rg[k].range] .= 0.2 + rand(rng))
+            end
+            @test LDP.logdensity_and_gradient(rdm, x5)[2] ≈ LDP.logdensity_and_gradient(fdm, x5)[2]
+            @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), x5).tape) < 1000
+            let o = 0
+                for (name, (n, _)) in Diomedes.lap_layout(d5; flags...)
+                    @test rg[name].range == (o + 1):(o + n)
+                    o += n
+                end
+                @test o == LDP.dimension(rdm)
+            end
+        end
+        # one shared stint curve per era: a refuelling season (2008) and a later one
+        re08(e) = replace(e, "2018-" => "2008-")
+        lt6 = copy(lt5); lt6.season = [s == 2018 ? 2008 : s for s in lt6.season]; lt6.event_id = re08.(lt6.event_id)
+        rows6 = copy(rows3); rows6.season = [s == 2018 ? 2008 : s for s in rows6.season]; rows6.event_id = re08.(rows6.event_id)
+        rows6.event_date = [Date(r.season, 3, 1) + Day(14 * parse(Int, last(r.event_id))) for r in eachrow(rows6)]
+        d6 = prepare_laps(lt6, rows6; pits = :inferred)
+        @test d6.eras == [:refuel, :norefuel] && d6.era == [s <= 2009 ? 1 : 2 for s in d6.rows.season]
+        @test length(d3.eras) == 1 && Diomedes.lap_layout(d6)[findfirst(p -> first(p) === :β, Diomedes.lap_layout(d6))][2][1] == 4
+        model6 = lap_effects(d6)
+        β6 = [0.03, 0.01, 0.02, -0.005]
+        θ6 = merge(θ, (; β = β6))
+        b6 = Diomedes.sum_to_zero_by(θ.b_mach, d6.mach_season, Diomedes.lap_mach_counts(d6))
+        h6 = [a[d6.comp[j]] + b6[d6.mach[j]] + β6[2d6.era[j] - 1] * d6.stint[j] / 10 + β6[2d6.era[j]] * (d6.stint[j] / 10)^2
+              for j in eachindex(d6.y)]
+        h6bar = [mean(h6[d6.race .== r]) for r in 1:nr]
+        f6bar = [mean(d6.frac[d6.race .== r]) for r in 1:nr]
+        ll6 = sum(Diomedes.paceloss_logpdf(d6.y[j] - (θ.γ[d6.race[j]] + θ.δ[d6.race[j]] * (d6.frac[j] - f6bar[d6.race[j]]) +
+                                                       h6[j] - h6bar[d6.race[j]]),
+                                           θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d6.y))
+        @test Turing.DynamicPPL.loglikelihood(model6, θ6) ≈ ll6
+        let m = lap_effects(d6; slopes = true, tyre_mgmt = true)
+            rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            x6 = 0.5 .* randn(rng, LDP.dimension(rdm))
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_td, :τ_tm)
+                haskey(rg, k) && (x6[rg[k].range] .= 0.2 + rand(rng))
+            end
+            @test LDP.logdensity_and_gradient(rdm, x6)[2] ≈ LDP.logdensity_and_gradient(fdm, x6)[2]
+            @test length(rg.β.range) == 4
+        end
+        # starts (#66): lap 1 with the grid slot; pit-lane starts (grid 0) left out
+        rows7 = copy(rows3); rows7.grid = Union{Missing,Int}[c == "e" ? 0 : findfirst(==(c), ["a", "b", "c", "e"]) for c in rows7.competitor_id]
+        d7 = prepare_laps(lt5, rows7; pits = :inferred)
+        @test length(d7.s_y) == 4 * 3 && all(!=(findfirst(==("e"), d7.competitors)), d7.s_comp)
+        for r in unique(d7.s_race)
+            @test median(d7.s_y[d7.s_race .== r]) ≈ 0 atol = 1e-12
+        end
+        @test sort(unique(d7.s_grid)) ≈ [0.0, 0.1, 0.2] && isempty(d5.s_y)
+        model7 = lap_effects(d7; starts = true)
+        θ7 = merge(θ, (; γ1 = 0.1 .* randn(rng, nr), τ_sd = 0.3, u_sd = randn(rng, nc), τ_sc = 0.2, u_sc = randn(rng, nm),
+                       g1 = [0.5, -0.1], σ1 = 0.8, a_π1 = -1.0, a_λ1 = 0.5))
+        sdv = 0.3 .* (θ7.u_sd .- mean(θ7.u_sd))
+        b7 = Diomedes.sum_to_zero_by(θ.b_mach, d7.mach_season, Diomedes.lap_mach_counts(d7))
+        scv = 0.2 .* Diomedes.sum_to_zero_by(θ7.u_sc, d7.mach_season, Diomedes.lap_mach_counts(d7))
+        h7 = [a[d7.s_comp[j]] + b7[d7.s_mach[j]] + sdv[d7.s_comp[j]] + scv[d7.s_mach[j]] + 0.5 * d7.s_grid[j] - 0.1 * d7.s_grid[j]^2
+              for j in eachindex(d7.s_y)]
+        h7bar = [mean(h7[d7.s_race .== r]) for r in 1:nr]
+        ll7s = sum(Diomedes.paceloss_logpdf(d7.s_y[j] - (θ7.γ1[d7.s_race[j]] + h7[j] - h7bar[d7.s_race[j]]), 0.8,
+                                            Diomedes.logistic(-1.0), exp(0.5)) for j in eachindex(d7.s_y))
+        @test Turing.DynamicPPL.loglikelihood(model7, θ7) ≈ Turing.DynamicPPL.loglikelihood(lap_effects(d7), θ) + ll7s
+        let m = lap_effects(d7; slopes = true, starts = true)
+            rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            x7 = 0.5 .* randn(rng, LDP.dimension(rdm))
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_sd, :τ_sc, :σ1)
+                haskey(rg, k) && (x7[rg[k].range] .= 0.2 + rand(rng))
+            end
+            @test LDP.logdensity_and_gradient(rdm, x7)[2] ≈ LDP.logdensity_and_gradient(fdm, x7)[2]
+            @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), x7).tape) < 1000
+            let o = 0
+                for (name, (n, _)) in Diomedes.lap_layout(d7; slopes = true, starts = true)
+                    @test rg[name].range == (o + 1):(o + n)
+                    o += n
+                end
+                @test o == LDP.dimension(rdm)
+            end
+        end
+        ws5 = lap_warm_start(fake, d_old, d5; slopes_new = true, dev_new = true, lead_new = true, tyre_mgmt_new = true)
+        r5 = NamedTuple(getfield(LDF(model5), :_varname_ranges))
+        @test length(ws5.Minv) == LDP.dimension(LDF(model5))
+        @test ws5.Minv[r5.η.range] == [Diomedes.LAP_WARM_DEFAULT[:η]] && all(==(0.01), ws5.Minv[r5.u_tm.range])
         # warm start of a slopes fit from a fit without them: new blocks get the defaults
         ws3 = lap_warm_start(fake, d_old, d3; slopes_new = true)
         r3 = NamedTuple(getfield(LDF(model3), :_varname_ranges))

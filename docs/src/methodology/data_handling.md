@@ -123,7 +123,7 @@ incident on about 15% of stages ([#10](https://github.com/aleccrowell/diomedes/i
 ## Lap times
 
 Lap times (1996–) and pit stops (2011–) feed the lap-time model and the
-retirement selection check. They come from Jolpica, like the results; the lap fits
-published so far read 1996–2019 from the Ergast dump. Pit stops before 2011 are inferred from lap times
+retirement selection check. They come from Jolpica, like the results (the published lap fit too; earlier
+lap fits read 1996–2019 from the Ergast dump). Pit stops before 2011 are inferred from lap times
 ([`infer_pit_stops`](@ref)). Over 2011–2019, the inferred stops give the same
 effects as the recorded ones (driver correlation 0.998) ([#12](https://github.com/aleccrowell/diomedes/issues/12)).

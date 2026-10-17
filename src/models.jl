@@ -313,7 +313,7 @@ end
 """
     run_nuts_checkpointed(model, init, path; n_samples, n_adapts = 500, δ = 0.8, block = 100,
                           seed = 1, progress_log = nothing, log_every = 100, external = nothing,
-                          tune_step = false) -> chain
+                          tune_step = false, fixed_step = nothing) -> chain
 
 One NUTS chain sampled in blocks, each saved to `"\$(path)_block<j>.jls"`, so a
 run that is killed can be resumed by calling this again: saved blocks are loaded
@@ -332,12 +332,16 @@ the same draws as an uninterrupted one. A kill loses at most the block in
 progress (the warm-up, if it is in block 1). With `tune_step = true`, the step
 size is raised after warm-up to the largest that still meets the target
 acceptance (`tune_step_size`, #62); the probe is written to
-`"\$(path)_steptune.txt"`. Returns the blocks concatenated.
+`"\$(path)_steptune.txt"`. `fixed_step` sets the step size of the blocks after the
+first that this call samples (saved blocks keep theirs), e.g. to resume a chain
+whose tuned step size left it at a deeper tree than the other chains (#66).
+Returns the blocks concatenated.
 """
 function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int, n_adapts::Int = 500,
                                δ::Real = 0.8, block::Int = 100, seed::Int = 1,
                                progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
-                               external = nothing, tune_step::Bool = false)
+                               external = nothing, tune_step::Bool = false,
+                               fixed_step::Union{Nothing,Real} = nothing)
     adtype = gap_sampler().adtype
     chains = []
     Minv, ϵ = nothing, nothing
@@ -364,6 +368,7 @@ function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int
                 Minv, ϵ = ad.Minv, ad.ϵ
                 ch = strip_state(ch)
             else
+                fixed_step === nothing || (ϵ = Float64(fixed_step))
                 ch = draws_from(model, last(chains), Minv, ϵ, nj; rng = Xoshiro(seed + j))
                 ch = strip_state(ch)
                 progress_log === nothing ||
@@ -376,7 +381,7 @@ function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int
         push!(chains, ch)
         # after warm-up, once: before block 2 is first sampled (a resumed run whose
         # block 2 exists keeps the step size saved in it)
-        if tune_step && j == 1 && cld(n_samples, block) > 1 && !isfile("$(path)_block2.jls")
+        if tune_step && fixed_step === nothing && j == 1 && cld(n_samples, block) > 1 && !isfile("$(path)_block2.jls")
             ϵ, rows = tune_step_size(model, ch, Minv, ϵ, δ; seed)
             open("$(path)_steptune.txt", "w") do io
                 println(io, "factor\tstep_size\tacceptance\ttree_depth\tdivergences")
