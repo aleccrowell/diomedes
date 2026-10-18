@@ -1,7 +1,9 @@
 # Circuit reference tables
 
 Hand-checked circuit and race metadata for the lap model's car × circuit terms
-([#14](https://github.com/aleccrowell/diomedes/issues/14)). F1 Grands Prix 1996–2025; circuit ids
+([#14](https://github.com/aleccrowell/diomedes/issues/14)) and the race model's circuit terms
+([#81](https://github.com/aleccrowell/diomedes/issues/81)). F1 Grands Prix 1950–2025 (street scores
+and layout lengths; the other tables 1996–2025 for now); circuit ids
 are Jolpica/Ergast `circuitId`s. Every row cites its sources; rows marked "uncertain" or
 "unconfirmed" say why in `notes`.
 
@@ -19,12 +21,29 @@ Three criteria, each 0–2:
 enters the model as a car-season slope, and surface (ride, mechanical grip) is what most
 distinguishes how cars cope; walls mostly change how drivers manage risk.
 
+The race model (#81) uses the criteria separately instead: **rough** = S as a car-season pace
+slope, and **tight** = W on incident probability and loss size. R is kept as a record but is not
+used there; it is what made airfields, the Indianapolis oval and the Nordschleife awkward to score
+on one scale.
+
+Before 1996, many circuits had trees, ditches, banks, houses or straw bales lining the lap
+instead of barriers. These count as walls, and the notes say so. The 1950–95 rows were scored
+from Wikipedia circuit and race articles. Each row was then source-checked against at least one
+non-Wikipedia source, usually racingcircuits.info or the Motor Sport database. Ten scores changed
+in the check; the notes say which and why.
+
 ## `layout_lengths.csv` — lap length of the layout raced (one row per layout era)
 
-`length_km` per circuit and year range, matched to every race 1996–2025 (two layouts in one
+`length_km` per circuit and year range, matched to every race 1950–2025 (two layouts in one
 year are separate rows, named in `race`: Bahrain/Sakhir 2020). Used to compute each race's
 average lap speed. Where the circuit article, the race articles and statsf1.com disagree, the
-row is marked uncertain; all such differences are under 1 %.
+row is marked uncertain. All 1996–2025 differences are under 1 %.
+
+The 1950–95 rows were checked against four sources: the race article infobox, the circuit
+article, the F1DB open database (github.com/f1db/f1db) and the Motor Sport database. statsf1.com
+was not reachable. Where the race article alone disagreed with three agreeing sources, the three
+were used; the notes say "kept". Rows with differences of 0.1 % or more are marked uncertain
+(the largest: Detroit 1982, 3.7 %; Galvez 1974–81, 2.6 %).
 
 ## `start_times_1996_2004.csv` — documented local start times before 2005
 
