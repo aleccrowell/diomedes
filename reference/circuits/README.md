@@ -64,6 +64,30 @@ schedule (rain, a start-line crash, a restart), the time is the start of the rac
 assumptions are races where morning against afternoon is in doubt: Jacarepaguá 1978–89, and
 Buenos Aires, which swung between 13:00 and 16:30.
 
+## `wet_races.csv` — documented race conditions (one row per race)
+
+`condition` for every race 1950–2025, about the race that counted (from the start to the finish;
+practice, qualifying, sprints and annulled starts don't count):
+- **wet:** the track was wet for most of the race (most of the field on wet or intermediate
+  tyres, or rain throughout);
+- **mixed:** wet for part of the race (rain starting or stopping, a wet start drying out, a
+  shower causing tyre changes or spins);
+- **dry:** no rain or wet track documented during the race.
+
+| | dry | mixed | wet |
+|---|---|---|---|
+| races | 981 | 105 | 63 |
+
+Every wet or mixed row is backed by a report of that race: Wikipedia, Motor Sport (to 1984),
+grandprix.com and German Wikipedia (1985–2005). Rows where sources conflict or the call is
+borderline start their notes with "Uncertain:" (48 rows, mostly wet against mixed, or light rain
+that may not have wetted the track). 206 dry rows rest only on no rain being mentioned. The rest
+have a positive statement, such as an infobox reading dry or sunny, or a report saying so.
+
+This flag, not ERA5, is the race model's wet covariate (#81). ERA5 rain over the race
+(`rain_race_mm`) reaches 1 mm in only 49 % of the wet races and 29 % of the mixed ones, but also in
+5 % of the dry ones.
+
 ## `race_weather.csv` — start time and race-window weather (one row per race)
 
 Built by `scripts/circuits/race_weather.py`.
@@ -77,7 +101,7 @@ Built by `scripts/circuits/race_weather.py`.
   start plus that time (#81). 1950s races averaged 2.9 h (1990s: 1.6 h), so the two-hour window
   would miss the end of the race. Note that `rain_mm` also counts the hour before the start
   (ERA5 hourly rain is the total over the preceding hour); `rain_race_mm` does not.
-- **ERA5 misses many wet races.** A ~30 km grid cell can't place a downpour at one circuit in
+- **ERA5 misses many wet races** (see `wet_races.csv`). A ~30 km grid cell can't place a downpour at one circuit in
   one hour: Estoril 1985 shows 0.6 mm and Fuji 1976 0.0 mm over the race. It does catch Spa 1966,
   the Nürburgring 1968, Monaco 1984 and Montreal 1981.
 - **Before 1979,** ERA5 has no satellite data, so its weather is less reliable at a single
