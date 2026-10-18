@@ -2,8 +2,7 @@
 
 Hand-checked circuit and race metadata for the lap model's car × circuit terms
 ([#14](https://github.com/aleccrowell/diomedes/issues/14)) and the race model's circuit terms
-([#81](https://github.com/aleccrowell/diomedes/issues/81)). F1 Grands Prix 1950–2025 (street scores
-and layout lengths; the other tables 1996–2025 for now); circuit ids
+([#81](https://github.com/aleccrowell/diomedes/issues/81)). F1 Grands Prix 1950–2025; circuit ids
 are Jolpica/Ergast `circuitId`s. Every row cites its sources; rows marked "uncertain" or
 "unconfirmed" say why in `notes`.
 
@@ -52,13 +51,35 @@ timetables (2000–04); 1998–99 derived from formula1.com's pit-stop clock tim
 (`scripts/circuits/estimate_start_times.py`). 1996–97 are unconfirmed (14:00 local, or the
 documented later slot): those seasons' timing stamps look normalised to a 14:00 start.
 
+## `start_times_1950_1995.csv` — documented local start times 1950–95
+
+Same columns as the 1996–2004 table. Each race's start time is confirmed only where a source
+documents it for that race, almost always a Motor Sport magazine race report. That gives 196 of
+the 581 races. Every confirmation that rested on a search summary was then checked against the
+fetched article, and one wrong time (Zandvoort 1985) was corrected. The other races are
+unconfirmed: their time comes from the same circuit's documented years, or failing that the
+era's European pattern, and the notes give the reason. Where a race started well after its
+schedule (rain, a start-line crash, a restart), the time is the start of the race that counted
+(e.g. Monza 1978 at 18:00), since that is the window the weather should cover. The riskiest
+assumptions are races where morning against afternoon is in doubt: Jacarepaguá 1978–89, and
+Buenos Aires, which swung between 13:00 and 16:30.
+
 ## `race_weather.csv` — start time and race-window weather (one row per race)
 
 Built by `scripts/circuits/race_weather.py`.
 - **Start time:** `local_start` and `utc_start`, and where it came from (`start_source`):
-  - documented (1996–2004);
+  - documented (1950–2004);
   - Jolpica 2005–06, whose times are local clock times wrongly marked as UTC;
   - Jolpica UTC from 2007.
 - **`temp_c`:** mean air temperature over the two hours from the start (Open-Meteo archive, ERA5 reanalysis, at the circuit's coordinates). Air temperature, not track temperature.
-- **`rain_mm`:** rainfall over the same window. Not used yet; see [#79](https://github.com/aleccrowell/diomedes/issues/79).
+- **`rain_mm`:** rainfall over the same window.
+- **`race_hours`, `rain_race_mm`:** the winner's race time, and rainfall from the start to the
+  start plus that time (#81). 1950s races averaged 2.9 h (1990s: 1.6 h), so the two-hour window
+  would miss the end of the race. Note that `rain_mm` also counts the hour before the start
+  (ERA5 hourly rain is the total over the preceding hour); `rain_race_mm` does not.
+- **ERA5 misses many wet races.** A ~30 km grid cell can't place a downpour at one circuit in
+  one hour: Estoril 1985 shows 0.6 mm and Fuji 1976 0.0 mm over the race. It does catch Spa 1966,
+  the Nürburgring 1968, Monaco 1984 and Montreal 1981.
+- **Before 1979,** ERA5 has no satellite data, so its weather is less reliable at a single
+  point and hour, especially rain.
 - **`temp_m2h` … `temp_p2h`:** the same with the window moved by ±1 or ±2 hours. Moving the start by an hour changes the temperature by 0.4 °C on average (95 % within 1.0 °C), against a spread of 4.8 °C between races, so uncertain start times matter little.
