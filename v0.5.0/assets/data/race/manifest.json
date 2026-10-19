@@ -1,0 +1,96 @@
+{
+    "model": "pl_dur_rw_kappa_age_big_slope_dev",
+    "fit": "gap_jolpica1950-2025+partial_pl_dur_rw_kappa_age_big_slope_dev",
+    "chains": 4,
+    "draws_per_chain": 1000,
+    "chains_fitted": 4,
+    "chains_used": [
+        1,
+        2,
+        3,
+        4
+    ],
+    "data": "F1 1950–2025, Jolpica API, all classified finishers (lapped as intervals, or at exact gaps from their own times from 2023), plus retirements from 1996 as partial gaps",
+    "rows": {
+        "timed": 7859,
+        "lapped": 7185,
+        "lapped_exact": 297,
+        "partial": 1722
+    },
+    "convergence": {
+        "max_rhat": 1.011,
+        "min_ess": 223.6,
+        "divergences": 3,
+        "groups": {
+            "cars": {
+                "max_rhat": 1.005,
+                "min_ess": 1589.6,
+                "worst": "ferrari_1960"
+            },
+            "age": {
+                "max_rhat": 1.003,
+                "min_ess": 2604.2,
+                "worst": "age 48"
+            },
+            "races": {
+                "max_rhat": 1.009,
+                "min_ess": 303.8,
+                "worst": "π f1/1991-09/race"
+            },
+            "scalars": {
+                "max_rhat": 1.011,
+                "min_ess": 223.6,
+                "worst": "a_π"
+            },
+            "slopes": {
+                "max_rhat": 1.008,
+                "min_ess": 1734,
+                "worst": "hamilton"
+            },
+            "dev": {
+                "max_rhat": 1.008,
+                "min_ess": 4316.3,
+                "worst": "minardi_1996"
+            },
+            "drivers": {
+                "max_rhat": 1.005,
+                "min_ess": 830.1,
+                "worst": "vettel"
+            }
+        }
+    },
+    "modes": [
+        {
+            "label": "A",
+            "chains": [
+                1,
+                2,
+                3,
+                4
+            ],
+            "draws": 4000,
+            "kept": true,
+            "mean_logjoint": -27431.9,
+            "mean_loglikelihood": -20135.8,
+            "loss": {
+                "sigma": 0.4078,
+                "pi_base": 0.634,
+                "lambda_base": 1.5797,
+                "rho": 0.0229,
+                "lambda_big": 14.2604
+            },
+            "convergence": {
+                "max_rhat": 1.011,
+                "min_ess": 223.6
+            }
+        }
+    ],
+    "kept_modes": [
+        "A"
+    ],
+    "effects_by_mode": [
+    ],
+    "exported_by": "scripts/export_site.jl race",
+    "export_commit": "6d4d329",
+    "date": "2026-10-14"
+}
