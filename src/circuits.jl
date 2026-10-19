@@ -6,7 +6,7 @@ const CIRCUIT_DIR = joinpath(dirname(@__DIR__), "reference", "circuits")
 """
     circuit_table(dir = CIRCUIT_DIR) -> DataFrame
 
-One row per F1 race in the reference tables (1996–2025): `event_id` (as in
+One row per F1 race in the reference tables (1950–2025): `event_id` (as in
 `fetch_results`, "season-round"), `season`, `circuit_id`, `length_km` (the layout
 raced), `street` (the street score, 0–1) and `temp_c` (race-window air
 temperature). Built from `race_weather.csv`, `layout_lengths.csv` and
