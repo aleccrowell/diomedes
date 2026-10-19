@@ -452,8 +452,16 @@ function export_laps(tag; source = nothing)
                                               (t == "starts" ? [:starts] : Symbol[])...,
                                               :mean => cols[1], :sd => cols[2]); on = :id, order = :left))
     end
+    # car-season circuit slopes (#14), if the fit has them: % per sd of each covariate
+    cx = "output/$(tag)_circuits.csv"
+    isfile(cx) && (c = leftjoin(c, select(round_floats!(CSV.read(cx, DataFrame)), :machine => :id,
+                                          r"^(speed|street|temp)_(mean|sd)$"); on = :id, order = :left))
     CSV.write(joinpath(dir, "drivers.csv"), d)
     CSV.write(joinpath(dir, "cars.csv"), c)
+    # population age curve (#12), if the fit has it
+    ac = "output/$(tag)_age_curve.csv"
+    isfile(ac) ? CSV.write(joinpath(dir, "age_curve.csv"), round_floats!(CSV.read(ac, DataFrame))) :
+                 rm(joinpath(dir, "age_curve.csv"); force = true)
     # the same levels in the race model (export `race` first)
     race = joinpath(OUT, "race")
     rd = CSV.read(joinpath(race, "drivers.csv"), DataFrame)
@@ -465,13 +473,14 @@ function export_laps(tag; source = nothing)
               innerjoin(select(c, :id, :laps, :mean => :lap_mean, :sd => :lap_sd),
                         select(rc, :id, :constructor, :season, :mean => :race_mean, :sd => :race_sd); on = :id))
     log = "output/$(tag)_combine.txt"
-    m = match(r"(\d{4})-(\d{4})_(recorded|inferred)(_notyres)?(_slopes)?(_dev)?(_lead)?(_tyremgmt)?(_starts)?", tag)
+    m = match(r"(\d{4})-(\d{4})_(recorded|inferred)(_notyres)?(_slopes)?(_dev)?(_lead)?(_tyremgmt)?(_starts)?(_age)?(_circ)?", tag)
     first_y, last_y = parse(Int, m[1]), parse(Int, m[2])
     src = source == "jolpica" ? "Jolpica lap times" :
           last_y <= 2019 ? "Ergast lap times" : first_y > 2019 ? "Jolpica lap times" : "Ergast lap times to 2019, Jolpica from 2020"
     terms = join(filter(!isempty, [m[4] === nothing ? "stint age" : "", m[5] === nothing ? "" : "career slopes",
                                    m[6] === nothing ? "" : "in-season development", m[7] === nothing ? "" : "lead laps",
-                                   m[8] === nothing ? "" : "tyre management", m[9] === nothing ? "" : "starts"]), ", ")
+                                   m[8] === nothing ? "" : "tyre management", m[9] === nothing ? "" : "starts",
+                                   m[10] === nothing ? "" : "age curve", m[11] === nothing ? "" : "circuit slopes"]), ", ")
     modes = export_lap_modes(tag, dir)
     write_manifest(dir, (; model = "lap_effects" * (isempty(terms) ? "" : " ($(terms))"), fit = tag,
                          data = "F1 $(first_y)–$(last_y) clean laps ($(src), $(m[3]) pit stops): " * inner(first(readlines(log))),
@@ -508,7 +517,7 @@ if mode == "race"
 elseif mode == "retire"
     export_retire(get(ARGS, 2, "retire_jolpica1950-2025"))
 elseif mode == "laps"
-    export_laps(get(ARGS, 2, "laps_1996-2025_inferred_slopes_dev_lead_tyremgmt_starts"); source = get(ARGS, 3, nothing))
+    export_laps(get(ARGS, 2, "laps_1996-2025_inferred_slopes_dev_lead_tyremgmt_starts_age_circ"); source = get(ARGS, 3, nothing))
 elseif mode == "wrc"
     export_wrc(get(ARGS, 2, "pl_dur_rw_kappa_cdrv_tdrv_fgam"))
 else

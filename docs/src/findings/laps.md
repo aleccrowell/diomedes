@@ -9,11 +9,14 @@ lap times). Besides driver and car effects it has:
 - driver and car-season deviations from those curves (tyre management);
 - an effect of leading the race;
 - lap 1 as its own term, with the grid slot and driver and car-season start
-  effects ([#66](https://github.com/aleccrowell/diomedes/issues/66)).
+  effects ([#66](https://github.com/aleccrowell/diomedes/issues/66));
+- a population age curve shared by all drivers, as in the race model
+  ([#12](https://github.com/aleccrowell/diomedes/issues/12));
+- car-season slopes on three circuit dimensions: average lap speed, street score
+  and race-time air temperature ([#14](https://github.com/aleccrowell/diomedes/issues/14)).
 
 It is **in development** ([#12](https://github.com/aleccrowell/diomedes/issues/12)).
-Its chains settle in two modes, which differ in a few scalars but not in the
-driver and car results ([below](#Two-modes)).
+Its four chains converge to a single mode ([below](#Convergence)).
 
 !!! note "What these numbers measure"
     The headline results are the race model's: it measures the outcome that
@@ -123,20 +126,87 @@ diomedesFigure("fig-laps-drivers", {
 
 Drivers with at least 500 clean laps.
 
-## Two modes
+## The shape of a career on laps
 
-The four chains settle in two modes during warm-up and stay there. They differ
-in how the variation in lap times is shared out. In one mode the per-race trend
-over the race distance varies more from race to race. In the other, more of the
-variation goes into the lap-noise mixture. Both modes fit the data equally well
-(the same log density), so the published results pool all four chains. The
-driver, car, tyre-management and start effects agree across the two modes, so
-which mode is right doesn't change them. As with the race model's
-modes ([Checking for multiple modes](@ref)), the scalars that split the modes are
-not converged when the chains are pooled. Within each mode they are (R-hat ≤ 1.012),
-as are the cars, tyre management and starts. The driver effects and career slopes
-are short of the targets: R-hat 1.04 pooled over the four chains (bulk ESS 119),
-up to 1.07 within a mode, against 1.01 for the previous fit without the #66 terms.
+The population age curve on clean laps: how pace changes with age for the
+average driver, in % of lap time (negative = faster), with a 90% band. As in the
+race model ([Careers](careers.md)), only its **shape** is identified: it has no
+constant or linear part, because those can't be told apart from the drivers'
+career slopes and the car-seasons. Read the bends, not the slope. The curve
+flattens through the mid-twenties, bottoms out around 27–29 and bends back up
+in the early thirties. Ages under 20 and over 38 have few laps.
+
+```@raw html
+<div id="fig-laps-age" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-laps-age", {
+  data: { url: "assets/data/laps/age_curve.csv",
+          format: { type: "csv", parse: { age: "number", laps: "number", mean: "number", q05: "number", q95: "number" } } },
+  width: "container", height: 300,
+  encoding: { x: { field: "age", type: "quantitative", title: "Age", scale: { zero: false } } },
+  layer: [
+    { mark: { type: "area", opacity: 0.25 },
+      encoding: { y: { field: "q05", type: "quantitative", title: "Pace relative to the curve's average (%)", scale: { reverse: true } },
+                  y2: { field: "q95" } } },
+    { mark: { type: "line", point: true },
+      encoding: { y: { field: "mean", type: "quantitative" },
+                  tooltip: [{ field: "age", title: "Age" }, { field: "laps", title: "Laps at this age" },
+                            { field: "mean", title: "Curve (%)", format: ".2f" },
+                            { field: "q05", title: "5%", format: ".2f" }, { field: "q95", title: "95%", format: ".2f" }] } }
+  ]
+});
+</script>
+```
+
+The vertical axis is reversed, so faster is higher.
+
+## Circuit slopes
+
+Each car-season has a slope on three circuit dimensions, centred within the
+season: how much faster or slower it is, relative to the field, at a circuit one
+standard deviation above average. The dimensions are average lap speed (sd
+20 km/h), street score (sd 0.34 on the 0–1 scale; see the
+[circuit tables](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits))
+and air temperature at race time (sd 4.8 °C). Positive means relatively
+**slower** there. The spread of the slopes across car-seasons is about 0.16 %
+per sd for speed and street score, and 0.11 % for temperature.
+
+```@raw html
+<div id="fig-laps-circuits" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-laps-circuits", {
+  data: { url: "assets/data/laps/cars.csv",
+          format: { type: "csv", parse: { laps: "number", speed_mean: "number", street_mean: "number", temp_mean: "number" } } },
+  transform: [
+    { filter: "datum.laps >= 500" },
+    { fold: ["speed_mean", "street_mean", "temp_mean"], as: ["dimension", "slope"] },
+    { calculate: "{speed_mean: 'Speed', street_mean: 'Street score', temp_mean: 'Temperature'}[datum.dimension]", as: "dim" }
+  ],
+  width: "container", height: 220,
+  mark: { type: "tick", opacity: 0.6, thickness: 2 },
+  encoding: {
+    x: { field: "slope", type: "quantitative", title: "Slope, % of lap time per sd (positive = relatively slower)" },
+    y: { field: "dim", type: "nominal", title: null },
+    tooltip: [{ field: "id", title: "Car-season" }, { field: "dim", title: "Dimension" },
+              { field: "slope", title: "Slope (%)", format: ".2f" }, { field: "laps", title: "Laps" }]
+  }
+});
+</script>
+```
+
+Car-seasons with at least 500 laps.
+
+## Convergence
+
+All four chains converge to one mode. The fit before this one, without the age
+curve and circuit slopes, split into two modes that differed in the spread of the
+per-race trends (τ<sub>δ</sub> 4.60 against 4.12) and in the lap-noise mixture,
+without changing the effects. Here τ<sub>δ</sub> = 4.58 in every chain. Three
+chains adapted step sizes that left them taking about four times as many
+leapfrog steps per draw as the fourth (tree depth 9 against 7). They were resumed from their first block at a fixed step size of
+0.0272, the step size the fourth chain had tuned to
+([#12](https://github.com/aleccrowell/diomedes/issues/12)). The table gives the
+chains' scalars.
 
 ```@raw html
 <div id="laps-modes"></div>
@@ -173,5 +243,5 @@ fetch(documenterBaseURL + "/assets/data/laps/manifest.json").then(r => r.json())
 ## Download the data
 
 ```@raw html
-<p><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv"><code>vs_race_cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv"><code>vs_race_drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/drivers.csv"><code>drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/cars.csv"><code>cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/modes.csv"><code>modes.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
+<p><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv"><code>vs_race_cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv"><code>vs_race_drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/drivers.csv"><code>drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/cars.csv"><code>cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/age_curve.csv"><code>age_curve.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/modes.csv"><code>modes.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
 ```
