@@ -45,10 +45,14 @@ Typical green-flag pace under race conditions, plus the start, not peak pace
 and not race results. A driver well ahead lifts and coasts and saves tyres, so
 the lap model underrates comfortable winners. Pit-stop timing, strategy and
 safety-car periods are left out. So its driver effects are less spread out than
-the race model's, compressed most at the front. The race model stays the primary
-result. The lap model is supporting evidence for the split between car and
-driver, from about 50 times more observations, and for in-season development.
-Adding starts, lead laps and tyre management did not reduce the compression: the
+the race model's, compressed most at the front. Neither model is the reference
+for the other. The race model measures results, from one observation per driver
+per race. The lap model measures clean-lap pace, from about 50 times more
+observations, which constrains the split between car and driver and in-season
+development more tightly within its seasons. Where the two agree, the result
+holds across both models' blind spots. Where they disagree, either could be
+wrong: independent checks, such as held-out races or simulated data with known
+effects, are needed to tell which. Adding starts, lead laps and tyre management did not reduce the compression: the
 slope of lap-model driver effects on race-model ones stayed about 0.41 over
 1996–2025, while the correlation rose slightly, from 0.67 to 0.69
 ([#66](https://github.com/aleccrowell/diomedes/issues/66)).
