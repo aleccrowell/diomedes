@@ -1246,6 +1246,84 @@ end
                 @test o == LDP.dimension(rdm)
             end
         end
+        # population age curve (#12) and circuit slopes (#14): one-year bins of the
+        # season age; per race the speed (layout length / median clean lap), street
+        # score and temperature, standardised across races; both enter h on clean
+        # laps and lap 1
+        circ = DataFrame(event_id = d7.races, length_km = [4.0 + 0.5r for r in eachindex(d7.races)],
+                         street = [isodd(r) ? 1.0 : 0.0 for r in eachindex(d7.races)],
+                         temp_c = [15.0 + 3r for r in eachindex(d7.races)])
+        d8 = prepare_laps(lt5, rows7; pits = :inferred, circuits = circ)
+        @test d8.y == d7.y && d8.race_x_names == [:speed, :street, :temp]
+        medms = [median(d8.rows.time_ms[d8.race .== r]) for r in 1:nr]
+        @test d8.race_x_raw[:, 1] ≈ circ.length_km ./ (medms ./ 3.6e6)
+        @test all(abs.(mean(d8.race_x; dims = 1)) .< 1e-12) && all(std(d8.race_x; dims = 1) .≈ 1)
+        @test_throws ArgumentError prepare_laps(lt5, rows7; pits = :inferred, circuits = circ[2:end, :])
+        # with circuit ids, the speed is the mean over the races on the same layout
+        circ2 = transform(circ, :event_id => ByRow(e -> "x") => :circuit_id); circ2.length_km .= 5.0
+        d8l = prepare_laps(lt5, rows7; pits = :inferred, circuits = circ2)
+        @test all(d8l.race_x_raw[:, 1] .≈ mean(5.0 ./ (medms ./ 3.6e6))) && all(iszero, d8l.race_x[:, 1])
+        @test d8.age_years == sort(unique(d8.age_years)) && length(d8.age_years) == 6
+        let ecomp = findfirst(==("e"), d8.competitors)
+            @test all(iszero, d8.abin[d8.comp .== ecomp]) && all(>(0), d8.abin[d8.comp .!= ecomp])
+        end
+        @test d8.age_rows == [count(==(i), d8.abin) for i in eachindex(d8.age_years)]
+        # a lap's bin is its driver's season age in whole years
+        let j = findfirst(==("a"), d8.rows.competitor_id)
+            sa = mean([(x - Date(1990, 1, 1)).value for x in
+                       rows7.event_date[(rows7.competitor_id .== "a") .& (rows7.season .== d8.rows.season[j])]] ./ 365.2425)
+            @test d8.age_years[d8.abin[j]] == floor(Int, sa)
+        end
+        @test all(d8.s_abin[d8.s_comp .== findfirst(==("a"), d8.competitors)] .> 0)
+        @test isempty(d7.age_years) == false && size(d7.race_x) == (nr, 0)
+        @test_throws ArgumentError lap_effects(d7; circuits = true)
+        model8 = lap_effects(d8; starts = true, age = true, circuits = true)
+        na, nk = length(d8.age_years), 3
+        θ8 = merge(θ7, (; τ_age = 0.3, e_age = randn(rng, na - 1), τ_cx = [0.2, 0.1, 0.05], u_cx = randn(rng, nm * nk)))
+        fage = age_curve(0.3, θ8.e_age, AgeCurveBasis(d8.age_years, d8.age_rows))
+        cxm = reduce(hcat, [θ8.τ_cx[k] .* Diomedes.sum_to_zero_by(θ8.u_cx[((k - 1) * nm + 1):(k * nm)], d8.mach_season,
+                                                                    Diomedes.lap_mach_counts(d8)) for k in 1:nk])
+        cterm(m, r) = sum(cxm[m, k] * d8.race_x[r, k] for k in 1:nk)
+        b8 = Diomedes.sum_to_zero_by(θ.b_mach, d8.mach_season, Diomedes.lap_mach_counts(d8))
+        h8 = [a[d8.comp[j]] + b8[d8.mach[j]] + θ.β[1] * d8.stint[j] / 10 + θ.β[2] * (d8.stint[j] / 10)^2 +
+              (d8.abin[j] > 0 ? fage[d8.abin[j]] : 0.0) + cterm(d8.mach[j], d8.race[j]) for j in eachindex(d8.y)]
+        h8bar = [mean(h8[d8.race .== r]) for r in 1:nr]
+        f8bar = [mean(d8.frac[d8.race .== r]) for r in 1:nr]
+        ll8 = sum(Diomedes.paceloss_logpdf(d8.y[j] - (θ.γ[d8.race[j]] + θ.δ[d8.race[j]] * (d8.frac[j] - f8bar[d8.race[j]]) +
+                                                       h8[j] - h8bar[d8.race[j]]),
+                                           θ.σ, Diomedes.logistic(θ.a_π), exp(θ.a_λ)) for j in eachindex(d8.y))
+        hs8 = [a[d8.s_comp[j]] + b8[d8.s_mach[j]] + sdv[d8.s_comp[j]] + scv[d8.s_mach[j]] + 0.5 * d8.s_grid[j] -
+               0.1 * d8.s_grid[j]^2 + (d8.s_abin[j] > 0 ? fage[d8.s_abin[j]] : 0.0) + cterm(d8.s_mach[j], d8.s_race[j])
+               for j in eachindex(d8.s_y)]
+        hs8bar = [mean(hs8[d8.s_race .== r]) for r in 1:nr]
+        ll8s = sum(Diomedes.paceloss_logpdf(d8.s_y[j] - (θ7.γ1[d8.s_race[j]] + hs8[j] - hs8bar[d8.s_race[j]]), 0.8,
+                                            Diomedes.logistic(-1.0), exp(0.5)) for j in eachindex(d8.s_y))
+        @test Turing.DynamicPPL.loglikelihood(model8, θ8) ≈ ll8 + ll8s
+        for flags in ((; starts = true, age = true, circuits = true), (; age = true), (; tyres = false, circuits = true),
+                      (; slopes = true, dev = true, lead = true, tyre_mgmt = true, starts = true, age = true, circuits = true))
+            m = lap_effects(d8; flags...)
+            rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            x8 = 0.5 .* randn(rng, LDP.dimension(rdm))
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_dev, :τ_td, :τ_tm, :τ_sd, :τ_sc, :σ1, :τ_age, :τ_cx)
+                haskey(rg, k) && (x8[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
+            end
+            @test LDP.logdensity_and_gradient(rdm, x8)[2] ≈ LDP.logdensity_and_gradient(fdm, x8)[2]
+            @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), x8).tape) < 1000
+            let o = 0
+                for (name, (n, _)) in Diomedes.lap_layout(d8; flags...)
+                    @test rg[name].range == (o + 1):(o + n)
+                    o += n
+                end
+                @test o == LDP.dimension(rdm)
+            end
+        end
+        # warm start from a fit without them: the new blocks get the defaults
+        ws8 = lap_warm_start(fake, d_old, d8; starts_new = true, age_new = true, circuits_new = true)
+        r8 = NamedTuple(getfield(LDF(model8), :_varname_ranges))
+        @test length(ws8.Minv) == LDP.dimension(LDF(model8))
+        @test all(==(Diomedes.LAP_WARM_DEFAULT[:u_cx]), ws8.Minv[r8.u_cx.range]) &&
+              all(==(Diomedes.LAP_WARM_DEFAULT[:e_age]), ws8.Minv[r8.e_age.range])
         ws5 = lap_warm_start(fake, d_old, d5; slopes_new = true, dev_new = true, lead_new = true, tyre_mgmt_new = true)
         r5 = NamedTuple(getfield(LDF(model5), :_varname_ranges))
         @test length(ws5.Minv) == LDP.dimension(LDF(model5))

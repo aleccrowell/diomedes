@@ -459,11 +459,13 @@ struct AgeCurveBasis
     walk::Matrix{Float64}
     proj::Matrix{Float64}
 end
-function AgeCurveBasis(g::GapData)
-    n = length(g.age_years)
+AgeCurveBasis(g::GapData) = AgeCurveBasis(g.age_years, g.age_rows)
+# from the age bins (whole years) and the rows per bin; also used by the lap model (#12)
+function AgeCurveBasis(age_years::AbstractVector, age_rows::AbstractVector)
+    n = length(age_years)
     walk = tril(ones(n, n - 1), -1)
-    X = hcat(ones(n), Float64.(g.age_years))
-    W = Diagonal(g.age_rows)
+    X = hcat(ones(n), Float64.(age_years))
+    W = Diagonal(Float64.(age_rows))
     proj = I - X * ((X' * W * X) \ (X' * W))
     return AgeCurveBasis(walk, proj)
 end
