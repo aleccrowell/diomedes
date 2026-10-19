@@ -22,7 +22,13 @@ race model. The current fit (1996–2025, [#66](https://github.com/aleccrowell/d
   the two can't be told apart);
 - lap 1 as its own term: its time against the race's median lap 1, with the
   drivers' and cars' pace effects, a curve in the grid slot, and driver and
-  car-season start effects, with its own noise.
+  car-season start effects, with its own noise;
+- the race model's population age curve, shared by all drivers
+  ([#12](https://github.com/aleccrowell/diomedes/issues/12));
+- car-season slopes on three circuit dimensions, centred within each season:
+  average lap speed, street score and race-time air temperature
+  ([#14](https://github.com/aleccrowell/diomedes/issues/14)). The covariates come
+  from hand-checked circuit tables, with sources, in `reference/circuits/`.
 
 It is fitted to green-flag laps.
 Excluded:
@@ -66,9 +72,14 @@ This model is in development; see [#12](https://github.com/aleccrowell/diomedes/
 - **1996–2025, with career slopes and development, no tyre terms.** Cars agree
   with the race model at 0.96 over 320 car-seasons, drivers at 0.68–0.70. The
   drivers of 1996–97, at the edge of the data, are the least reliable.
-- **1996–2025 with the #66 terms (the current fit).** Its drivers correlate 0.977 with
+- **1996–2025 with the #66 terms.** Its drivers correlate 0.977 with
   the fit without them. Laps get faster through a stint in the refuelling era
   (−0.31 % per 10 laps, as fuel burns off) and slower since 2010 (+0.60 %). The
   chains settle in two modes of equal log density. The modes differ in the spread
   of the per-race trends and in the lap-noise mixture. The driver, car,
   tyre-management and start effects agree across them (correlation ≥ 0.998).
+- **1996–2025 with the age curve and circuit slopes (the current fit).** One mode;
+  max R-hat 1.014, no divergences. Car-seasons correlate 0.953 with the race
+  model (0.954 before), drivers 0.761 (0.718 before). Its effects correlate 0.989
+  (cars) and 0.954 (drivers) with the previous fit. The circuit slopes vary by
+  about 0.16 % per sd of speed and of street score, and 0.11 % for temperature.

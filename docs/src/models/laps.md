@@ -42,6 +42,14 @@ y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁[era]
   quadratic in the grid slot, and driver and car-season start effects. Pit-lane
   starts are left out. The term has its own pace + loss noise.
 - `slopes` and `dev` add career slopes and in-season development, as in the race model.
+- `age = true` adds the population age curve of the race model ([`AgeCurveBasis`](@ref)): a
+  random walk over one-year bins of season age, with its constant and linear parts
+  projected out (they can't be separated from the career slopes and car-seasons).
+  τ_age ~ half-N(0, 0.2).
+- `circuits = true` adds car-season slopes on standardised race covariates from
+  [`circuit_table`](@ref): average lap speed (per layout, so a wet race doesn't read as a
+  slow circuit), street score and race-window air temperature. The slopes are
+  centred within each season, with a spread τ_cx ~ half-N(0, 0.5) per dimension.
 - Noise is pace + loss, as in the race model. Traffic, mistakes and damage are
   incident losses.
 - Driver and car-season effects are centred as in the race model. Every term is
@@ -67,6 +75,11 @@ chain = fit_laps(d; checkpoint = "output/laps_2011-2019_chain1", seed = 1000)
   off. A single stint curve shared across eras collapsed. The curves are now
   separate per era, and before 2010 the driver and car stint slopes mix tyre
   management with fuel strategy.
-- **Two modes in the 1996–2025 fit:** they differ in the spread of the per-race
-  trends (τ_δ) and in the lap-noise mixture. The effects agree across them; see
-  [Lap times](../findings/laps.md).
+- **Two modes in the 1996–2025 fit without the age curve and circuit slopes:**
+  they differed in the spread of the per-race trends (τ_δ) and in the lap-noise
+  mixture, with the same effects. The current fit with both terms has one mode.
+- **Adapted step sizes vary between chains:** in the 1996–2025 fits, some chains
+  adapt step sizes that put them at tree depth 9 instead of 7, about four times
+  slower. Resuming them at a fixed step size (`lap_fit.jl … step=<x>`) fixes this.
+- **Career slopes are loose:** τ_slope ≈ 2, against about 1 in the race model.
+  Short careers at the edges of the data trade slope against level.

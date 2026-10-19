@@ -91,7 +91,11 @@ Only its shape is identified: it has no constant or linear part</td></tr>
 <code>starts</code>, <code>start_mean</code>, <code>start_sd</code>: start effect, % of lap 1 against the driver's pace (negative = better starts)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/cars.csv">cars.csv</a></td><td>car-season</td>
 <td><code>id</code>, <code>mean</code>, <code>sd</code>, <code>laps</code>; <code>dev_mean</code>, <code>dev_sd</code>: in-season development, % from the season's first round to its last, relative to the field;
-<code>tyre_mean</code>, <code>tyre_sd</code>, <code>starts</code>, <code>start_mean</code>, <code>start_sd</code>: as for drivers</td></tr>
+<code>tyre_mean</code>, <code>tyre_sd</code>, <code>starts</code>, <code>start_mean</code>, <code>start_sd</code>: as for drivers;
+<code>speed_mean</code>, <code>speed_sd</code>, <code>street_mean</code>, <code>street_sd</code>, <code>temp_mean</code>, <code>temp_sd</code>: circuit slopes, % of lap time per sd of average lap speed, street score and race-time temperature, centred within the season (positive = relatively slower)</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/laps/age_curve.csv">age_curve.csv</a></td><td>age (years)</td>
+<td><code>age</code>, <code>laps</code>; <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: population age curve on clean laps, % of lap time.
+Only its shape is identified: it has no constant or linear part</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/modes.csv">modes.csv</a></td><td>chain × quantity</td>
 <td><code>chain</code>, <code>mode</code>, <code>kept</code>, <code>quantity</code>, <code>label</code>, <code>mean</code>, <code>q05</code>, <code>q95</code>: the scalars that split the chains into modes</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv">vs_race_drivers.csv</a></td><td>driver in both models</td>
