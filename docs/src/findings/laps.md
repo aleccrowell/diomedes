@@ -19,17 +19,21 @@ It is **in development** ([#12](https://github.com/aleccrowell/diomedes/issues/1
 Its four chains converge to a single mode ([below](#Convergence)).
 
 !!! note "What these numbers measure"
-    The headline results are the race model's: it measures the outcome that
-    counts, the time to finish a race. The lap model measures something narrower:
-    typical green-flag pace under race conditions, plus the start (lap 1). That
+    The race model and the lap model are two views of the same question from
+    different data, and neither is the reference for the other. The race model
+    measures the time to finish a race, from one result per driver per race
+    since 1950. That includes pit stops, strategy, safety-car periods and
+    incidents, and it relies on its own split between pace and incident losses.
+    The lap model measures typical green-flag pace under race conditions, plus
+    the start (lap 1), from about 50 laps per driver per race since 1996. That
     includes traffic, blue flags and the tyre, fuel and engine management drivers
     do when they don't need to push, but not pit-stop timing, strategy or
     safety-car periods. So it **underrates drivers who win comfortably** (they
     manage their pace) and flatters drivers who lose most of their time in the
-    parts of a race it leaves out. Read it as supporting evidence. Its car-season effects check the race
-    model's split between car and driver, from largely independent data. Its
-    in-season development trends are measured race by race. Don't read it as a
-    second driver ranking.
+    parts of a race it leaves out. Where the two agree, the result doesn't
+    depend on either model's blind spots. Where they disagree, either could be
+    wrong. Its driver ranking answers a different question from the race
+    model's: pace on clean laps, not results.
 
 ```@raw html
 <div id="manifest-laps"></div>
