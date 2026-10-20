@@ -16,6 +16,17 @@ import Distributions
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
 
+# A circuit table (#81) for the races of `g`, in the columns of `circuit_table()`:
+# five layouts shared across rounds and seasons, conditions cycling dry, dry, mixed, wet.
+function synthetic_circuits(g, rng)
+    evs = unique(g.rows.event_id)
+    rnd = [parse(Int, last(e, 2)) for e in evs]
+    return DataFrame(event_id = evs, season = [parse(Int, first(e, 4)) for e in evs],
+                     circuit_id = ["c$(r % 5)" for r in rnd], length_km = [4.0 + 0.3 * (r % 5) for r in rnd],
+                     street = rand(rng, length(evs)), W = rand(rng, 0:2, length(evs)), S = rand(rng, 0:2, length(evs)),
+                     temp_c = 15 .+ 15 .* rand(rng, length(evs)), condition = ["dry", "dry", "mixed", "wet"][mod1.(rnd, 4)])
+end
+
 # Simulated circuit-racing results for the retirement model (#13): per season,
 # `n_car` cars with two drivers each race `n_race` races of `L` laps. Retirement
 # hazards per race distance: mechanical exp(a[1] + car), incident exp(a[2] + driver),
@@ -485,7 +496,15 @@ end
                  ((false, :none, false, false, false, false, false), false, false, true)]
         # learned common race level only (race_mean, #32)
         cases = [[(c..., false) for c in cases]; ((true, :rw, true, true, true, true, true), false, false, false, true)]
-        for ((dur, era, kap, age, big, slp, dev), cdrv, tdrv, hg, mg) in cases
+        # circuit slopes and track terms (#81): each alone, both with every term on, track on the plain model
+        ctab = synthetic_circuits(g, rng)
+        rc = RaceCircuits(g, ctab)
+        cases = [[(c..., false, false) for c in cases];
+                 ((true, :rw, true, false, false, false, false), false, false, false, true, true, false);
+                 ((true, :rw, true, false, false, false, false), false, false, false, true, false, true);
+                 ((true, :rw, true, true, true, true, true), false, false, false, true, true, true);
+                 ((false, :none, false, false, false, false, false), false, false, false, true, false, true)]
+        for ((dur, era, kap, age, big, slp, dev), cdrv, tdrv, hg, mg, circ, trk) in cases
             θ = (; σ_comp = 0.7, σ_mach = 1.1, σ = 0.4, z_comp = randn(rng, nc), z_mach = randn(rng, nm),
                  γ = randn(rng, nr), a_π = -1.2, a_λ = 0.6)
             dur && (θ = (; θ..., β_dur_π = 0.25, β_dur_λ = 0.3))
@@ -494,6 +513,7 @@ end
                                                z_π_era = randn(rng, k), z_λ_era = randn(rng, k)))
             era === :rw && (θ = (; θ..., τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1),
                                  e_λ_rw = randn(rng, cov.n_seasons - 1)))
+            trk && (θ = (; θ..., β_track_π = randn(rng, 3), β_track_λ = randn(rng, 3)))
             # pace scale (#15): no z_mach; τ_κ, e_κ and centred b_mach come last, in sampling order
             kap && (θ = (; (k => v for (k, v) in pairs(θ) if k !== :z_mach)...,
                          τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm)))
@@ -501,6 +521,7 @@ end
             big && (θ = (; θ..., a_ρ = -2.5, δ_λ2 = 2.0))
             slp && (θ = (; θ..., τ_slope = 0.3, u_slope = randn(rng, nc)))
             dev && (θ = (; θ..., τ_dev = 0.4, u_dev = randn(rng, nm)))
+            circ && (θ = (; θ..., τ_cx = [0.3, 0.5, 0.2], u_cx = randn(rng, 3nm)))
             # centred drivers: a_comp (in % units) replaces z_comp, in the same sampling position
             cdrv && (θ = NamedTuple(k === :z_comp ? (:a_comp => θ.σ_comp .* v) : (k => v) for (k, v) in pairs(θ)))
             # hierarchical race intercepts: μ_γ and τ_γ sampled just before γ
@@ -536,6 +557,14 @@ end
                 path(steps) = (p = [0.0; cumsum(steps)]; p .- mean(p))
                 logitπ .+= path(θ.τ_π_rw .* θ.e_π_rw)[cov.season]
                 logλ .+= path(θ.τ_λ_rw .* θ.e_λ_rw)[cov.season]
+            end
+            if trk
+                # tight (W/2), mixed and wet per race: slopes on logit π and log λ
+                lp += sum(logpdf.(Normal(), θ.β_track_π)) + sum(logpdf.(Normal(), θ.β_track_λ))
+                for r in 1:nr, j in 1:3
+                    logitπ[r] += θ.β_track_π[j] * rc.track[r, j]
+                    logλ[r] += θ.β_track_λ[j] * rc.track[r, j]
+                end
             end
             π, λ = 1 ./ (1 .+ exp.(-logitπ)), exp.(logλ)
             if big
@@ -601,6 +630,18 @@ end
                 pm = [mean(pos[races[machs .== j]]) for j in 1:nm]
                 cs = cs .+ t[machs] .* (pos[races] .- pm[machs])
             end
+            if circ
+                # circuit slopes: per car and covariate, centred within season, times the race's
+                # covariate minus the car's mean over its rows; not scaled by κ
+                lp += sum(logpdf.(H(0.5ps.s), θ.τ_cx)) + sum(logpdf.(Normal(), θ.u_cx))
+                machs = vcat(g.t_mach, g.c_mach)
+                for k in 1:3
+                    u = θ.u_cx[((k - 1) * nm + 1):(k * nm)]
+                    sl = θ.τ_cx[k] .* (u .- seasonmean(u))
+                    xm = [mean(rc.x[races[machs .== j], k]) for j in 1:nm]
+                    cs = cs .+ sl[machs] .* (rc.x[races, k] .- xm[machs])
+                end
+            end
             cbar = [mean(cs[races .== r]) for r in 1:nr]
             nt = length(g.y)
             for i in eachindex(g.y)
@@ -612,7 +653,8 @@ end
                 lp += rowint(g.lo[i] - μ, g.hi[i] - μ, r)
             end
             model = paceloss_effects(g; loss_duration = dur, era, pace_scale = kap, age, big_loss = big, slopes = slp, dev,
-                                     centred_drivers = cdrv, driver_ν = tdrv ? 3 : nothing, race_hier = hg, race_mean = mg)
+                                     centred_drivers = cdrv, driver_ν = tdrv ? 3 : nothing, race_hier = hg, race_mean = mg,
+                                     circ, track = trk, circuits = ctab)
             @test logjoint(model, θ) ≈ lp
             # sampler gradient (uncompiled ReverseDiff through the fused rule) vs ForwardDiff,
             # in constrained space: positive-valued parameters are set positive by name
@@ -620,8 +662,8 @@ end
             fd = LDF(model; adtype = AutoForwardDiff())
             for _ in 1:2
                 θx = map(v -> v isa AbstractVector ? 0.5 .* randn(rng, length(v)) : 0.5 * randn(rng), θ)
-                θx = merge(θx, NamedTuple(k => 0.2 + rand(rng) for k in keys(θ)
-                                          if startswith(string(k), "σ") || startswith(string(k), "τ")))
+                θx = merge(θx, NamedTuple(k => (θ[k] isa AbstractVector ? 0.2 .+ rand(rng, length(θ[k])) : 0.2 + rand(rng))
+                                          for k in keys(θ) if startswith(string(k), "σ") || startswith(string(k), "τ")))
                 x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θx)])
                 @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
             end
@@ -637,12 +679,21 @@ end
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
         @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
                                           big_loss = false, slopes = false, dev = false,
-                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true)
+                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true,
+                                          circ = false, track = false)
         @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
                                                 big_loss = false, slopes = false, dev = false,
-                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true)
+                                          centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true,
+                                          circ = false, track = false)
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
         @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
+        let s = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track")
+            @test s.circ && s.track && s.dev && s.era === :rw
+            @test Diomedes.model_param_names(s)[(end - 1):end] == (:τ_cx, :u_cx)
+            @test (:β_track_π, :β_track_λ) ⊆ Diomedes.model_param_names(s)
+        end
+        @test !model_spec("pl_dur_rw").circ && !model_spec("pl_dur_rw").track
+        @test_throws ArgumentError paceloss_effects(g; circ = true, circuits = ctab)       # needs the pace scale
         @test model_spec("pl_dur_rw_kappa_cdrv").centred_drivers
         @test model_spec("pl_dur_rw_kappa_cdrv_tdrv").driver_ν == 3
         @test Diomedes.model_param_names(model_spec("pl_dur_rw_kappa_cdrv"))[4] === :a_comp
@@ -724,6 +775,56 @@ end
               Diomedes.paceloss_loglik_cc(θb.γ, θb.z_comp, θb.σ_comp, θb.b_mach, θb.σ, πr, λr,
                                           race_pace_scale(θb, cov), nothing,
                                           1 / (1 + exp(-θb.a_ρ)), exp(θb.a_λ + θb.δ_λ2), g, sc)
+        # circuit slopes and track terms (#81): rows vs the fused rule, the slope term passed as offset/κ
+        covc = LossCovariates(g; circuits = synthetic_circuits(g, rng))
+        θc = (; base..., σ = 0.4, a_π = -1.2, a_λ = 0.6, β_track_π = randn(rng, 3), β_track_λ = randn(rng, 3),
+              τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm), τ_cx = [0.3, 0.5, 0.2],
+              u_cx = randn(rng, 3nm))
+        πr, λr = Diomedes.race_loss(θc, covc, false, :none)
+        κr = race_pace_scale(θc, covc)
+        crw = CircuitRows(g, covc.circuits)
+        hc = circuit_offsets(circuit_slopes(θc.τ_cx, θc.u_cx, g, sc), crw) ./ κr[vcat(g.t_race, g.c_race)]
+        @test sum(Diomedes.paceloss_rows(θc, g; cov = covc)) ≈
+              Diomedes.paceloss_loglik_cc(θc.γ, θc.z_comp, θc.σ_comp, θc.b_mach, θc.σ, πr, λr, κr, hc, g, sc)
+        @test_throws ArgumentError Diomedes.race_loss(θc, cov, false, :none)       # track terms need circuits
+    end
+
+    @testset "race circuit covariates (#81)" begin
+        rng = Xoshiro(61)
+        g = prepare_gaps(fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019))
+        ctab = synthetic_circuits(g, rng)
+        rc = RaceCircuits(g, ctab)
+        nr, nm = length(g.races), length(g.machines)
+        ev = [first(g.rows.event_id[g.rows.race_key .== k]) for k in g.races]
+        row(e) = ctab[findfirst(==(e), ctab.event_id), :]
+        # speed: layout length × the winner's laps ÷ the winner's time, averaged over the layout's dry races
+        L = [maximum(skipmissing(g.rows.laps[g.rows.race_key .== k])) for k in g.races]
+        raw = [row(e).length_km * L[r] / (g.race_minutes[r] / 60) for (r, e) in enumerate(ev)]
+        @test 150 < median(raw) < 250
+        for r in 1:nr
+            same = [i for i in 1:nr if row(ev[i]).circuit_id == row(ev[r]).circuit_id]
+            dry = filter(i -> row(ev[i]).condition == "dry", same)
+            @test rc.x_raw[r, 1] ≈ mean(raw[isempty(dry) ? same : dry])
+            @test rc.x_raw[r, 2] == row(ev[r]).S && rc.x_raw[r, 3] == row(ev[r]).temp_c
+            @test rc.track[r, :] == [row(ev[r]).W / 2, row(ev[r]).condition == "mixed", row(ev[r]).condition == "wet"]
+        end
+        @test all(abs.(mean(rc.x; dims = 1)) .< 1e-12) && all(std(rc.x; dims = 1) .≈ 1)
+        @test rc.x_names == [:speed, :rough, :temp] && rc.track_names == [:tight, :mixed, :wet]
+        # a covariate with no variation across the races is 0, not NaN
+        @test all(RaceCircuits(g, transform(ctab, :S => (s -> fill(1, length(s))) => :S)).x[:, 2] .== 0)
+        # covariates centred over each car-season's rows; slopes centred within season
+        cr = CircuitRows(g, rc)
+        @test all(maximum(abs.(sum(cr.xc[cr.mach .== m, :]; dims = 1))) < 1e-10 for m in 1:nm if any(cr.mach .== m))
+        sc = Diomedes.season_counts(g)
+        cx = circuit_slopes([0.3, 0.5, 0.2], randn(rng, 3nm), g, sc)
+        @test all(abs(sum(cx[((k - 1) * nm + 1):(k * nm)][g.mach_season .== s])) < 1e-10 for k in 1:3, s in 1:maximum(g.mach_season))
+        @test circuit_offsets(cx, cr) ≈ [sum(cx[(k - 1) * nm + cr.mach[i]] * cr.xc[i, k] for k in 1:3) for i in eachindex(cr.mach)]
+        @test_throws ArgumentError RaceCircuits(g, ctab[2:end, :])
+        # the reference tables: one row per race 1950–2025, with walls, surface and conditions
+        ct = circuit_table()
+        @test nrow(ct) == 1149 && Set(ct.condition) == Set(["dry", "mixed", "wet"])
+        @test count(==("wet"), ct.condition) == 63 && count(==("mixed"), ct.condition) == 105
+        @test all(in(0:2), ct.W) && all(in(0:2), ct.S)
     end
 
     @testset "K-fold CV (#18)" begin

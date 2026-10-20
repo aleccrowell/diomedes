@@ -101,7 +101,7 @@ for (v, ch, data) in (("a", ca, subset_gaps(g, train)), ("b", cb, g))
             "); divergences ", count(ch[:numerical_error] .> 0))
 end
 names = model_param_names(spec)
-sc, cov = season_counts(g), LossCovariates(g)
+sc, cov = season_counts(g), LossCovariates(g, spec)
 basis_a = AgeCurveBasis(subset_gaps(g, train))
 nt = length(g.y)
 yall = vcat(g.y, fill(NaN, length(g.lo)))

@@ -112,7 +112,7 @@ function export_modes(chs, g, spec, model, outdir)
     kept = [m for m in labels if lj[m] > best - MODE_DROP_NATS]
 
     # season paths per mode
-    pnames, cov = model_param_names(spec), LossCovariates(g)
+    pnames, cov = model_param_names(spec), LossCovariates(g, spec)
     seasons = minimum(g.race_season) .+ (0:(cov.n_seasons - 1))
     q(X, p) = [quantile(c, p) for c in eachcol(X)]
     sm = DataFrame()
@@ -182,7 +182,7 @@ function export_race(model, source)
     mi = export_modes(chs, g, spec, model, outdir)
     chain = reduce(hcat, chs[mi.kept_chains])
     pnames = model_param_names(spec)
-    sc, cov = season_counts(g), LossCovariates(g)
+    sc, cov = season_counts(g), LossCovariates(g, spec)
     ni, nc = size(chain[:σ])
     ndraw = ni * nc
 
