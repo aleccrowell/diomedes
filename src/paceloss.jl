@@ -602,6 +602,45 @@ end
 "In-season development trends (% per season), centred within season, from scale `τ_dev` and standardised `u_dev`."
 dev_trends(τ_dev, u_dev, g::GapData, season_counts) = τ_dev .* center_by(u_dev, g.mach_season, season_counts)
 
+"""
+    car_row_offsets(cx, mach, x, κs, season) -> Vector
+
+Per-row car part Σ_k cx[(k - 1)·n_machines + mach[i]]·x[i, k] / κs[season[i]], for
+terms that are not scaled by κ but enter the fused likelihood through the
+κ-scaled driver offset (the development trends with `x = posc`, the circuit
+slopes with `x = xc`). One pass with a hand-written rule: through ReverseDiff
+the indexing, products and division allocated a tracked vector per step, and the
+garbage collection that followed doubled the sampler's cost per step (#92).
+"""
+function car_row_offsets(cx, mach::Vector{Int}, x::AbstractMatrix, κs, season::Vector{Int})
+    nm = length(cx) ÷ size(x, 2)
+    T = promote_type(eltype(cx), eltype(κs), eltype(x))
+    out = zeros(T, length(mach))
+    for k in axes(x, 2), i in eachindex(mach)
+        out[i] += cx[(k - 1) * nm + mach[i]] * x[i, k]
+    end
+    for i in eachindex(out); out[i] /= κs[season[i]]; end
+    return out
+end
+function ChainRulesCore.rrule(::typeof(car_row_offsets), cx, mach::Vector{Int}, x::AbstractMatrix, κs,
+                              season::Vector{Int})
+    out = car_row_offsets(cx, mach, x, κs, season)
+    function pullback(ȳ)
+        ȳ = ChainRulesCore.unthunk(ȳ)
+        nm = length(cx) ÷ size(x, 2)
+        ∂cx, ∂κ = zeros(length(cx)), zeros(length(κs))
+        for i in eachindex(mach)
+            w = ȳ[i] / κs[season[i]]
+            for k in axes(x, 2); ∂cx[(k - 1) * nm + mach[i]] += w * x[i, k]; end
+            ∂κ[season[i]] -= w * out[i]
+        end
+        return NoTangent(), ∂cx, NoTangent(), NoTangent(), ∂κ, NoTangent()
+    end
+    return out, pullback
+end
+ReverseDiff.@grad_from_chainrules car_row_offsets(cx::ReverseDiff.TrackedArray, mach::Vector{Int}, x::AbstractMatrix,
+                                                  κs::ReverseDiff.TrackedArray, season::Vector{Int})
+
 "Names of the pace-scale parameters (#15), in sampling order (after the loss parameters)."
 pace_param_names(pace_scale::Bool) = pace_scale ? (:τ_κ, :e_κ, :b_mach) : ()
 
@@ -774,20 +813,21 @@ effects are then comparable across eras.
             slope = career_slopes(τ_slope, u_slope)
         end
         hdrv = career_rows === nothing ? nothing : driver_offsets(career_rows.rows, fage, slope)
+        row_season = cov.season[vcat(g.t_race, g.c_race)]
         if dev_rows !== nothing     # in-season car development (#14)
             τ_dev ~ truncated(Normal(0, ps.s); lower = 0)
             u_dev ~ filldist(Normal(), length(g.machines))
             # the car part is not scaled by κ, but hdrv is: pass the car offset as offset/κ
-            hcar = dev_trends(τ_dev, u_dev, g, season_counts)[dev_rows.mach] .* dev_rows.posc ./
-                   κs[cov.season][vcat(g.t_race, g.c_race)]
+            hcar = car_row_offsets(dev_trends(τ_dev, u_dev, g, season_counts), dev_rows.mach,
+                                   reshape(dev_rows.posc, :, 1), κs, row_season)
             hdrv = hdrv === nothing ? hcar : hdrv .+ hcar
         end
         if circ_rows !== nothing    # car-season circuit slopes (#81), a car part like dev: offset/κ
             nk = size(circ_rows.xc, 2)
             τ_cx ~ filldist(truncated(Normal(0, 0.5ps.s); lower = 0), nk)
             u_cx ~ filldist(Normal(), length(g.machines) * nk)
-            hcx = circuit_offsets(circuit_slopes(τ_cx, u_cx, g, season_counts), circ_rows) ./
-                  κs[cov.season][vcat(g.t_race, g.c_race)]
+            hcx = car_row_offsets(circuit_slopes(τ_cx, u_cx, g, season_counts), circ_rows.mach, circ_rows.xc, κs,
+                                  row_season)
             hdrv = hdrv === nothing ? hcx : hdrv .+ hcx
         end
         # each call matches a ReverseDiff binding of the fused rule (see paceloss_loglik_cc)
