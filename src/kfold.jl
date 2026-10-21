@@ -59,7 +59,7 @@ a fit of `model` (see `model_spec`) to `subset_gaps(g, train)`. Shaped
 """
 function heldout_loglik(chain, g::GapData, train::AbstractVector{Bool}, model::AbstractString)
     spec = model_spec(model)
-    sc, cov = season_counts(g), LossCovariates(g)
+    sc, cov = season_counts(g), LossCovariates(g, spec)
     names = model_param_names(spec)
     age_basis = spec.age ? AgeCurveBasis(subset_gaps(g, train)) : nothing
     test = findall(!, train)

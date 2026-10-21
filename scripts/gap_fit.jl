@@ -15,7 +15,8 @@
 # <model>: `t4` (Student-t(4) noise) or pace + loss noise `pl[_dur][_<era>]`:
 # `_dur` adds race duration to the loss size, `<era>` (decade, regime, rw) adds
 # era effects to incident probability and loss size, `_kappa` a pace scale by
-# season (#15). The common race level is learned by default (#36); `_fgam` uses
+# season (#15), `_circ` car-season circuit slopes and `_track` tight/mixed/wet on
+# incidents (#81). The common race level is learned by default (#36); `_fgam` uses
 # the fixed race-intercept prior, `_hgam` hierarchical intercepts (see `model_spec`).
 # 1000 draws per chain after 500 warm-up iterations. `delta=<x>` sets the target
 # acceptance rate (default 0.8, #62).
@@ -41,7 +42,7 @@ fit(; kw...) = spec.family === :t4 ? fit_gaps(g; sampler, kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                  centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
-                 race_hier = spec.race_hier, race_mean = spec.race_mean, sampler, kw...)
+                 race_hier = spec.race_hier, race_mean = spec.race_mean, circ = spec.circ, track = spec.track, sampler, kw...)
 
 include("gap_data.jl")
 res, g = gap_data(mode)
@@ -70,10 +71,19 @@ end
 if spec.family === :pl
     println("baseline incident probability logistic(a_π) ≈ $(round(mean(1 ./ (1 .+ exp.(-vec(chain[:a_π])))); digits = 3)), ",
             "baseline mean loss exp(a_λ) ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
-    for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era)[3:end]...,
+    for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era, spec.track)[3:end]...,
               Diomedes.pace_param_names(spec.pace_scale)..., Diomedes.age_param_names(spec.age)...,
-              Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)..., Diomedes.dev_param_names(spec.dev)...)
-        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age, :u_slope, :u_dev) && continue
+              Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)..., Diomedes.dev_param_names(spec.dev)...,
+              Diomedes.circ_param_names(spec.circ)...)
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age, :u_slope, :u_dev, :u_cx) && continue
+        if k in (:τ_cx, :β_track_π, :β_track_λ)     # one per circuit covariate (#81)
+            labels = k === :τ_cx ? ("speed", "rough", "temp") : ("tight", "mixed", "wet")
+            v = stack(vec(chain[k]))
+            for (j, l) in enumerate(labels)
+                println("$k[$l]: $(round(mean(v[j, :]); digits = 3)) ± $(round(std(v[j, :]); digits = 3))")
+            end
+            continue
+        end
         println("$k: $(round(mean(chain[k]); digits = 3)) ± $(round(std(chain[k]); digits = 3))")
     end
 end

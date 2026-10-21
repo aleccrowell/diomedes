@@ -37,6 +37,12 @@ function _row_means(θ, g::GapData, sc, cov = LossCovariates(g); train = nothing
         ct = ct .+ hcar[1:nt]
         cc = cc .+ hcar[(nt + 1):end]
     end
+    if haskey(θ, :τ_cx)                   # car-season circuit slopes (#81), not scaled by κ
+        hcx = circuit_offsets(circuit_slopes(θ.τ_cx, θ.u_cx, g, sc), CircuitRows(g, cov.circuits; train))
+        nt = length(g.t_comp)
+        ct = ct .+ hcx[1:nt]
+        cc = cc .+ hcx[(nt + 1):end]
+    end
     csum, n = zeros(length(θ.γ)), zeros(Int, length(θ.γ))
     nt = length(ct)
     use(i) = train === nothing || train[i]
@@ -101,7 +107,8 @@ Parse a model name used by the scripts: `t4` (Student-t(4) `gap_effects`) or
 `pl_dur`, `pl_regime`, `pl_dur_rw_kappa_age`, with `<era>` one of `decade`,
 `regime`, `rw`, `_kappa` adding the pace scale, `_age` the career curve and
 `_slope` per-driver career slopes (#15), `_big` the big-loss component (#16),
-`_dev` in-season development (#14), `_cdrv`/`_tdrv` centred/Student-t drivers
+`_dev` in-season development (#14), `_circ` car-season circuit slopes and
+`_track` tight/mixed/wet on incidents (#81), `_cdrv`/`_tdrv` centred/Student-t drivers
 (#28), and `_hgam` hierarchical race intercepts or `_fgam` the fixed race-intercept
 prior (#32). By default the common race level is learned (`race_mean`, #36);
 `_mgam` names that default explicitly and is accepted for older names.
@@ -109,22 +116,23 @@ prior (#32). By default the common race level is learned (`race_mean`, #36);
 function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
                             big_loss = false, slopes = false, dev = false, centred_drivers = false,
-                            driver_ν = nothing, race_hier = false, race_mean = false)
+                            driver_ν = nothing, race_hier = false, race_mean = false, circ = false, track = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
     dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
                                         "slope" in parts, "dev" in parts
+    circ, track = "circ" in parts, "track" in parts      # circuit terms (#81)
     cdrv = "cdrv" in parts
     tdrv = "tdrv" in parts          # Student-t(3) driver prior (#28)
     hgam = "hgam" in parts          # hierarchical race intercepts (#32)
     fgam = "fgam" in parts          # fixed race-intercept prior; the learned common level is the default (#36)
     count(in(parts), ("hgam", "mgam", "fgam")) <= 1 || throw(ArgumentError("_hgam, _mgam and _fgam are alternatives: $name"))
     eras = [Symbol(p) for p in parts[2:end]
-            if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
+            if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "circ", "track", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
             pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
-            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam)
+            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam, circ, track)
 end
 
 """
@@ -135,7 +143,7 @@ PosteriorStats' `loo` expects. `model` is a model name (see `model_spec`).
 """
 function pointwise_loglik(chain, g::GapData, model::AbstractString)
     spec = model_spec(model)
-    sc, cov = season_counts(g), LossCovariates(g)
+    sc, cov = season_counts(g), LossCovariates(g, spec)
     names = model_param_names(spec)
     rows(θ) = spec.family === :t4 ? gap_rows(θ, g; sc) :
         paceloss_rows(θ, g; loss_duration = spec.loss_duration, era = spec.era, sc, cov)
@@ -153,9 +161,9 @@ function model_param_names(spec)
     cars = spec.pace_scale ? () : (:z_mach,)          # pace-scale models use centred b_mach
     comp = spec.centred_drivers ? :a_comp : :z_comp        # centred drivers (#28)
     races = spec.race_hier ? (:μ_γ, :τ_γ, :γ) : spec.race_mean ? (:μ_γ, :γ) : (:γ,)   # race intercepts (#32)
-    return (:σ_comp, :σ_mach, :σ, comp, cars..., races..., loss_param_names(spec.loss_duration, spec.era)...,
+    return (:σ_comp, :σ_mach, :σ, comp, cars..., races..., loss_param_names(spec.loss_duration, spec.era, spec.track)...,
             pace_param_names(spec.pace_scale)..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
-            slope_param_names(spec.slopes)..., dev_param_names(spec.dev)...)
+            slope_param_names(spec.slopes)..., dev_param_names(spec.dev)..., circ_param_names(spec.circ)...)
 end
 
 """
@@ -178,11 +186,14 @@ results use (#25).
 """
 function identified_convergence(chain, g::GapData, model::AbstractString)
     spec = model_spec(model)
-    sc, cov = season_counts(g), LossCovariates(g)
+    sc, cov = season_counts(g), LossCovariates(g, spec)
     names = model_param_names(spec)
     basis = spec.age ? AgeCurveBasis(g) : nothing
     ni, nc = size(chain[:σ_comp])
     scalar_names = [n for n in names if chain[n][1, 1] isa Real]
+    # short vectors read like scalars (#81): circuit-slope scales and track coefficients
+    small_names = [n for n in names if n in (:τ_cx, :β_track_π, :β_track_λ)]
+    small_labels = [string(n, "[", k, "]") for n in small_names for k in eachindex(chain[n][1, 1])]
     cols = Dict{Symbol,Array{Float64,3}}()
     function put!(group, i, c, v)
         A = get!(() -> Array{Float64,3}(undef, ni, nc, length(v)), cols, group)
@@ -195,16 +206,18 @@ function identified_convergence(chain, g::GapData, model::AbstractString)
                           θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc))
         haskey(θ, :τ_slope) && put!(:slopes, i, c, career_slopes(θ.τ_slope, θ.u_slope))
         haskey(θ, :τ_dev) && put!(:dev, i, c, dev_trends(θ.τ_dev, θ.u_dev, g, sc))
+        haskey(θ, :τ_cx) && put!(:circ, i, c, circuit_slopes(θ.τ_cx, θ.u_cx, g, sc))
         basis === nothing || put!(:age, i, c, age_curve(θ.τ_age, θ.e_age, basis))
         if spec.family === :pl
             πr, λr = race_loss(θ, cov, spec.loss_duration, spec.era)
             put!(:races, i, c, vcat(πr, λr, haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : Float64[]))
         end
-        put!(:scalars, i, c, Float64[θ[n] for n in scalar_names])
+        put!(:scalars, i, c, Float64[(θ[n] for n in scalar_names)...; (θ[n] for n in small_names)...])
     end
     label(group, k) = group === :drivers ? g.competitors[k] : group in (:cars, :dev) ? g.machines[k] :
         group === :slopes ? g.competitors[k] : group === :age ? "age $(g.age_years[k])" :
-        group === :scalars ? string(scalar_names[k]) :
+        group === :scalars ? (k <= length(scalar_names) ? string(scalar_names[k]) : small_labels[k - length(scalar_names)]) :
+        group === :circ ? (nm = length(g.machines); "$(g.machines[mod1(k, nm)]) x$(cld(k, nm))") :
         (nr = length(g.races); k <= nr ? "π $(g.races[k])" : k <= 2nr ? "λ $(g.races[k - nr])" : "κ $(g.races[k - 2nr])")
     groups = Dict{Symbol,Any}()
     for (group, A) in cols

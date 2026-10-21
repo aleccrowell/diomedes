@@ -21,7 +21,7 @@ model = get(args, 1, "pl_dur_rw_kappa_age_big_slope_dev")
 spec = model_spec(model)
 spec.era === :rw || error("era_paths needs a random-walk model (pl[_dur]_rw)")
 _, g = gap_data(mode)
-cov = LossCovariates(g)
+cov = LossCovariates(g, spec)
 chain = gap_chains(mode, model)
 names = Diomedes.model_param_names(spec)
 

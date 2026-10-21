@@ -29,8 +29,8 @@ model = get(args, 1, "pl_dur_rw_kappa_age_big_slope_dev")
 n_draws = parse(Int, get(args, 2, "200"))
 _, g = gap_data(mode)
 chain = gap_chains(mode, model)
-sc, cov = season_counts(g), LossCovariates(g)
 spec = model_spec(model)
+sc, cov = season_counts(g), LossCovariates(g, spec)
 names = Diomedes.model_param_names(spec)
 
 # Mean of Exponential(λ) truncated to (a, b), 0 ≤ a < b ≤ Inf.
