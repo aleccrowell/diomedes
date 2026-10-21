@@ -16,6 +16,11 @@ before the red-flag correction ([#19](https://github.com/aleccrowell/diomedes/is
 | per-driver career slopes | `…_slope` | +89.7 ± 13.7 | ~4.6 h | [#24](https://github.com/aleccrowell/diomedes/issues/24) |
 | in-season development | `…_dev` | +155.7 ± 16.4 | ~4.8 h | [#27](https://github.com/aleccrowell/diomedes/issues/27) |
 | learned common race level | (default) | +2.9 ± 6.0 (equal) | | [#34](https://github.com/aleccrowell/diomedes/issues/34), [#37](https://github.com/aleccrowell/diomedes/issues/37) |
+| circuit slopes; walls and rain on incidents | `…_circ_track` | +346 ± 28 | ~9.2 h | [#81](https://github.com/aleccrowell/diomedes/issues/81) |
+
+The last row was fitted to F1 1950–2025 with retirements from 1996 as partial
+gaps, the data of the published fit, and compared with the same model without
+the two terms. The two terms were added together and their gain isn't split.
 
 The gains, with ±2 standard errors (the first step, era terms over none, is
 +1,243 ± 60 and is left off the scale):
@@ -30,7 +35,8 @@ diomedesFigure("fig-elpd-gains", {
     { step: 3, term: "big incident losses", gain: 155, se: 23 },
     { step: 4, term: "per-driver career slopes", gain: 89.7, se: 13.7 },
     { step: 5, term: "in-season development", gain: 155.7, se: 16.4 },
-    { step: 6, term: "learned common race level", gain: 2.9, se: 6.0 }
+    { step: 6, term: "learned common race level", gain: 2.9, se: 6.0 },
+    { step: 7, term: "circuit slopes; walls and rain", gain: 346, se: 28 }
   ] },
   transform: [
     { calculate: "datum.gain - 2 * datum.se", as: "lo" },
@@ -77,6 +83,17 @@ trends match known histories: Force India's 2015 B-spec car (−0.62 ± 0.27),
 Renault 2011's strong start and fade (+0.97 ± 0.30). Trends are relative to the
 field, so a dominant car can "fade" while still winning (McLaren 1988, +0.59).
 
+**Circuit slopes, walls and rain** ([#81](https://github.com/aleccrowell/diomedes/issues/81)).
+Each car-season has a slope on its races' average speed, roughness (the road
+surface score) and air temperature. Across car-seasons the slopes spread by
+about 0.15% of race time per standard deviation of speed (26 km/h), 0.11% for
+roughness and 0.09% for temperature (5 °C). McLaren 2024 has the field's
+steepest temperature slope (faster in hot races). Rain dominates incidents: the
+odds of a routine loss are about 3.4× higher in a mixed race and 10× in a wet
+one, and each loss is 16–27% larger. Walls hardly change how often losses happen but
+make them about 23% larger. Car and driver effects barely move (correlation
+0.996 with the previous fit).
+
 ## How models were compared
 
 - **PSIS-LOO** (Pareto-smoothed importance-sampling leave-one-out) on every row:
@@ -84,7 +101,7 @@ field, so a dominant car can "fade" while still winning (McLaren 1988, +0.59).
   ([`pointwise_loglik`](@ref)).
 - **Its weak spot.** Rows with Pareto k > 0.7 make the estimate unreliable.
   There are 350 such rows (2.7%) for the era models, rising to 814 for the
-  development model ([#18](https://github.com/aleccrowell/diomedes/issues/18), [#27](https://github.com/aleccrowell/diomedes/issues/27)).
+  development model and 869 with the circuit terms ([#18](https://github.com/aleccrowell/diomedes/issues/18), [#27](https://github.com/aleccrowell/diomedes/issues/27), [#81](https://github.com/aleccrowell/diomedes/issues/81)).
 - **Grouped K-fold** checks the close calls. Each race's results are spread
   over 5 folds, so every race keeps an intercept. K-fold confirmed the era
   ranking: random walk over decade by 43.5 ± 15.2, and over regime by

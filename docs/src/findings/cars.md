@@ -14,7 +14,8 @@ Choose a season to see its cars with 90% intervals.
 diomedesFigure("fig-car-season", {
   data: { url: "assets/data/race/cars.csv",
           format: { type: "csv", parse: { season: "number", rows: "number", mean: "number", sd: "number",
-                                          q05: "number", q95: "number", dev_mean: "number", dev_sd: "number" } } },
+                                          q05: "number", q95: "number", dev_mean: "number", dev_sd: "number",
+                                          speed_mean: "number", rough_mean: "number", temp_mean: "number" } } },
   params: [{ name: "chosen", value: 1988,
              bind: { input: "range", min: 1950, max: 2025, step: 1, name: "Season " } }],
   // "constructor" can't be a sort field (it collides with Object.prototype.constructor
@@ -29,7 +30,10 @@ diomedesFigure("fig-car-season", {
       { field: "rows", title: "Results" },
       { field: "mean", title: "Effect (%)", format: ".2f" },
       { field: "q05", title: "5%", format: ".2f" }, { field: "q95", title: "95%", format: ".2f" },
-      { field: "dev_mean", title: "Development trend (% per season)", format: ".2f" }
+      { field: "dev_mean", title: "Development trend (% per season)", format: ".2f" },
+      { field: "speed_mean", title: "Speed slope (% per sd)", format: ".2f" },
+      { field: "rough_mean", title: "Roughness slope (% per sd)", format: ".2f" },
+      { field: "temp_mean", title: "Temperature slope (% per sd)", format: ".2f" }
     ]
   },
   layer: [
@@ -122,6 +126,71 @@ Intervals are ±1.645 sd (about 90%). The spread of trends is about 0.5% per
 season ([#27](https://github.com/aleccrowell/diomedes/issues/27)). Several of the
 largest match known histories, such as Force India's 2015 B-spec car and
 Renault's strong start and fade in 2011.
+
+## Circuit slopes
+
+Which conditions suited a car, relative to its field: each car-season has a
+slope on three properties of the races it ran
+([#81](https://github.com/aleccrowell/diomedes/issues/81)):
+
+- **average speed** (layout length × laps ÷ the winner's time, averaged over the
+  circuit's dry races; one sd is 26 km/h);
+- **roughness**, the road-surface score from the
+  [circuit tables](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits)
+  (0 a racing surface, 2 public-road bumps, crowns and drains; one sd is 0.76);
+- **air temperature** at race time (one sd is 5 °C).
+
+A slope is the change in the car's effect, in % of race time, at a race one
+standard deviation above the average. Positive means relatively **slower** there.
+Slopes measure only how a car's form changed between circuits, not its overall
+level: they average to zero over each car's own races, and over each season's
+cars. The 15 steepest in each direction, per dimension (cars with at least 20
+results):
+
+```@raw html
+<div id="fig-car-circuits" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-car-circuits", {
+  data: { url: "assets/data/race/cars.csv",
+          format: { type: "csv", parse: { season: "number", rows: "number", speed_mean: "number", speed_sd: "number",
+                                          rough_mean: "number", rough_sd: "number", temp_mean: "number", temp_sd: "number" } } },
+  params: [{ name: "dim", value: "temp",
+             bind: { input: "select", options: ["speed", "rough", "temp"],
+                     labels: ["Speed", "Roughness", "Temperature"], name: "Dimension " } }],
+  transform: [
+    { filter: "datum.rows >= 20" },
+    { calculate: "datum.constructor + ' ' + datum.season", as: "car" },
+    { calculate: "datum[dim + '_mean']", as: "slope" },
+    { calculate: "datum[dim + '_sd']", as: "slope_sd" },
+    { calculate: "datum.slope - 1.645 * datum.slope_sd", as: "lo" },
+    { calculate: "datum.slope + 1.645 * datum.slope_sd", as: "hi" },
+    { window: [{ op: "row_number", as: "up" }], sort: [{ field: "slope", order: "ascending" }] },
+    { window: [{ op: "row_number", as: "down" }], sort: [{ field: "slope", order: "descending" }] },
+    { filter: "datum.up <= 15 || datum.down <= 15" },
+    { calculate: "datum.slope < 0 ? 'relatively faster' : 'relatively slower'", as: "direction" }
+  ],
+  width: "container", height: { step: 14 },
+  encoding: {
+    y: { field: "car", type: "nominal", sort: { field: "slope", order: "ascending" }, title: null },
+    color: { field: "direction", type: "nominal", title: "As the dimension rises",
+             scale: { domain: ["relatively faster", "relatively slower"], range: ["#4c78a8", "#e45756"] } },
+    tooltip: [{ field: "car", title: "Car" }, { field: "rows", title: "Results" },
+              { field: "slope", title: "Slope (% per sd)", format: ".2f" }, { field: "slope_sd", title: "sd", format: ".2f" }]
+  },
+  layer: [
+    { mark: { type: "rule", opacity: 0.6 },
+      encoding: { x: { field: "lo", type: "quantitative", title: "Slope, % of race time per sd (negative = relatively faster as it rises)" },
+                  x2: { field: "hi" } } },
+    { mark: { type: "point", filled: true, size: 45 }, encoding: { x: { field: "slope", type: "quantitative" } } }
+  ]
+});
+</script>
+```
+
+Intervals are ±1.645 sd (about 90%). Most slopes are small next to their
+uncertainty. The clearest are from 1996 on, when cars ran more races per
+season; earlier slopes shrink towards zero. The slopes typically spread by
+0.15% per sd for speed, 0.11% for roughness and 0.09% for temperature.
 
 ## Download the data
 

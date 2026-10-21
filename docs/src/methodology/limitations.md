@@ -21,7 +21,16 @@
   confirmed the era-term ranking, but hasn't been run on the latest terms
   ([#18](https://github.com/aleccrowell/diomedes/issues/18)).
 - **In-season development is linear,** one trend per car-season. A random walk
-  over rounds, and car × circuit interactions, are not modelled ([#14](https://github.com/aleccrowell/diomedes/issues/14)).
+  over rounds is not modelled ([#14](https://github.com/aleccrowell/diomedes/issues/14)).
+- **Car × circuit effects are three linear slopes** (speed, roughness,
+  temperature). Other circuit traits, such as altitude, kerbs or the need for
+  traction out of slow corners, are not modelled. Before 1979 the race-time
+  temperatures come from a reanalysis with no satellite data, and many start
+  times before 1996 are assumed from the circuit's or era's usual time
+  ([#81](https://github.com/aleccrowell/diomedes/issues/81)).
+- **The rain flag is per race,** dry, mixed or wet. It doesn't say when in the
+  race it rained or how hard, and 48 of the calls are marked uncertain in the
+  [reference table](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits).
 - **Tyre compounds aren't in the data.** The lap model can't separate compound
   choice (for example, the 2014–21 rule that the top 10 qualifiers start on
   their Q2 tyres) from pace ([#12](https://github.com/aleccrowell/diomedes/issues/12)).

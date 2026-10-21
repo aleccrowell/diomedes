@@ -1,6 +1,6 @@
 {
-    "model": "pl_dur_rw_kappa_age_big_slope_dev",
-    "fit": "gap_jolpica1950-2025+partial_pl_dur_rw_kappa_age_big_slope_dev",
+    "model": "pl_dur_rw_kappa_age_big_slope_dev_circ_track",
+    "fit": "gap_jolpica1950-2025+partial_pl_dur_rw_kappa_age_big_slope_dev_circ_track",
     "chains": 4,
     "draws_per_chain": 1000,
     "chains_fitted": 4,
@@ -19,43 +19,48 @@
     },
     "convergence": {
         "max_rhat": 1.011,
-        "min_ess": 223.6,
-        "divergences": 3,
+        "min_ess": 426.2,
+        "divergences": 0,
         "groups": {
             "cars": {
                 "max_rhat": 1.005,
-                "min_ess": 1589.6,
-                "worst": "ferrari_1960"
+                "min_ess": 1735.5,
+                "worst": "cooper-climax_1959"
             },
             "age": {
-                "max_rhat": 1.003,
-                "min_ess": 2604.2,
-                "worst": "age 48"
+                "max_rhat": 1.002,
+                "min_ess": 2381.1,
+                "worst": "age 41"
             },
             "races": {
-                "max_rhat": 1.009,
-                "min_ess": 303.8,
-                "worst": "π f1/1991-09/race"
+                "max_rhat": 1.008,
+                "min_ess": 633.2,
+                "worst": "π f1/1951-05/race"
             },
             "scalars": {
-                "max_rhat": 1.011,
-                "min_ess": 223.6,
+                "max_rhat": 1.007,
+                "min_ess": 426.2,
                 "worst": "a_π"
             },
             "slopes": {
                 "max_rhat": 1.008,
-                "min_ess": 1734,
-                "worst": "hamilton"
+                "min_ess": 1443.2,
+                "worst": "michael_schumacher"
             },
             "dev": {
-                "max_rhat": 1.008,
-                "min_ess": 4316.3,
-                "worst": "minardi_1996"
+                "max_rhat": 1.006,
+                "min_ess": 4721.1,
+                "worst": "super_aguri_2006"
+            },
+            "circ": {
+                "max_rhat": 1.011,
+                "min_ess": 3648.6,
+                "worst": "minardi_1996 x1"
             },
             "drivers": {
-                "max_rhat": 1.005,
-                "min_ess": 830.1,
-                "worst": "vettel"
+                "max_rhat": 1.007,
+                "min_ess": 1055.6,
+                "worst": "hamilton"
             }
         }
     },
@@ -70,18 +75,18 @@
             ],
             "draws": 4000,
             "kept": true,
-            "mean_logjoint": -27431.9,
-            "mean_loglikelihood": -20135.8,
+            "mean_logjoint": -30612,
+            "mean_loglikelihood": -19476.3,
             "loss": {
-                "sigma": 0.4078,
-                "pi_base": 0.634,
-                "lambda_base": 1.5797,
-                "rho": 0.0229,
-                "lambda_big": 14.2604
+                "sigma": 0.3831,
+                "pi_base": 0.5487,
+                "lambda_base": 1.4554,
+                "rho": 0.0224,
+                "lambda_big": 14.9973
             },
             "convergence": {
                 "max_rhat": 1.011,
-                "min_ess": 223.6
+                "min_ess": 426.2
             }
         }
     ],
@@ -90,7 +95,37 @@
     ],
     "effects_by_mode": [
     ],
+    "circuits": {
+        "covariates": [
+            "speed",
+            "rough",
+            "temp"
+        ],
+        "covariate_sd": [
+            26.3593,
+            0.761,
+            4.9886
+        ],
+        "tau_cx": [
+            {
+                "mean": 0.1487,
+                "q05": 0.1247,
+                "q95": 0.1728
+            },
+            {
+                "mean": 0.1132,
+                "q05": 0.0899,
+                "q95": 0.136
+            },
+            {
+                "mean": 0.0936,
+                "q05": 0.075,
+                "q95": 0.1124
+            }
+        ],
+        "seasons_note": "π and λ by season are for a dry race at a circuit of average tightness"
+    },
     "exported_by": "scripts/export_site.jl race",
-    "export_commit": "6d4d329",
-    "date": "2026-10-14"
+    "export_commit": "9555944",
+    "date": "2026-10-20"
 }

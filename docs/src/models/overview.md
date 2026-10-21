@@ -19,12 +19,13 @@ the noise.
 
 ## Which pace model to use
 
-The best race-time model by PSIS-LOO (as of #14) is the pace + loss model with
+The best race-time model by PSIS-LOO (as of #81) is the pace + loss model with
 every term on:
 
 ```julia
 fit_paceloss(g; loss_duration = true, era = :rw, pace_scale = true, age = true,
-             big_loss = true, slopes = true, dev = true)        # "pl_dur_rw_kappa_age_big_slope_dev"
+             big_loss = true, slopes = true, dev = true, circ = true, track = true)
+# "pl_dur_rw_kappa_age_big_slope_dev_circ_track"
 ```
 
 Each term was added in its own issue and kept because it improved
@@ -40,6 +41,7 @@ comparisons:
 | big incident losses | `big_loss` | `_big` | #16 |
 | per-driver career slopes | `slopes` | `_slope` | #15 |
 | in-season development (+155.7 ± 16.4 elpd) | `dev` | `_dev` | #14 |
+| car-season circuit slopes, and walls and rain on incidents (+346 ± 28 elpd, together) | `circ`, `track` | `_circ`, `_track` | #81 |
 
 The scripts and the model-comparison helpers name models by these suffixes
 (see [`model_spec`](@ref)). As the models grow, more rows get Pareto k > 0.7, so

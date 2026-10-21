@@ -85,6 +85,8 @@ the scripts (see [`model_spec`](@ref)):
 | `slopes` | `_slope` | per-driver linear career slopes, centred across drivers ([`CareerRows`](@ref), [`career_slopes`](@ref)) |
 | `big_loss` | `_big` | a second, larger incident-loss component (repairs, many laps down) |
 | `dev` | `_dev` | per-car linear in-season development trend, centred within season ([`DevRows`](@ref), [`dev_trends`](@ref)) |
+| `circ` | `_circ` | per-car slopes on the race's average speed, roughness (surface score) and temperature, standardised; covariates centred over each car-season's races, slopes centred within season ([`RaceCircuits`](@ref), [`CircuitRows`](@ref), [`circuit_slopes`](@ref)) |
+| `track` | `_track` | slopes of logit π and log λ on the circuit's walls score and on mixed and wet races (from the documented race conditions) |
 | `centred_drivers` | `_cdrv` | driver effects sampled in % units rather than non-centred |
 | `driver_ν = 3.0` | `_tdrv` | Student-t driver prior |
 | `race_mean` (default `true`) | (default; `_mgam` accepted) | race intercepts γ ~ N(μ_γ, 4s) with a learned common level μ_γ |
@@ -102,6 +104,15 @@ the scripts (see [`model_spec`](@ref)):
 - **Development trends** are centred within each season. A trend shared by the
   whole field is absorbed by the race intercepts, so a dominant car can "fade"
   while still winning.
+- **Circuit slopes** are centred twice. Each car-season's covariates are centred
+  over its own races, so a slope is orthogonal to the car-season effect, and a
+  car that raced only one kind of circuit has none. The slopes are then centred
+  within season, since a slope shared by the field is absorbed by the race
+  intercepts. They say which conditions suited a car relative to the field.
+- **Track terms** are measured against a dry race at an open circuit, so `a_π`
+  and `a_λ` refer to that race. The circuit data come from the hand-checked
+  [reference tables](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits)
+  ([`circuit_table`](@ref)).
 
 ### Results
 
