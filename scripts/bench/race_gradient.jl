@@ -4,9 +4,10 @@
 #   julia --project scripts/bench/race_gradient.jl [model=pl_dur_rw_kappa_age_big_slope_dev] [data=<mode>] [n=30]
 #
 # Evaluates at a draw from the prior-centred start used by `fit_paceloss`, with
-# the sampler's AD backend (uncompiled ReverseDiff), and prints the median of
-# `n` calls after warm-up. Run one copy per core to time it under the load of a
-# 4-chain fit.
+# the sampler's AD backend (uncompiled ReverseDiff), and prints the mean of `n`
+# calls after warm-up: the median leaves out garbage collection pauses, which a
+# sampler pays (#92; `race_step_profile.jl` breaks them down). Run one copy per
+# core to time it under the load of a 4-chain fit.
 
 using Diomedes, Random, Statistics, Printf, Turing
 include(joinpath(@__DIR__, "..", "gap_data.jl"))
@@ -26,7 +27,7 @@ LDP = Turing.DynamicPPL.LogDensityProblems
 f = LDF(m; adtype = Diomedes.gap_sampler().adtype)
 x = 0.05 .+ 0.1 .* rand(Xoshiro(1), LDP.dimension(f))     # constrained space: all positive is valid (σ, τ, δ_λ2)
 for _ in 1:3; LDP.logdensity_and_gradient(f, x); end
-tl = median([@elapsed(LDP.logdensity(f, x)) for _ in 1:n])
-tg = median([@elapsed(LDP.logdensity_and_gradient(f, x)) for _ in 1:n])
-@printf("%s: %d parameters, log density %.1f ms, gradient %.1f ms (median of %d)\n",
+tl = mean([@elapsed(LDP.logdensity(f, x)) for _ in 1:n])
+tg = mean([@elapsed(LDP.logdensity_and_gradient(f, x)) for _ in 1:n])
+@printf("%s: %d parameters, log density %.1f ms, gradient %.1f ms (mean of %d)\n",
         model_name, LDP.dimension(f), 1e3tl, 1e3tg, n)

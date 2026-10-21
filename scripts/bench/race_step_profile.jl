@@ -1,0 +1,36 @@
+# Where a race-model gradient's time goes (#92): mean against median, GC time and
+# allocations per call, and the cost of the model's parts on their own.
+#
+#   julia --project scripts/bench/race_step_profile.jl [model=pl_dur_rw_kappa_age_big_slope_dev] [data=<mode>] [n=60]
+#
+# `race_gradient.jl` reports the median of its calls, which leaves out garbage
+# collection pauses; a sampler pays the mean. Run one copy per core to time it
+# under the load of a 4-chain fit.
+
+using Diomedes, Random, Statistics, Printf, Turing
+include(joinpath(@__DIR__, "..", "gap_data.jl"))
+
+mode, args = data_arg(ARGS)
+model_name = get(filter(a -> !startswith(a, "n="), args), 1, "pl_dur_rw_kappa_age_big_slope_dev")
+narg = findfirst(a -> startswith(a, "n="), args)
+n = narg === nothing ? 60 : parse(Int, split(args[narg], "=")[2])
+spec = model_spec(model_name)
+_, g = gap_data(mode; io = devnull)
+m = paceloss_effects(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
+                     age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
+                     centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν, race_hier = spec.race_hier,
+                     race_mean = spec.race_mean, circ = spec.circ, track = spec.track)
+LDF = Turing.DynamicPPL.LogDensityFunction
+LDP = Turing.DynamicPPL.LogDensityProblems
+f = LDF(m; adtype = Diomedes.gap_sampler().adtype)
+x = 0.05 .+ 0.1 .* rand(Xoshiro(1), LDP.dimension(f))     # constrained space: all positive is valid (σ, τ, δ_λ2)
+for _ in 1:3; LDP.logdensity_and_gradient(f, x); end
+GC.gc()
+st = [@timed(LDP.logdensity_and_gradient(f, x)) for _ in 1:n]
+t = [s.time for s in st]
+gct = [s.gctime for s in st]
+@printf("%s: %d parameters, gradient over %d calls: mean %.1f ms, median %.1f ms, min %.1f ms\n",
+        model_name, LDP.dimension(f), n, 1e3mean(t), 1e3median(t), 1e3minimum(t))
+@printf("  GC %.1f%% of time (mean %.1f ms per call), %.1f MB allocated per call, %.0f allocations per call\n",
+        100sum(gct) / sum(t), 1e3mean(gct), mean(s.bytes for s in st) / 2^20, mean(s.gcstats.malloc + s.gcstats.poolalloc for s in st))
+flush(stdout)

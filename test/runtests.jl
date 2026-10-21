@@ -786,6 +786,18 @@ end
         hc = circuit_offsets(circuit_slopes(θc.τ_cx, θc.u_cx, g, sc), crw) ./ κr[vcat(g.t_race, g.c_race)]
         @test sum(Diomedes.paceloss_rows(θc, g; cov = covc)) ≈
               Diomedes.paceloss_loglik_cc(θc.γ, θc.z_comp, θc.σ_comp, θc.b_mach, θc.σ, πr, λr, κr, hc, g, sc)
+        # the fused car part (#92): same values, and its rule's gradient matches ReverseDiff
+        # through the indexing and broadcasting it replaced
+        rs = covc.season[vcat(g.t_race, g.c_race)]
+        κs = Diomedes.season_pace_scale(θc)
+        cx = circuit_slopes(θc.τ_cx, θc.u_cx, g, sc)
+        @test Diomedes.car_row_offsets(cx, crw.mach, crw.xc, κs, rs) ≈ hc
+        w = randn(rng, length(hc))
+        RD = Diomedes.ReverseDiff
+        fused(c, k) = sum(w .* Diomedes.car_row_offsets(c, crw.mach, crw.xc, k, rs))
+        plain(c, k) = sum(w .* (circuit_offsets(c, crw) ./ k[rs]))
+        gf, gp = RD.gradient(fused, (cx, κs)), RD.gradient(plain, (cx, κs))
+        @test gf[1] ≈ gp[1] && gf[2] ≈ gp[2]
         @test_throws ArgumentError Diomedes.race_loss(θc, cov, false, :none)       # track terms need circuits
     end
 
