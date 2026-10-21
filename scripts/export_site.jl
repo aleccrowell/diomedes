@@ -1,6 +1,6 @@
 # Export posterior summaries of fitted models for the documentation site (#45).
 #
-#   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_fgam] [data=all]
+#   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_circ_track] [data=jolpica1950-2025+partial]
 #   julia --project scripts/export_site.jl retire [prefix=retire]
 #   julia --project scripts/export_site.jl laps [tag=laps_2011-2019_recorded]
 #   julia --project scripts/export_site.jl wrc [model=pl_dur_rw_kappa_cdrv_tdrv_fgam]
@@ -20,8 +20,12 @@
 #   drivers.csv   driver effects (% of race time, average-season units; negative =
 #                 faster), with career slopes if the model has them
 #   cars.csv      car-season effects (% of race time within season), with in-season
-#                 development trends if the model has them
-#   seasons.csv   per season: incident probability π, mean loss λ, pace scale κ
+#                 development trends and circuit slopes (speed, rough, temp; #81) if the
+#                 model has them
+#   track.csv     track terms (#81): incident odds and loss-size multipliers for walls,
+#                 mixed and wet races
+#   seasons.csv   per season: incident probability π, mean loss λ (for a dry race at a
+#                 circuit of average tightness when the model has track terms), pace scale κ
 #   seasons_by_mode.csv  the same per mode, all chains (`mode`, `kept` columns)
 #   modes.csv     per chain (all chains): its mode, whether it is used, and the loss scalars on readable scales
 #                 (pace noise σ, routine-loss probability and mean, big-loss share and
@@ -100,6 +104,15 @@ end
 # negligible share of the posterior (#64): its draws are reported, not pooled
 const MODE_DROP_NATS = 10
 
+# Season paths of π and λ are drawn for a dry race at a circuit of average
+# tightness (#81): with track terms, a_π and a_λ are a dry race at an open
+# circuit, so the tight slope is added at the mean tight score over the races.
+function track_shift(θ, cov)
+    haskey(θ, :β_track_π) || return 0.0, 0.0
+    t = mean(cov.circuits.track[:, 1])
+    return θ.β_track_π[1] * t, θ.β_track_λ[1] * t
+end
+
 function export_modes(chs, g, spec, model, outdir)
     all = reduce(hcat, chs)
     ni = size(all[:σ], 1)
@@ -124,8 +137,9 @@ function export_modes(chs, g, spec, model, outdir)
         for c in cs, i in 1:ni
             θ = draw(all, pnames, i, c)
             k += 1
-            P[k, :] = θ.a_π .+ rw_path(θ.τ_π_rw .* θ.e_π_rw)
-            Λ[k, :] = θ.a_λ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)
+            sπ, sλ = track_shift(θ, cov)
+            P[k, :] = θ.a_π .+ sπ .+ rw_path(θ.τ_π_rw .* θ.e_π_rw)
+            Λ[k, :] = θ.a_λ .+ sλ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)
             Kp[k, :] = rw_path(θ.τ_κ .* θ.e_κ)
         end
         append!(sm, DataFrame(mode = m, kept = m in kept, season = seasons,
@@ -193,12 +207,17 @@ function export_race(model, source)
     DV = spec.dev ? zeros(ndraw, length(g.machines)) : nothing
     B = spec.age ? AgeCurveBasis(g) : nothing
     AC = spec.age ? zeros(ndraw, length(g.age_years)) : nothing
+    CX = spec.circ ? zeros(ndraw, 3length(g.machines)) : nothing      # circuit slopes (#81), stacked by covariate
+    TR = spec.track ? zeros(ndraw, 6) : nothing                         # track terms (#81): β_π, then β_λ
     let k = 0
         for c in 1:nc, i in 1:ni
             θ = draw(chain, pnames, i, c)
             k += 1
-            lp[k, :] = θ.a_π .+ rw_path(θ.τ_π_rw .* θ.e_π_rw)
-            ll[k, :] = θ.a_λ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)
+            sπ, sλ = track_shift(θ, cov)
+            lp[k, :] = θ.a_π .+ sπ .+ rw_path(θ.τ_π_rw .* θ.e_π_rw)
+            ll[k, :] = θ.a_λ .+ sλ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)
+            spec.circ && (CX[k, :] = circuit_slopes(θ.τ_cx, θ.u_cx, g, sc))
+            spec.track && (TR[k, :] = vcat(θ.β_track_π, θ.β_track_λ))
             lk[k, :] = rw_path(θ.τ_κ .* θ.e_κ)
             spec.slopes && (SL[k, :] = career_slopes(θ.τ_slope, θ.u_slope))
             spec.dev && (DV[k, :] = dev_trends(θ.τ_dev, θ.u_dev, g, sc))
@@ -237,9 +256,17 @@ function export_race(model, source)
     if spec.dev                                   # g.machines order, as DV's columns
         ct.dev_mean, ct.dev_sd = vec(mean(DV; dims = 1)), vec(std(DV; dims = 1))
     end
+    if spec.circ                                  # circuit slopes (#81), % per sd of each covariate
+        nm = length(g.machines)
+        for (k, n) in enumerate(cov.circuits.x_names)
+            X = CX[:, ((k - 1) * nm + 1):(k * nm)]
+            ct[!, Symbol(n, "_mean")], ct[!, Symbol(n, "_sd")] = vec(mean(X; dims = 1)), vec(std(X; dims = 1))
+        end
+    end
     ct = leftjoin(ct, select(eff.machines, :label => :id, :mean, :sd, :q05, :q95); on = :id, order = :left)
     sort!(ct, [:season, :mean])
-    for c in (:mean, :sd, :q05, :q95, (spec.dev ? (:dev_mean, :dev_sd) : ())...)
+    for c in (:mean, :sd, :q05, :q95, (spec.dev ? (:dev_mean, :dev_sd) : ())...,
+              (spec.circ ? Tuple(Symbol(n, s) for n in cov.circuits.x_names for s in ("_mean", "_sd")) : ())...)
         ct[!, c] = r4(ct[!, c])
     end
     CSV.write(joinpath(outdir, "cars.csv"), select(ct, :id, :constructor, :season, :rows, :mean, :sd, :q05, :q95,
@@ -254,6 +281,21 @@ function export_race(model, source)
         st[!, c] = r4(st[!, c])
     end
     CSV.write(joinpath(outdir, "seasons.csv"), st)
+
+    # track terms (#81): incident odds and loss-size multipliers, against a dry race at an open circuit
+    if spec.track
+        names_t = cov.circuits.track_names
+        labels = Dict(:tight => "Walls (tight score 1 vs 0)", :mixed => "Mixed race (vs dry)", :wet => "Wet race (vs dry)")
+        tt = DataFrame(term = string.(names_t), label = [labels[n] for n in names_t],
+                       share = r4(vec(mean(cov.circuits.track; dims = 1))))
+        for (j, (col, off)) in enumerate(((:pi_odds, 0), (:lambda_mult, 3)))
+            E = exp.(TR[:, off .+ (1:3)])
+            tt[!, Symbol(col, "_mean")] = r4(vec(mean(E; dims = 1)))
+            tt[!, Symbol(col, "_q05")] = r4(q(E, 0.05))
+            tt[!, Symbol(col, "_q95")] = r4(q(E, 0.95))
+        end
+        CSV.write(joinpath(outdir, "track.csv"), tt)
+    end
 
     # age curve
     if spec.age
@@ -347,6 +389,12 @@ function export_race(model, source)
                 convergence = (; rconv(ic.overall)..., divergences = count(identity, chain[:numerical_error]),
                                groups = NamedTuple(k => (; rconv(v)..., v.worst) for (k, v) in pairs(ic) if k !== :overall)),
                 modes = mi.modes, kept_modes = mi.kept, effects_by_mode = mi.effects_by_mode,
+                circuits = spec.circ || spec.track ?
+                    (; covariates = string.(cov.circuits.x_names),
+                     covariate_sd = r4(vec(std(cov.circuits.x_raw; dims = 1))),
+                     tau_cx = spec.circ ? [(; mean = r4(mean(x)), q05 = r4(quantile(x, 0.05)), q95 = r4(quantile(x, 0.95)))
+                                           for x in eachrow(stack(vec(chain[:τ_cx])))] : missing,
+                     seasons_note = "π and λ by season are for a dry race at a circuit of average tightness") : missing,
                 exported_by = "scripts/export_site.jl race")
     write_manifest(outdir, manifest)
     println("wrote $(outdir): $(nrow(dt)) drivers, $(nrow(ct)) car-seasons, $(nrow(st)) seasons; ",
@@ -513,7 +561,7 @@ end
 
 mode = get(ARGS, 1, "race")
 if mode == "race"
-    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev"), get(ARGS, 3, "jolpica1950-2025+partial"))
+    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev_circ_track"), get(ARGS, 3, "jolpica1950-2025+partial"))
 elseif mode == "retire"
     export_retire(get(ARGS, 2, "retire_jolpica1950-2025"))
 elseif mode == "laps"

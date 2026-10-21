@@ -45,6 +45,10 @@ effects are meaningless even when predictions are fine.
 - **In-season development** trends are centred within each season. An
   improvement shared by the whole field is absorbed by the race intercepts
   ([#27](https://github.com/aleccrowell/diomedes/issues/27)).
+- **Circuit slopes** are centred the same way, and each car-season's circuit
+  covariates are also centred over its own races. A slope then only describes
+  how a car's form changed between circuits, never its overall level, and a car
+  that raced one kind of circuit has no slope at all ([#81](https://github.com/aleccrowell/diomedes/issues/81)).
 
 ## Measuring convergence on what is identified
 

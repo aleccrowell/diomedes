@@ -59,7 +59,14 @@ async function checkPage(file) {
     const href = a.getAttribute("href");
     let status = "unresolved";
     if (href && href !== "#") {
-      try { status = (await fetch(new URL(href, dom.window.location.href))).status; } catch (e) { status = String(e); }
+      // HEAD: only the status is needed. An unread GET body larger than undici's buffer
+      // leaves its parser paused, and the server closing the connection then fails an
+      // internal assertion (`assert(!this.paused)`), crashing the check
+      try {
+        const r = await fetch(new URL(href, dom.window.location.href), { method: "HEAD" });
+        status = r.status;
+        await r.body?.cancel();
+      } catch (e) { status = String(e); }
     }
     links.push({ path: a.dataset.path, ok: status === 200, status });
   }

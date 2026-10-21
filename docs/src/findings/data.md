@@ -27,7 +27,9 @@ differ between modes.
 <tr><td><a class="diomedes-data" data-path="assets/data/race/cars.csv">cars.csv</a></td><td>car-season</td>
 <td><code>id</code> (constructor_season), <code>constructor</code>, <code>season</code>, <code>rows</code>;
 <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: car effect, % of race time relative to the other cars in the same season;
-<code>dev_mean</code>, <code>dev_sd</code>: in-season development trend, % from the season's first round to its last, relative to the field</td></tr>
+<code>dev_mean</code>, <code>dev_sd</code>: in-season development trend, % from the season's first round to its last, relative to the field;
+<code>speed_*</code>, <code>rough_*</code>, <code>temp_*</code> (mean, sd): circuit slopes, % of race time per standard deviation of the race's
+average speed, road-surface roughness and air temperature, relative to the car's own races and to its field (positive = relatively slower)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/ranks.csv">ranks.csv</a></td><td>driver with ≥ 20 results</td>
 <td><code>id</code>, <code>name</code>, <code>rows</code>; <code>p_top1</code>, <code>p_top3</code>, <code>p_top10</code>: share of the
 posterior draws in which the driver ranks fastest, in the top 3, in the top 10 among these drivers;
@@ -39,7 +41,10 @@ posterior draws in which the driver ranks fastest, in the top 3, in the top 10 a
 (mean, q05, q95), relative to the season's average entrant</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/seasons.csv">seasons.csv</a></td><td>season</td>
 <td><code>season</code>, <code>races</code>; <code>pi_*</code>: probability that a result includes a routine loss;
-<code>lambda_*</code>: mean routine loss, % of race time (both at average race duration); <code>kappa_*</code>: pace scale κ</td></tr>
+<code>lambda_*</code>: mean routine loss, % of race time (both at average race duration, for a dry race at a circuit of average tightness); <code>kappa_*</code>: pace scale κ</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/race/track.csv">track.csv</a></td><td>track term</td>
+<td><code>term</code> (tight, mixed, wet), <code>label</code>; <code>share</code>: mean of the covariate over the races (tight score 0–1; share of mixed or wet races);
+<code>pi_odds_*</code>: factor on the odds of a routine loss; <code>lambda_mult_*</code>: factor on the mean routine loss (mean, q05, q95), both against a dry race at an open circuit</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/seasons_by_mode.csv">seasons_by_mode.csv</a></td><td>mode × season</td>
 <td><code>mode</code> (chains grouped by where the loss mixture settled; see <code>modes.csv</code>), then the columns of
 <code>seasons.csv</code> over that mode's draws</td></tr>
