@@ -680,11 +680,11 @@ end
         @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
                                           big_loss = false, slopes = false, dev = false,
                                           centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true,
-                                          circ = false, track = false)
+                                          circ = false, track = false, walk = false)
         @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
                                                 big_loss = false, slopes = false, dev = false,
                                           centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true,
-                                          circ = false, track = false)
+                                          circ = false, track = false, walk = false)
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
         @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
         let s = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track")
@@ -799,6 +799,103 @@ end
         gf, gp = RD.gradient(fused, (cx, κs)), RD.gradient(plain, (cx, κs))
         @test gf[1] ≈ gp[1] && gf[2] ≈ gp[2]
         @test_throws ArgumentError Diomedes.race_loss(θc, cov, false, :none)       # track terms need circuits
+    end
+
+    @testset "chassis and engine walks (#95)" begin
+        rng = Xoshiro(95)
+        RD = Diomedes.ReverseDiff
+        # the walk recursion against a dense lower-triangular product, values and gradients
+        prev = [0, 1, 2, 0, 4, 0, 6, 7, 8]
+        L = zeros(length(prev), length(prev))
+        for k in eachindex(prev)
+            j = k
+            while j != 0; L[k, j] = 1; j = prev[j]; end
+        end
+        st, w = randn(rng, length(prev)), randn(rng, length(prev))
+        @test Diomedes.walk_path(st, prev) ≈ L * st
+        @test RD.gradient(s -> sum(w .* Diomedes.walk_path(s, prev)), st) ≈ RD.gradient(s -> sum(w .* (L * s)), st)
+        # per-row offsets against plain indexing
+        xc, xe = randn(rng, 5), randn(rng, 3)
+        ic, ie = rand(rng, 1:5, 40), rand(rng, 1:3, 40)
+        w = randn(rng, 40)
+        @test Diomedes.walk_offsets(xc, ic, xe, ie) ≈ xc[ic] .+ xe[ie]
+        gf = RD.gradient((a, b) -> sum(w .* Diomedes.walk_offsets(a, ic, b, ie)), (xc, xe))
+        gp = RD.gradient((a, b) -> sum(w .* (a[ic] .+ b[ie])), (xc, xe))
+        @test gf[1] ≈ gp[1] && gf[2] ≈ gp[2]
+
+        # two seasons (2019 and a relabelled copy as 2020), as for the other race-model terms
+        res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
+        res2 = copy(res); res2.season .= 2020; res2.event_id .= replace.(res2.event_id, "2019" => "2020")
+        g = prepare_gaps(vcat(res, res2))
+        # the tables for the copy: 2019's entries relabelled 2020, and ranges ending in 2019 extended
+        real = car_table()
+        e19 = real.entries[real.entries.season .== 2019, :]
+        e20 = copy(e19); e20.season .= 2020
+        ext(t) = transform(t, :last_year => ByRow(y -> y == 2019 ? 2020 : y) => :last_year)
+        cars = merge(real, (; entries = vcat(real.entries[real.entries.season .!= 2020, :], e20),
+                            works = ext(real.works), engines = ext(real.engines)))
+        cw = CarWalks(g, cars)
+        nrow_ = length(g.y) + length(g.lo)
+        @test length(cw.row_ch) == length(cw.row_en) == nrow_
+        rows = vcat(g.rows[g.rows.kind .== :timed, :], g.rows[g.rows.kind .== :lapped, :]; cols = :union)
+        # every row's states are in its own season; each walk starts once and steps once
+        for ws in (cw.chassis, cw.engine)
+            @test all(ws.first .== (ws.prev .== 0))
+            @test all(ws.season[ws.prev[.!ws.first]] .== ws.season[.!ws.first] .- 1)
+            @test sum(ws.counts) == length(ws.prev)
+        end
+        @test cw.chassis.season[cw.row_ch] == rows.season .- 2018
+        @test cw.engine.season[cw.row_en] == rows.season .- 2018
+        @test any(startswith("milton-keynes 2019"), cw.chassis.names) && any(startswith("honda 2019"), cw.engine.names)
+        # the 2020 steps: no ownership change; no regulation change between 2019 and 2020
+        @test all(cw.chassis.own .== 0) && all(cw.chassis.reg .== 0) && all(cw.engine.reg .== 0)
+        # flags from the tables: Racing Point's ownership change (2019), the 2017 and 2014 rules
+        ws, _ = Diomedes._walk_states([("silverstone", 2017), ("silverstone", 2018), ("silverstone", 2019),
+                                       ("mercedes", 2013), ("mercedes", 2015)], 2013, 7,
+                                      Set([("silverstone", 2019)]), [2014, 2017])
+        @test ws.names == ["mercedes 2013", "mercedes 2015", "silverstone 2017", "silverstone 2018", "silverstone 2019"]
+        @test ws.prev == [0, 1, 0, 3, 4] && ws.own == [0, 0, 0, 0, 1] && ws.reg == [0, 1, 0, 0, 0]
+        @test ws.rootgap ≈ [1, sqrt(2), 1, 1, 1]
+
+        # the model: rows vs the fused rule with the walk offsets in the κ-scaled driver offset
+        nc, nm, nr = length(g.competitors), length(g.machines), length(g.races)
+        cov = LossCovariates(g; cars)
+        sc = Diomedes.season_counts(g)
+        θ = (; σ_comp = 0.7, σ_mach = 0.5, σ = 0.4, z_comp = randn(rng, nc), μ_γ = 1.8, γ = randn(rng, nr),
+             a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
+             τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1),
+             τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm),
+             τ_ch = 0.4, σ0_ch = 0.9, z_ch = randn(rng, length(cw.chassis.prev)),
+             τ_en = 0.3, σ0_en = 0.7, z_en = randn(rng, length(cw.engine.prev)),
+             δ_own = 0.5, δ_reg_ch = 0.4, δ_reg_en = 0.6)
+        πr, λr = Diomedes.race_loss(θ, cov, true, :rw)
+        xc, xe = car_walk_states(θ, cov.cars)
+        hw = Diomedes.walk_offsets(xc, cw.row_ch, xe, cw.row_en)
+        @test sum(Diomedes.paceloss_rows(θ, g; loss_duration = true, era = :rw, cov)) ≈
+              Diomedes.paceloss_loglik_cc(θ.γ, θ.z_comp, θ.σ_comp, θ.b_mach, θ.σ, πr, λr, race_pace_scale(θ, cov), hw, g, sc)
+        # states centred within season
+        @test all(abs(sum(xc[cw.chassis.season .== s])) < 1e-10 for s in 1:2)
+        @test all(abs(sum(xe[cw.engine.season .== s])) < 1e-10 for s in 1:2)
+        # sampler gradient vs ForwardDiff, and the walk reaches ReverseDiff through the fused rules
+        model = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars)
+        @test Tuple(k for k in keys(θ) if k in Diomedes.walk_param_names(true)) == Diomedes.walk_param_names(true)
+        LDF = Turing.DynamicPPL.LogDensityFunction
+        LDP = Turing.DynamicPPL.LogDensityProblems
+        rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
+        fd = LDF(model; adtype = AutoForwardDiff())
+        for _ in 1:2
+            θx = map(v -> v isa AbstractVector ? 0.5 .* randn(rng, length(v)) : 0.5 * randn(rng), θ)
+            θx = merge(θx, NamedTuple(k => 0.2 + rand(rng) for k in keys(θ)
+                                      if any(p -> startswith(string(k), p), ("σ", "τ", "δ"))))
+            x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θx)])
+            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+        end
+        tape = RD.GradientTape(z -> LDP.logdensity(LDF(model), z), reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θ)]))
+        @test length(tape.tape) < 1000
+        s = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk")
+        @test s.walk && s.circ && Diomedes.model_param_names(s)[(end - 8):end] == Diomedes.walk_param_names(true)
+        @test !model_spec("pl_dur_rw_kappa").walk
+        @test_throws ArgumentError paceloss_effects(g; walk = true, cars)        # needs the pace scale
     end
 
     @testset "race circuit covariates (#81)" begin
