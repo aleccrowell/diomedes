@@ -1,0 +1,73 @@
+f1db_engine,first_year,last_year,builder_id,uncertain,notes,sources
+acer,2001,2001,ferrari,,Prost's 2001 engine: Ferrari's 2000 V10 rebadged.,https://en.wikipedia.org/wiki/Prost_AP04
+alfa-romeo,1950,1987,alfa-romeo,,own builder,https://github.com/f1db/f1db
+alta,1950,1959,alta,,own builder,https://github.com/f1db/f1db
+arrows,1998,1999,hart,uncertain,"Arrows' own V10, developed from the Brian Hart V10 after TWR bought Hart (judgement: Hart lineage).",https://en.wikipedia.org/wiki/Arrows_A19
+asiatech,2001,2002,peugeot,,"Peugeot's V10 after Peugeot left F1, developed by Asiatech.",https://en.wikipedia.org/wiki/Asiatech
+aston-martin,1959,1960,aston-martin,,own builder,https://github.com/f1db/f1db
+ats,1963,1967,ats,,own builder,https://github.com/f1db/f1db
+bmw,1952,1954,bmw-1952,,BMW 328-derived engines in privateer specials; unrelated to BMW's works engines.,https://github.com/f1db/f1db
+bmw,1967,2009,bmw,,"BMW works engines: the 1967-68 Formula Two engines (Lola, German GP) and BMW Motorsport from 1982.",https://en.wikipedia.org/wiki/BMW_in_Formula_One
+borgward,1959,1959,borgward,,own builder,https://github.com/f1db/f1db
+bristol,1952,1957,bristol,,own builder,https://github.com/f1db/f1db
+brm,1951,1977,brm,,own builder,https://github.com/f1db/f1db
+bugatti,1956,1956,bugatti,,own builder,https://github.com/f1db/f1db
+butterworth,1952,1952,butterworth,,own builder,https://github.com/f1db/f1db
+bwt-mercedes,2019,2020,mercedes,,Racing Point's Mercedes power units under the BWT name.,https://github.com/f1db/f1db
+castellotti,1960,1960,castellotti,,own builder,https://github.com/f1db/f1db
+climax,1957,1969,climax,,own builder,https://github.com/f1db/f1db
+cosworth,2000,2013,cosworth,,own builder,https://github.com/f1db/f1db
+emw,1953,1953,emw,,own builder,https://github.com/f1db/f1db
+era,1950,1951,era,,own builder,https://github.com/f1db/f1db
+european,2001,2001,cosworth,,Minardi's 2001 engine: Cosworth's Zetec-R V10 rebadged.,https://en.wikipedia.org/wiki/Minardi_PS01
+ferrari,1950,2025,ferrari,,own builder,https://github.com/f1db/f1db
+fondmetal,2000,2000,cosworth,,Minardi's 2000 engine: Cosworth's Zetec-R V10 rebadged.,https://en.wikipedia.org/wiki/Minardi_M02
+ford,1963,2004,cosworth,,"Ford-badged engines of this era were built by Cosworth (DFV, HB, Zetec-R, CR).",https://en.wikipedia.org/wiki/Cosworth
+gordini,1950,1956,gordini,,own builder,https://github.com/f1db/f1db
+hart,1981,1997,hart,,own builder,https://github.com/f1db/f1db
+honda,1964,2021,honda,,own builder,https://github.com/f1db/f1db
+honda-rbpt,2023,2025,honda,,Honda RBPT units built by Honda (HRC).,https://en.wikipedia.org/wiki/Red_Bull_Powertrains
+ilmor,1991,1994,mercedes,,"Ilmor Engineering (Brixworth; customer V10s to 1994), which built Mercedes' engines from 1994 and became Mercedes-Benz HighPerformanceEngines: same works.",https://en.wikipedia.org/wiki/Ilmor
+jaguar,1950,1950,jaguar,,own builder,https://github.com/f1db/f1db
+jap,1950,1950,jap,,own builder,https://github.com/f1db/f1db
+judd,1988,1992,judd,,own builder,https://github.com/f1db/f1db
+kuchen,1952,1952,kuchen,,own builder,https://github.com/f1db/f1db
+lamborghini,1989,1993,lamborghini,,own builder,https://github.com/f1db/f1db
+lancia,1954,1955,lancia,,own builder,https://github.com/f1db/f1db
+lea-francis,1952,1954,lea-francis,,own builder,https://github.com/f1db/f1db
+maserati,1950,1969,maserati,,own builder,https://github.com/f1db/f1db
+matra,1968,1982,matra,,own builder,https://github.com/f1db/f1db
+mecachrome,1998,1998,renault,uncertain,Renault's RS9 V10 maintained by Mecachrome after Renault's withdrawal (judgement: Renault lineage).,https://en.wikipedia.org/wiki/Mecachrome
+megatron,1987,1988,bmw,,BMW's M12/13 turbo rebadged after BMW's official withdrawal.,https://en.wikipedia.org/wiki/BMW_M12
+mercedes,1954,1955,mercedes-1954,,Daimler-Benz's own straight-8 (Stuttgart); unrelated to the Brixworth works.,https://en.wikipedia.org/wiki/Mercedes-Benz_in_Formula_One
+mercedes,1994,2025,mercedes,,"Brixworth (Ilmor, then Mercedes-Benz HPE/HPP).",https://en.wikipedia.org/wiki/Mercedes_AMG_High_Performance_Powertrains
+milano,1950,1951,milano,,own builder,https://github.com/f1db/f1db
+motori-moderni,1985,1987,motori-moderni,,own builder,https://github.com/f1db/f1db
+mugen-honda,1992,2000,mugen,uncertain,"Mugen Motorsports' V10, developed from Honda's 1989-90 V10s; Mugen was never Honda-owned, though Honda took a larger part in development by 1998 (judgement: its own works).",https://en.wikipedia.org/wiki/Mugen_Motorsports
+offenhauser,1959,1959,offenhauser,,own builder,https://github.com/f1db/f1db
+osca,1951,1961,osca,,own builder,https://github.com/f1db/f1db
+osella,1988,1988,alfa-romeo,uncertain,"Alfa Romeo's 890T turbo, developed on by Osella after Alfa withdrew (judgement: Alfa lineage).",https://en.wikipedia.org/wiki/Osella
+petronas,1997,2005,ferrari,,Sauber's engines: previous-year Ferrari V10s rebadged.,https://en.wikipedia.org/wiki/Sauber_Motorsport
+peugeot,1994,2000,peugeot,,own builder,https://github.com/f1db/f1db
+plate,1952,1952,plate,,own builder,https://github.com/f1db/f1db
+playlife,1998,2000,renault,uncertain,Benetton's Mecachrome-built Renault V10s rebadged (judgement: Renault lineage).,https://en.wikipedia.org/wiki/Mecachrome
+porsche,1957,1991,porsche,,own builder,https://github.com/f1db/f1db
+pratt-whitney,1971,1971,pratt-whitney,,own builder,https://github.com/f1db/f1db
+rbpt,2022,2022,honda,,Red Bull Powertrains-badged units built by Honda (HRC).,https://en.wikipedia.org/wiki/Red_Bull_Powertrains
+renault,1977,2025,renault,,own builder,https://github.com/f1db/f1db
+repco,1966,1969,repco,,own builder,https://github.com/f1db/f1db
+sauber,1993,1993,mercedes,,Ilmor-built V10 badged Sauber; Ilmor (Brixworth) built Mercedes' engines from 1994.,https://en.wikipedia.org/wiki/Sauber_C12
+scarab,1960,1960,scarab,,own builder,https://github.com/f1db/f1db
+serenissima,1966,1966,serenissima,,own builder,https://github.com/f1db/f1db
+supertec,1999,2000,renault,uncertain,Mecachrome-built Renault V10s sold by Supertec (judgement: Renault lineage).,https://en.wikipedia.org/wiki/Mecachrome
+tag,1983,1987,porsche,,TAG-badged engines were designed and built by Porsche.,https://en.wikipedia.org/wiki/TAG_Heuer_TTE_PO1
+tag-heuer,2016,2018,renault,,Red Bull's Renault power units rebadged.,https://en.wikipedia.org/wiki/Red_Bull_Racing
+talbot-lago,1950,1951,talbot-lago,,own builder,https://github.com/f1db/f1db
+tecno,1972,1973,tecno,,own builder,https://github.com/f1db/f1db
+toro-rosso,2017,2017,renault,,Toro Rosso's 2017 Renault power units (F1DB's engine name).,https://github.com/f1db/f1db https://en.wikipedia.org/wiki/Scuderia_Toro_Rosso
+toyota,2002,2009,toyota,,own builder,https://github.com/f1db/f1db
+vanwall,1954,1960,vanwall,,own builder,https://github.com/f1db/f1db
+veritas,1951,1953,veritas,,own builder,https://github.com/f1db/f1db
+weslake,1966,1968,weslake,,own builder,https://github.com/f1db/f1db
+yamaha,1989,1997,yamaha,,own builder,https://github.com/f1db/f1db
+zakspeed,1985,1988,zakspeed,,own builder,https://github.com/f1db/f1db
