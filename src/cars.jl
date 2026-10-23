@@ -162,6 +162,57 @@ end
 ReverseDiff.@grad_from_chainrules walk_path(steps::ReverseDiff.TrackedArray, prev::Vector{Int})
 
 """
+    walk_level_path(v, prev) -> Vector
+
+Walk states in the level parametrisation (`_wlev`, #102): for a walk's first
+state v holds the walk's level L (its mean state over its seasons); for the
+others v holds the step. States are L + c_k − mean(c) with c the cumulative
+steps (c = 0 at the first state). A long, well-observed walk's level is then
+one coordinate: in the step form it is spread over the first state and every
+early step, a direction that limited the sampler's step size (Ferrari, 76
+seasons). Linear in v, with a hand-written rule.
+"""
+function walk_level_path(v, prev::Vector{Int})
+    T = promote_type(eltype(v), Float64)
+    n = length(prev)
+    wid, c = zeros(Int, n), zeros(T, n)
+    nw = 0
+    for k in 1:n
+        if prev[k] == 0
+            nw += 1; wid[k] = nw
+        else
+            wid[k] = wid[prev[k]]; c[k] = c[prev[k]] + v[k]
+        end
+    end
+    csum, cnt, lev = zeros(T, nw), zeros(Int, nw), zeros(T, nw)
+    for k in 1:n
+        csum[wid[k]] += c[k]; cnt[wid[k]] += 1
+        prev[k] == 0 && (lev[wid[k]] = v[k])
+    end
+    return [lev[wid[k]] + c[k] - csum[wid[k]] / cnt[wid[k]] for k in 1:n]
+end
+function ChainRulesCore.rrule(::typeof(walk_level_path), v, prev::Vector{Int})
+    function pullback(ȳ)
+        ȳ = collect(Float64, ChainRulesCore.unthunk(ȳ))
+        n = length(prev)
+        wid = zeros(Int, n); nw = 0
+        for k in 1:n; wid[k] = prev[k] == 0 ? (nw += 1) : wid[prev[k]]; end
+        tot, cnt = zeros(nw), zeros(Int, nw)
+        for k in 1:n; tot[wid[k]] += ȳ[k]; cnt[wid[k]] += 1; end
+        # ∂/∂c_k = ȳ_k − mean of ȳ over the walk; then accumulate down each walk (c_k feeds all later c)
+        dc = [ȳ[k] - tot[wid[k]] / cnt[wid[k]] for k in 1:n]
+        acc = copy(dc)
+        for k in reverse(1:n)
+            prev[k] == 0 || (acc[prev[k]] += acc[k])
+        end
+        dv = [prev[k] == 0 ? tot[wid[k]] : acc[k] for k in 1:n]
+        return NoTangent(), dv, NoTangent()
+    end
+    return walk_level_path(v, prev), pullback
+end
+ReverseDiff.@grad_from_chainrules walk_level_path(v::ReverseDiff.TrackedArray, prev::Vector{Int})
+
+"""
     walk_offsets(xc, row_ch, xe, row_en) -> Vector
 
 Per-row car part from the walks, xc[row_ch[i]] + xe[row_en[i]], with a
@@ -195,9 +246,101 @@ both families (`_walk1`, #97: with one each, they were indistinguishable), or by
 exp(δ_reg_ch) and exp(δ_reg_en) (`_walk`, the published #95 fit).
 """
 function car_walk_states(θ, cw::CarWalks)
+    xc, xe = car_walk_raw(θ, cw)
+    return center_by(xc, cw.chassis.season, cw.chassis.counts), center_by(xe, cw.engine.season, cw.engine.counts)
+end
+
+# The walk states before centring within season, in either parametrisation: steps
+# (z_ch, z_en; the first state is σ0·z) or levels (zl_ch, zl_en, `_wlev`; the first
+# slot holds the walk's level, see `walk_level_path`).
+function car_walk_raw(θ, cw::CarWalks)
     # one regulation multiplier (`_walk1`, #97) or one per family (`_walk`, the #95 fit)
     δc, δe = haskey(θ, :δ_reg) ? (θ.δ_reg, θ.δ_reg) : (θ.δ_reg_ch, θ.δ_reg_en)
-    xc = walk_path(walk_steps(θ.τ_ch, θ.σ0_ch, θ.δ_own, δc, θ.z_ch, cw.chassis), cw.chassis.prev)
-    xe = walk_path(walk_steps(θ.τ_en, θ.σ0_en, zero(θ.δ_own), δe, θ.z_en, cw.engine), cw.engine.prev)
-    return center_by(xc, cw.chassis.season, cw.chassis.counts), center_by(xe, cw.engine.season, cw.engine.counts)
+    haskey(θ, :xs_ch) && return θ.xs_ch, θ.xs_en               # states sampled directly (`_wst`)
+    if haskey(θ, :zl_ch)
+        return walk_level_path(walk_level_inputs(θ.τ_ch, θ.δ_own, δc, θ.zl_ch, cw.chassis), cw.chassis.prev),
+               walk_level_path(walk_level_inputs(θ.τ_en, zero(θ.δ_own), δe, θ.zl_en, cw.engine), cw.engine.prev)
+    end
+    return walk_path(walk_steps(θ.τ_ch, θ.σ0_ch, θ.δ_own, δc, θ.z_ch, cw.chassis), cw.chassis.prev),
+           walk_path(walk_steps(θ.τ_en, θ.σ0_en, zero(θ.δ_own), δe, θ.z_en, cw.engine), cw.engine.prev)
+end
+
+# Inputs of `walk_level_path` from standardised coordinates: a first slot is the
+# level as sampled; a step is τ·√gap·exp(δ_own·own + δ_reg·reg)·z.
+function walk_level_inputs(τ, δ_own, δ_reg, z, ws::WalkStates)
+    f = Float64.(ws.first)
+    return z .* (f .+ (1 .- f) .* τ .* ws.rootgap .* exp.(δ_own .* ws.own .+ δ_reg .* ws.reg))
+end
+
+"""
+    walk_level_prior(θ, cw::CarWalks) -> Real
+
+Prior correction of the level parametrisation (#102): the model gives every slot
+of zl_ch, zl_en a N(0, 1) prior; the first state of each walk should instead be
+N(0, σ0). Adding this keeps the prior of the step form exactly (the change of
+variables is linear with unit Jacobian).
+"""
+function walk_level_prior(θ, xc, xe, cw::CarWalks)
+    lp = zero(θ.σ0_ch)
+    for (x, z, σ0, ws) in ((xc, θ.zl_ch, θ.σ0_ch, cw.chassis), (xe, θ.zl_en, θ.σ0_en, cw.engine))
+        fi = findall(ws.first)
+        lp += sum(normlogpdf.(x[fi] ./ σ0)) - length(fi) * log(σ0) - sum(normlogpdf.(z[fi]))
+    end
+    return lp
+end
+
+"""
+    walk_to_levels(θ, cw::CarWalks) -> NamedTuple
+
+The same draw in the level parametrisation (`_wlev`): z_ch and z_en become zl_ch
+and zl_en, whose first slots hold each walk's level (the mean of its states
+before centring within season); the steps are unchanged.
+"""
+function walk_to_levels(θ, cw::CarWalks)
+    xc, xe = car_walk_raw(θ, cw)
+    function lev(z, x, ws)
+        zl = collect(float.(z))
+        w = 0
+        for k in eachindex(ws.prev)
+            ws.prev[k] == 0 || continue
+            idx = [k]
+            for j in (k + 1):length(ws.prev); ws.prev[j] == idx[end] ? push!(idx, j) : break; end
+            zl[k] = mean(x[idx])
+        end
+        return zl
+    end
+    return NamedTuple(k === :z_ch ? (:zl_ch => lev(v, xc, cw.chassis)) : k === :z_en ? (:zl_en => lev(v, xe, cw.engine)) :
+                      (k => v) for (k, v) in pairs(θ))
+end
+
+"""
+    walk_diffs(x, prev) -> Vector
+
+Each state minus its walk's previous state (the state itself for a walk's first
+season): the inverse of `walk_path`. For the state parametrisation (`_wst`, #102),
+where the walk states are sampled directly and their prior is on these
+differences. Linear, with a hand-written rule.
+"""
+walk_diffs(x, prev::Vector{Int}) = [prev[k] == 0 ? x[k] : x[k] - x[prev[k]] for k in eachindex(prev)]
+function ChainRulesCore.rrule(::typeof(walk_diffs), x, prev::Vector{Int})
+    function pullback(ȳ)
+        ȳ = ChainRulesCore.unthunk(ȳ)
+        dx = collect(Float64, ȳ)
+        for k in eachindex(prev); prev[k] == 0 || (dx[prev[k]] -= ȳ[k]); end
+        return NoTangent(), dx, NoTangent()
+    end
+    return walk_diffs(x, prev), pullback
+end
+ReverseDiff.@grad_from_chainrules walk_diffs(x::ReverseDiff.TrackedArray, prev::Vector{Int})
+
+"""
+    walk_state_prior(τ, σ0, δ_own, δ_reg, x, ws::WalkStates) -> Real
+
+Log prior of directly sampled walk states (`_wst`, #102): a walk's first state
+N(0, σ0), each later state N(previous state, τ·√gap·exp(δ_own·own + δ_reg·reg)).
+"""
+function walk_state_prior(τ, σ0, δ_own, δ_reg, x, ws::WalkStates)
+    sd = walk_steps(τ, σ0, δ_own, δ_reg, ones(length(ws.prev)), ws)
+    d = walk_diffs(x, ws.prev)
+    return sum(normlogpdf.(d ./ sd)) - sum(log.(sd))
 end

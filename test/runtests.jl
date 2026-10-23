@@ -921,6 +921,75 @@ end
             tape = RD.GradientTape(z -> LDP.logdensity(LDF(model), z), reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θm)]))
             @test length(tape.tape) < 1000
         end
+        # level parametrisation (#102): same log joint at the mapped point; rule vs plain AD
+        let m3 = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars),
+            ml = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, wlev = true, cars)
+            θl = Diomedes.walk_to_levels(θ3, cw)
+            # same posterior; densities over different coordinates differ by the Jacobian of
+            # z_first → level (σ0 per walk), the rest of the change of variables being unit
+            nwc, nwe = count(cw.chassis.first), count(cw.engine.first)
+            @test logjoint(ml, θl) ≈ logjoint(m3, θ3) - nwc * log(θ3.σ0_ch) - nwe * log(θ3.σ0_en)
+            @test all(car_walk_states(θl, cw) .≈ car_walk_states(θ3, cw))
+            vl = Diomedes.walk_level_inputs(θl.τ_ch, θl.δ_own, θl.δ_reg_ch, θl.zl_ch, cw.chassis)
+            wv = randn(rng, length(vl))
+            # dense equivalent of walk_level_path: x = A v
+            n = length(vl); A = zeros(n, n)
+            for j in 1:n
+                e = zeros(n); e[j] = 1
+                A[:, j] = Diomedes.walk_level_path(e, cw.chassis.prev)
+            end
+            @test Diomedes.walk_level_path(vl, cw.chassis.prev) ≈ A * vl
+            @test RD.gradient(v -> sum(wv .* Diomedes.walk_level_path(v, cw.chassis.prev)), vl) ≈ A' * wv
+            rd = LDF(ml; adtype = Diomedes.gap_sampler().adtype); fd = LDF(ml; adtype = AutoForwardDiff())
+            x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θl)])
+            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+            @test length(RD.GradientTape(z -> LDP.logdensity(LDF(ml), z), x).tape) < 1000
+        end
+        # centred pace-scale steps (#102): same posterior; Jacobian of e_κ → s_κ = τ_κ·e_κ
+        let m3 = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars),
+            mk = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, kc = true, cars)
+            θk = NamedTuple(k === :e_κ ? (:s_κ => θ3.τ_κ .* v) : (k => v) for (k, v) in pairs(θ3))
+            @test Diomedes.season_pace_scale(θk) ≈ Diomedes.season_pace_scale(θ3)
+            @test logjoint(mk, θk) ≈ logjoint(m3, θ3) - length(θ3.e_κ) * log(θ3.τ_κ)
+        end
+        # walk states and the κ path sampled directly (#102): same posterior; Jacobians of the maps
+        let m3 = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars),
+            ms = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, wst = true,
+                                  kst = true, cars)
+            xc, xe = Diomedes.car_walk_raw(θ3, cw)
+            lκ = Diomedes.rw_path(θ3.τ_κ .* θ3.e_κ) .+ 0.01
+            θs = NamedTuple(k === :z_ch ? (:xs_ch => xc) : k === :z_en ? (:xs_en => xe) : k === :e_κ ? (:l_κ => lκ) : (k => v)
+                            for (k, v) in pairs(θ3))
+            @test all(car_walk_states(θs, cw) .≈ car_walk_states(θ3, cw))
+            @test Diomedes.season_pace_scale(θs) ≈ Diomedes.season_pace_scale(θ3)
+            sdc = Diomedes.walk_steps(θ3.τ_ch, θ3.σ0_ch, θ3.δ_own, θ3.δ_reg_ch, ones(length(xc)), cw.chassis)
+            sde = Diomedes.walk_steps(θ3.τ_en, θ3.σ0_en, 0.0, θ3.δ_reg_en, ones(length(xe)), cw.engine)
+            # z → x has Jacobian ∏ sd; e_κ → l_κ adds the mean coordinate (prior N(0, 0.05)) and ∏ τ_κ
+            @test logjoint(ms, θs) ≈ logjoint(m3, θ3) - sum(log, sdc) - sum(log, sde) -
+                                     length(θ3.e_κ) * log(θ3.τ_κ) + logpdf(Normal(0, 0.05), mean(lκ))
+            # walk_diffs inverts walk_path; its rule vs plain AD
+            st = randn(rng, length(xc))
+            @test Diomedes.walk_diffs(Diomedes.walk_path(st, cw.chassis.prev), cw.chassis.prev) ≈ st
+            wv = randn(rng, length(xc))
+            @test RD.gradient(x -> sum(wv .* Diomedes.walk_diffs(x, cw.chassis.prev)), xc) ≈
+                  RD.gradient(x -> sum(wv .* [p == 0 ? x[k] : x[k] - x[p] for (k, p) in enumerate(cw.chassis.prev)]), xc)
+            rd = LDF(ms; adtype = Diomedes.gap_sampler().adtype); fd = LDF(ms; adtype = AutoForwardDiff())
+            x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θs)])
+            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+            @test length(RD.GradientTape(z -> LDP.logdensity(LDF(ms), z), x).tape) < 1000
+        end
+        # every option together: ReverseDiff vs ForwardDiff and tape size
+        let mall = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, big_loss = true, walk = true,
+                                    walk1 = true, works = true, dinc = true, ncres = true, wlev = true, kc = true, cars)
+            θa = Diomedes.walk_to_levels(θn, cw)
+            θa = NamedTuple(k === :e_κ ? (:s_κ => θa.τ_κ .* v) : (k => v) for (k, v) in pairs(θa))
+            @test Tuple(keys(θa)) == Diomedes.model_param_names(model_spec(
+                "pl_dur_rw_kappa_big_walk1_works_dinc_ncres_wlev_kc"))
+            rd = LDF(mall; adtype = Diomedes.gap_sampler().adtype); fd = LDF(mall; adtype = AutoForwardDiff())
+            x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θa)])
+            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+            @test length(RD.GradientTape(z -> LDP.logdensity(LDF(mall), z), x).tape) < 1000
+        end
         s = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk")
         @test s.walk && !s.walk1 && s.circ && Diomedes.model_param_names(s)[(end - 8):end] == Diomedes.walk_param_names(true)
         s1 = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc")

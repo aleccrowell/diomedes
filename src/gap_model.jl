@@ -338,7 +338,9 @@ function gap_effects_table(chain, g::GapData)
     centred = "b_mach" in pnames || "z_res" in pnames   # #15 models (z_res: non-centred, #102)
     if "z_res" in pnames
         ms = LossCovariates(g).mach_season
-        K = reduce(vcat, [exp.(rw_path(t .* e))[ms]' for (t, e) in zip(vec(chain[:τ_κ]), vec(chain[:e_κ]))])
+        steps = "l_κ" in pnames ? [diff(l) for l in vec(chain[:l_κ])] :
+                "s_κ" in pnames ? vec(chain[:s_κ]) : [t .* e for (t, e) in zip(vec(chain[:τ_κ]), vec(chain[:e_κ]))]
+        K = reduce(vcat, [exp.(rw_path(st))[ms]' for st in steps])
         bdraws = vec(chain[:σ_mach]) .* K .* draws(:z_res)
     else
         bdraws = centred ? draws(:b_mach) : nothing
