@@ -867,7 +867,7 @@ end
              τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm),
              τ_ch = 0.4, σ0_ch = 0.9, z_ch = randn(rng, length(cw.chassis.prev)),
              τ_en = 0.3, σ0_en = 0.7, z_en = randn(rng, length(cw.engine.prev)),
-             δ_own = 0.5, δ_reg = 0.4)
+             δ_own = 0.5, δ_reg_ch = 0.4, δ_reg_en = 0.6)
         πr, λr = Diomedes.race_loss(θ, cov, true, :rw)
         xc, xe = car_walk_states(θ, cov.cars)
         hw = Diomedes.walk_offsets(xc, cw.row_ch, xe, cw.row_en)
@@ -893,7 +893,7 @@ end
         tape = RD.GradientTape(z -> LDP.logdensity(LDF(model), z), reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θ)]))
         @test length(tape.tape) < 1000
         s = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk")
-        @test s.walk && s.circ && Diomedes.model_param_names(s)[(end - 7):end] == Diomedes.walk_param_names(true)
+        @test s.walk && s.circ && Diomedes.model_param_names(s)[(end - 8):end] == Diomedes.walk_param_names(true)
         @test !model_spec("pl_dur_rw_kappa").walk
         @test_throws ArgumentError paceloss_effects(g; walk = true, cars)        # needs the pace scale
     end
