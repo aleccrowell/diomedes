@@ -276,7 +276,8 @@ function export_race(model, source)
     CSV.write(joinpath(outdir, "drivers.csv"), dt)
 
     # car-seasons (per-draw residuals; with walks the effect is residual + chassis + engine)
-    Bm = mapslices(b -> sum_to_zero_by(b, g.mach_season, sc), stack(vec(chain[:b_mach]); dims = 1); dims = 2)
+    Bm = reduce(vcat, [sum_to_zero_by(Diomedes.car_residuals(draw(chain, pnames, i, c), cov), g.mach_season, sc)'
+                       for c in 1:nc for i in 1:ni])                    # loop order: i within c
     TOT = spec.walk ? Bm .+ CH .+ EN : Bm                                     # draws × cars
     ct = DataFrame(id = g.machines, season = [seasons[s] for s in g.mach_season],
                    rows = [count(==(m), machs) for m in eachindex(g.machines)])

@@ -21,7 +21,7 @@ _, g = gap_data(mode; io = devnull)
 m = paceloss_effects(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                      age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                      centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν, race_hier = spec.race_hier,
-                     race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works, dinc = spec.dinc)
+                     race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres)
 LDF = Turing.DynamicPPL.LogDensityFunction
 LDP = Turing.DynamicPPL.LogDensityProblems
 f = LDF(m; adtype = Diomedes.gap_sampler().adtype)

@@ -720,7 +720,17 @@ ReverseDiff.@grad_from_chainrules car_row_offsets(cx::ReverseDiff.TrackedArray, 
                                                   κs::ReverseDiff.TrackedArray, season::Vector{Int})
 
 "Names of the pace-scale parameters (#15), in sampling order (after the loss parameters)."
-pace_param_names(pace_scale::Bool) = pace_scale ? (:τ_κ, :e_κ, :b_mach) : ()
+pace_param_names(pace_scale::Bool, ncres::Bool = false) =
+    pace_scale ? (:τ_κ, :e_κ, ncres ? :z_res : :b_mach) : ()
+
+"""
+    car_residuals(θ, cov::LossCovariates) -> Vector
+
+The car-season effects `b_mach` (before centring within season) of a pace-scale
+draw θ: sampled directly (centred), or σ_mach·κ_season·z_res when the model
+samples them non-centred (`_ncres`, #102).
+"""
+car_residuals(θ, cov) = haskey(θ, :z_res) ? θ.σ_mach .* season_pace_scale(θ)[cov.mach_season] .* θ.z_res : θ.b_mach
 
 "Names of the age-curve parameters (#15 stage 2), in sampling order (after the pace scale)."
 age_param_names(age::Bool) = age ? (:τ_age, :e_age) : ()
@@ -882,7 +892,12 @@ effects are then comparable across eras.
         τ_κ ~ truncated(Normal(0, 0.25); lower = 0)
         e_κ ~ filldist(TDist(3), cov.n_seasons - 1)
         κs = season_pace_scale((; τ_κ, e_κ))
-        b_mach ~ IndepNormal(σ_mach .* κs[cov.mach_season])       # centred car effects (vectorised, #102)
+        if ext.ncres            # non-centred: small, weakly identified residuals funnel with σ_mach (#102)
+            z_res ~ filldist(Normal(), length(g.machines))
+            b_mach = σ_mach .* κs[cov.mach_season] .* z_res
+        else
+            b_mach ~ IndepNormal(σ_mach .* κs[cov.mach_season])   # centred car effects (vectorised, #102)
+        end
         fage = nothing
         if age_basis !== nothing
             τ_age ~ truncated(Normal(0, 0.2ps.s); lower = 0)
@@ -969,7 +984,7 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
                           slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false,
                           driver_ν = nothing, race_hier::Bool = false, race_mean::Bool = !race_hier,
                           circ::Bool = false, track::Bool = false, walk::Bool = false, walk1::Bool = false,
-                          works::Bool = false, dinc::Bool = false,
+                          works::Bool = false, dinc::Bool = false, ncres::Bool = false,
                           circuits = circ || track ? circuit_table() : nothing, cars = walk ? car_table() : nothing,
                           prior_scale = PriorScale(g))
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
@@ -987,12 +1002,13 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     walk && !pace_scale && throw(ArgumentError("chassis and engine walks are implemented for pace-scale models (pace_scale = true)"))
     (walk1 || works) && !walk && throw(ArgumentError("walk1 and works need the chassis and engine walks (walk = true)"))
     dinc && !big_loss && throw(ArgumentError("per-driver incident proneness is implemented for big-loss models (big_loss = true)"))
+    ncres && !pace_scale && throw(ArgumentError("non-centred car effects (ncres) are for pace-scale models (pace_scale = true)"))
     age && length(g.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
                             age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, dev ? DevRows(g) : nothing,
                             centred_drivers, driver_ν === nothing ? nothing : Float64(driver_ν), race_hier, race_mean, prior_scale,
-                            circ ? CircuitRows(g, cov.circuits) : nothing, track, (; walk1, works, dinc))
+                            circ ? CircuitRows(g, cov.circuits) : nothing, track, (; walk1, works, dinc, ncres))
 end
 
 """
@@ -1008,7 +1024,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                       slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false, driver_ν = nothing,
                       race_hier::Bool = false, race_mean::Bool = !race_hier, circ::Bool = false, track::Bool = false,
-                      walk::Bool = false, walk1::Bool = false, works::Bool = false, dinc::Bool = false,
+                      walk::Bool = false, walk1::Bool = false, works::Bool = false, dinc::Bool = false, ncres::Bool = false,
                       circuits = circ || track ? circuit_table() : nothing,
                       cars = walk ? car_table() : nothing, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
@@ -1019,7 +1035,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν,
-                             race_hier, race_mean, circ, track, walk, walk1, works, dinc, circuits, cars)
+                             race_hier, race_mean, circ, track, walk, walk1, works, dinc, ncres, circuits, cars)
     cov = model.args.cov
     race_gap = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
@@ -1043,7 +1059,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         if pace_scale      # centred car effects replace z_mach
             p = (; (k => v for (k, v) in pairs(p) if k !== :z_mach)...,
                  τ_κ = 0.05 + 0.05 * rand(rng), e_κ = 0.1 .* randn(rng, cov.n_seasons - 1),
-                 b_mach = 0.1 .* randn(rng, length(g.machines)))
+                 (ncres ? (; z_res = 0.1 .* randn(rng, length(g.machines))) : (; b_mach = 0.1 .* randn(rng, length(g.machines))))...)
         end
         age && (p = (; p..., τ_age = 0.05 + 0.05 * rand(rng), e_age = 0.1 .* randn(rng, length(g.age_years) - 1)))
         big_loss && (p = (; p..., a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)))

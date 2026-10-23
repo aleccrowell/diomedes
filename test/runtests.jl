@@ -901,7 +901,13 @@ end
         LDP = Turing.DynamicPPL.LogDensityProblems
         θ3 = (; (k => v for (k, v) in pairs(θ) if k ∉ (:a_ρ, :δ_λ2, :δ_reg, :β_works, :τ_dinc, :u_dinc))...,
               δ_reg_ch = 0.4, δ_reg_en = 0.6)
-        for (θm, kw) in ((θ, (; big_loss = true, walk1 = true, works = true, dinc = true)), (θ3, (;)))
+        # non-centred car effects (#102): z_res in b_mach's place
+        θn = NamedTuple(k === :b_mach ? (:z_res => v) : (k => v) for (k, v) in pairs(θ))
+        @test sum(Diomedes.paceloss_rows(θn, g; loss_duration = true, era = :rw, cov)) ≈
+              sum(Diomedes.paceloss_rows(merge(θ, (; b_mach = Diomedes.car_residuals(θn, cov))), g;
+                                         loss_duration = true, era = :rw, cov))
+        for (θm, kw) in ((θ, (; big_loss = true, walk1 = true, works = true, dinc = true)), (θ3, (;)),
+                         (θn, (; big_loss = true, walk1 = true, works = true, dinc = true, ncres = true)))
             model = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars, kw...)
             rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
             fd = LDF(model; adtype = AutoForwardDiff())

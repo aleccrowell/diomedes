@@ -54,11 +54,12 @@ for (d, (i, c)) in enumerate(draws)
     xc, xe = car_walk_states(θ, cw)
     hw = Diomedes.walk_offsets(xc, cw.row_ch, xe, cw.row_en) .* κ[race]
     w = zeros(nm); for (r, m) in enumerate(mach); w[m] += hw[r]; end
-    tot[d, :] = Diomedes.sum_to_zero_by(θ.b_mach .+ w ./ nrows, g.mach_season, sc)
+    tot[d, :] = Diomedes.sum_to_zero_by(Diomedes.car_residuals(θ, cov) .+ w ./ nrows, g.mach_season, sc)
 end
 bn = Diomedes.model_param_names(model_spec(base))
 bd = [(i, c) for c in 1:size(bchain[:σ_comp], 2) for i in 1:5:size(bchain[:σ_comp], 1)]
-btot = reduce(vcat, [Diomedes.sum_to_zero_by(Diomedes.draw(bchain, bn, i, c).b_mach, g.mach_season, sc)'
+bcov = LossCovariates(g, model_spec(base))
+btot = reduce(vcat, [Diomedes.sum_to_zero_by(Diomedes.car_residuals(Diomedes.draw(bchain, bn, i, c), bcov), g.mach_season, sc)'
                      for (i, c) in bd])
 mn, bm = vec(mean(tot; dims = 1)), vec(mean(btot; dims = 1))
 sn, bs = vec(std(tot; dims = 1)), vec(std(btot; dims = 1))
