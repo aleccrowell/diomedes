@@ -663,7 +663,7 @@ dev_param_names(dev::Bool) = dev ? (:τ_dev, :u_dev) : ()
 circ_param_names(circ::Bool) = circ ? (:τ_cx, :u_cx) : ()
 
 "Names of the chassis and engine walk parameters (#95), if the model has them."
-walk_param_names(walk::Bool) = walk ? (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :δ_reg) : ()
+walk_param_names(walk::Bool) = walk ? (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :δ_reg_ch, :δ_reg_en) : ()
 
 """
     race_pace_scale(θ, cov) -> Vector
@@ -845,8 +845,9 @@ effects are then comparable across eras.
             σ0_en ~ truncated(Normal(0, 2ps.s); lower = 0)
             z_en ~ filldist(Normal(), length(cw.engine.prev))
             δ_own ~ truncated(Normal(0, 1); lower = 0)            # larger steps: ownership, regulations
-            δ_reg ~ truncated(Normal(0, 1); lower = 0)          # one for chassis and engine rules (#95)
-            xc, xe = car_walk_states((; τ_ch, σ0_ch, z_ch, τ_en, σ0_en, z_en, δ_own, δ_reg), cw)
+            δ_reg_ch ~ truncated(Normal(0, 1); lower = 0)
+            δ_reg_en ~ truncated(Normal(0, 1); lower = 0)
+            xc, xe = car_walk_states((; τ_ch, σ0_ch, z_ch, τ_en, σ0_en, z_en, δ_own, δ_reg_ch, δ_reg_en), cw)
             hw = walk_offsets(xc, cw.row_ch, xe, cw.row_en)
             hdrv = hdrv === nothing ? hw : hdrv .+ hw
         end
@@ -956,7 +957,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
             cw = cov.cars
             p = (; p..., τ_ch = 0.05 + 0.05 * rand(rng), σ0_ch = scale(), z_ch = 0.1 .* randn(rng, length(cw.chassis.prev)),
                  τ_en = 0.05 + 0.05 * rand(rng), σ0_en = scale(), z_en = 0.1 .* randn(rng, length(cw.engine.prev)),
-                 δ_own = 0.1 + 0.1 * rand(rng), δ_reg = 0.1 + 0.1 * rand(rng))
+                 δ_own = 0.1 + 0.1 * rand(rng), δ_reg_ch = 0.1 + 0.1 * rand(rng), δ_reg_en = 0.1 + 0.1 * rand(rng))
         end
         race_hier && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng), τ_γ = std(race_gap) * (0.9 + 0.2 * rand(rng))))
         race_mean && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng)))

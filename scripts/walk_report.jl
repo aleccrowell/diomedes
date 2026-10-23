@@ -4,8 +4,8 @@
 #
 # Defaults: model `pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk` against the
 # baseline `pl_dur_rw_kappa_age_big_slope_dev_circ_track`, both on the published
-# fit's data. Prints the walk scales and step multipliers (and their difference:
-# ownership against regulation changes), the
+# fit's data. Prints the walk scales and step multipliers (and the multipliers'
+# differences, the test of one multiplier against one per kind of change), the
 # residual spread against the baseline's car spread, total car-season effects
 # against the baseline's, and example walks.
 
@@ -30,9 +30,9 @@ println("$model on $mode: $(nc) chains × $(ni) draws\n")
 println("Walk scales (% of race time, average-season units):")
 for k in (:τ_ch, :σ0_ch, :τ_en, :σ0_en, :σ_mach); show_q(string(k), vec(chain[k])); end
 println("\nStep multipliers exp(δ) at flagged steps:")
-for k in (:δ_own, :δ_reg); show_q("exp($k)", exp.(vec(chain[k]))); end
-println("\nDifference of the δs (one multiplier if it sits near 0):")
-for (a, b) in ((:δ_own, :δ_reg),)
+for k in (:δ_own, :δ_reg_ch, :δ_reg_en); show_q("exp($k)", exp.(vec(chain[k]))); end
+println("\nDifferences of the δs (one multiplier if these sit near 0):")
+for (a, b) in ((:δ_own, :δ_reg_ch), (:δ_own, :δ_reg_en), (:δ_reg_ch, :δ_reg_en))
     d = vec(chain[a]) .- vec(chain[b])
     show_q("$a − $b", d); @printf("  %-22s P(> 0) = %.2f\n", "", mean(d .> 0))
 end

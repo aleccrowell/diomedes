@@ -17,10 +17,13 @@ before the red-flag correction ([#19](https://github.com/aleccrowell/diomedes/is
 | in-season development | `…_dev` | +155.7 ± 16.4 | ~4.8 h | [#27](https://github.com/aleccrowell/diomedes/issues/27) |
 | learned common race level | (default) | +2.9 ± 6.0 (equal) | | [#34](https://github.com/aleccrowell/diomedes/issues/34), [#37](https://github.com/aleccrowell/diomedes/issues/37) |
 | circuit slopes; walls and rain on incidents | `…_circ_track` | +346 ± 28 | ~9.2 h | [#81](https://github.com/aleccrowell/diomedes/issues/81) |
+| chassis and engine walks | `…_walk` | +39 ± 12 (reliable rows) | ~16.4 h | [#95](https://github.com/aleccrowell/diomedes/issues/95) |
 
-The last row was fitted to F1 1950–2025 with retirements from 1996 as partial
-gaps, the data of the published fit, and compared with the same model without
-the two terms. The two terms were added together and their gain isn't split.
+The last two rows were fitted to F1 1950–2025 with retirements from 1996 as
+partial gaps, the data of the published fit, each compared with the row above.
+The circuit slopes and track terms were added together and their gain isn't
+split. The walks' gain is on the 15,955 rows where PSIS-LOO is reliable (Pareto
+k ≤ 0.7 in both fits; +38 ± 16 on all rows): see the comparison notes below.
 
 The gains, with ±2 standard errors (the first step, era terms over none, is
 +1,243 ± 60 and is left off the scale):
@@ -36,7 +39,8 @@ diomedesFigure("fig-elpd-gains", {
     { step: 4, term: "per-driver career slopes", gain: 89.7, se: 13.7 },
     { step: 5, term: "in-season development", gain: 155.7, se: 16.4 },
     { step: 6, term: "learned common race level", gain: 2.9, se: 6.0 },
-    { step: 7, term: "circuit slopes; walls and rain", gain: 346, se: 28 }
+    { step: 7, term: "circuit slopes; walls and rain", gain: 346, se: 28 },
+    { step: 8, term: "chassis and engine walks", gain: 39.2, se: 11.9 }
   ] },
   transform: [
     { calculate: "datum.gain - 2 * datum.se", as: "lo" },
@@ -94,6 +98,23 @@ one, and each loss is 16–27% larger. Walls hardly change how often losses happ
 make them about 23% larger. Car and driver effects barely move (correlation
 0.996 with the previous fit).
 
+**Chassis and engine walks** ([#95](https://github.com/aleccrowell/diomedes/issues/95)). Each car-season's effect
+combines the works that built the chassis and the works that built the engine,
+each a random walk over its seasons, plus a residual. A rename keeps a works
+(Toro Rosso → AlphaTauri); rebadged engines go to their builder (TAG Heuer =
+Renault). The chassis walk moves about 0.35% of race time per year, the engine
+walk about 0.17%; a new works starts about 1.0% from the field. Steps are larger
+at a change of ownership (×1.9) and at major chassis or engine rule changes
+(×1.2 and ×1.4; the two can't be told apart). The walks carry about 84% of the
+car-season variance: the residual spread is 0.43%, against 1.06% for the
+car-season effects before. The gain is modest and comes from clean dry races,
+mostly in the 1980s and 2010s. It doesn't make the sparse 1950s car-seasons
+much more precise (posterior sd −10%). Linking a team's seasons moves some pace
+from drivers to cars: driver effects correlate 0.97 with the previous fit, but
+their spread shrinks from 0.74% to 0.59%. The largest shifts are drivers who
+raced only for weak teams (Bianchi and Chilton at Marussia move about 1.3–1.5%
+faster), and Verstappen is now the most likely fastest driver.
+
 ## How models were compared
 
 - **PSIS-LOO** (Pareto-smoothed importance-sampling leave-one-out) on every row:
@@ -101,7 +122,11 @@ make them about 23% larger. Car and driver effects barely move (correlation
   ([`pointwise_loglik`](@ref)).
 - **Its weak spot.** Rows with Pareto k > 0.7 make the estimate unreliable.
   There are 350 such rows (2.7%) for the era models, rising to 814 for the
-  development model and 869 with the circuit terms ([#18](https://github.com/aleccrowell/diomedes/issues/18), [#27](https://github.com/aleccrowell/diomedes/issues/27), [#81](https://github.com/aleccrowell/diomedes/issues/81)).
+  development model, 869 with the circuit terms and 792 with the walks ([#18](https://github.com/aleccrowell/diomedes/issues/18), [#27](https://github.com/aleccrowell/diomedes/issues/27), [#81](https://github.com/aleccrowell/diomedes/issues/81), [#95](https://github.com/aleccrowell/diomedes/issues/95)).
+  They are well-fitted rows that alone carry much of a sparse parameter, mostly
+  1950s–60s car-seasons with a few races ([#91](https://github.com/aleccrowell/diomedes/issues/91)). From #95 on,
+  comparisons also report the gain on rows with k ≤ 0.7 in both fits
+  (`scripts/pareto_k_summary.jl`).
 - **Grouped K-fold** checks the close calls. Each race's results are spread
   over 5 folds, so every race keeps an intercept. K-fold confirmed the era
   ranking: random walk over decade by 43.5 ± 15.2, and over regime by
