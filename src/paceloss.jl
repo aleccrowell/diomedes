@@ -153,25 +153,47 @@ end
     return FD.value(r), FD.partials(r)
 end
 
+# A row's incident probability: the race's, shifted on the logit scale by the
+# driver's incident offset (#101) if the model has one.
+row_π(πr, r, πd, d) = πd === nothing ? πr[r] : logistic(logit(πr[r]) + πd[d])
+
+# Scatter ∂ℓ/∂π_row into the race's π and the driver's offset (#101): with
+# π_row = logistic(logit(π_r) + o_d), ∂π_row/∂o_d = π_row(1 - π_row) and
+# ∂π_row/∂π_r = π_row(1 - π_row) / (π_r(1 - π_r)).
+@inline function scatter_π!(dπ, dπd, p, πr, r, πd, d)
+    if πd === nothing
+        dπ[r] += p
+    else
+        q = row_π(πr, r, πd, d)
+        w = p * q * (1 - q)
+        dπ[r] += w / (πr[r] * (1 - πr[r]))
+        dπd[d] += w
+    end
+end
+
 # Per-row values and derivatives with the big-loss component (#16): as
-# paceloss_row_grads, plus scalar derivatives for ρ and λ2.
-function pacebig_row_grads(st, σ, πr, λr, ρ, λ2, g)
+# paceloss_row_grads, plus scalar derivatives for ρ and λ2. `πd`: per-driver
+# logit offsets on π (#101), or nothing; their derivatives come back in dπd.
+function pacebig_row_grads(st, σ, πr, λr, ρ, λ2, g; πd = nothing)
     dμt, dμc = zeros(length(st.μt)), zeros(length(st.μc))
     dπ, dλ = zeros(length(πr)), zeros(length(λr))
+    dπd = πd === nothing ? nothing : zeros(length(πd))
     val, dσ, dρ, dλ2 = 0.0, 0.0, 0.0, 0.0
     for i in eachindex(st.μt)
         r, y = g.t_race[i], g.y[i]
         v, p = value_gradN((μ, s, q, l, h, l2) -> pacebig_logpdf(y - μ, s, q, l, h, l2),
-                           st.μt[i], σ, πr[r], λr[r], ρ, λ2)
-        val += v; dμt[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]; dρ += p[5]; dλ2 += p[6]
+                           st.μt[i], σ, row_π(πr, r, πd, g.t_comp[i]), λr[r], ρ, λ2)
+        val += v; dμt[i] = p[1]; dσ += p[2]; dλ[r] += p[4]; dρ += p[5]; dλ2 += p[6]
+        scatter_π!(dπ, dπd, p[3], πr, r, πd, g.t_comp[i])
     end
     for i in eachindex(st.μc)
         r, lo, hi = g.c_race[i], g.lo[i], g.hi[i]
         v, p = value_gradN((μ, s, q, l, h, l2) -> pacebig_loginterval(lo - μ, hi - μ, s, q, l, h, l2),
-                           st.μc[i], σ, πr[r], λr[r], ρ, λ2)
-        val += v; dμc[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]; dρ += p[5]; dλ2 += p[6]
+                           st.μc[i], σ, row_π(πr, r, πd, g.c_comp[i]), λr[r], ρ, λ2)
+        val += v; dμc[i] = p[1]; dσ += p[2]; dλ[r] += p[4]; dρ += p[5]; dλ2 += p[6]
+        scatter_π!(dπ, dπd, p[3], πr, r, πd, g.c_comp[i])
     end
-    return val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2
+    return val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2, dπd
 end
 
 # Per-row values and (μ, σ, π, λ) derivatives from 4-component duals, given
@@ -229,15 +251,25 @@ function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv
 end
 
 # `big` = nothing, or [ρ, λ2] for the two-component incident loss (#16).
-function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, big, g, season_counts)
+paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, big, g, season_counts) =
+    _loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, big, nothing, g, season_counts)
+
+# With per-driver incident offsets (#101): `πd` shifts each row's π on the logit
+# scale by its driver's offset (see `row_π`). Big-loss models only.
+paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, ρ::Real, λ2::Real, πd::AbstractVector, g,
+                   season_counts) =
+    _loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, [ρ, λ2], πd, g, season_counts)
+
+function _loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv, big, πd, g, season_counts)
     a = σ_comp .* sum_to_zero(z_comp)
     b = sum_to_zero_by(b_mach, g.mach_season, season_counts)
     T = promote_type(eltype(a), eltype(b), eltype(γ), typeof(σ), eltype(πr), eltype(λr), eltype(κr),
-                     hdrv === nothing ? Float64 : eltype(hdrv), big === nothing ? Float64 : eltype(big))
-    lpdf(x, r) = big === nothing ? paceloss_logpdf(x, σ, πr[r], λr[r]) :
-        pacebig_logpdf(x, σ, πr[r], λr[r], big[1], big[2])
-    lint(lo, hi, r) = big === nothing ? paceloss_loginterval(lo, hi, σ, πr[r], λr[r]) :
-        pacebig_loginterval(lo, hi, σ, πr[r], λr[r], big[1], big[2])
+                     hdrv === nothing ? Float64 : eltype(hdrv), big === nothing ? Float64 : eltype(big),
+                     πd === nothing ? Float64 : eltype(πd))
+    lpdf(x, r, d) = big === nothing ? paceloss_logpdf(x, σ, row_π(πr, r, πd, d), λr[r]) :
+        pacebig_logpdf(x, σ, row_π(πr, r, πd, d), λr[r], big[1], big[2])
+    lint(lo, hi, r, d) = big === nothing ? paceloss_loginterval(lo, hi, σ, row_π(πr, r, πd, d), λr[r]) :
+        pacebig_loginterval(lo, hi, σ, row_π(πr, r, πd, d), λr[r], big[1], big[2])
     nt = length(g.t_race)
     h(i) = hdrv === nothing ? zero(T) : hdrv[i]
     ct = [κr[g.t_race[i]] * (a[g.t_comp[i]] + h(i)) + b[g.t_mach[i]] for i in eachindex(g.t_race)]
@@ -249,15 +281,41 @@ function paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr, hdrv
     ll = zero(T)
     for i in eachindex(g.y)
         r = g.t_race[i]
-        ll += lpdf(g.y[i] - (γ[r] + ct[i] - cbar[r]), r)
+        ll += lpdf(g.y[i] - (γ[r] + ct[i] - cbar[r]), r, g.t_comp[i])
     end
     for i in eachindex(g.lo)
         r = g.c_race[i]
         μ = γ[r] + cc[i] - cbar[r]
-        ll += lint(g.lo[i] - μ, g.hi[i] - μ, r)
+        ll += lint(g.lo[i] - μ, g.hi[i] - μ, r, g.c_comp[i])
     end
     return ll
 end
+
+# Reverse rule with per-driver incident offsets (#101): as the big-loss rule,
+# plus the offsets' gradient.
+function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
+                              hdrv, ρ::Real, λ2::Real, πd::AbstractVector, g::GapData, season_counts)
+    zc = z_comp .- mean(z_comp)
+    b = b_mach .- group_means(b_mach, g.mach_season, season_counts)[g.mach_season]
+    st = row_means_ab(γ, σ_comp .* zc, b, g; κ = κr, κ_cars = false, hdrv)
+    val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2, dπd = pacebig_row_grads(st, σ, πr, λr, ρ, λ2, g; πd)
+    d = row_pullback_ab(dμt, dμc, st, g; κ = κr, κ_cars = false, hdrv = hdrv !== nothing)
+    dσ_comp = sum(d.da .* zc)
+    dz_comp = σ_comp .* (d.da .- mean(d.da))
+    db_mach = d.db .- group_means(d.db, g.mach_season, season_counts)[g.mach_season]
+    dh = hdrv === nothing ? NoTangent() : d.dh
+    pullback(Δ) = (NoTangent(), Δ .* d.dγ, Δ .* dz_comp, Δ * dσ_comp, Δ .* db_mach, Δ * dσ,
+                   Δ .* dπ, Δ .* dλ, Δ .* d.dκ, dh isa NoTangent ? dh : Δ .* dh, Δ * dρ, Δ * dλ2,
+                   Δ .* dπd, NoTangent(), NoTangent())
+    return val, pullback
+end
+ReverseDiff.@grad_from_chainrules paceloss_loglik_cc(γ::ReverseDiff.TrackedArray, z_comp::ReverseDiff.TrackedArray,
+                                                     σ_comp::ReverseDiff.TrackedReal, b_mach::ReverseDiff.TrackedArray,
+                                                     σ::ReverseDiff.TrackedReal, πr::ReverseDiff.TrackedArray,
+                                                     λr::ReverseDiff.TrackedArray, κr::ReverseDiff.TrackedArray,
+                                                     hdrv::ReverseDiff.TrackedArray, ρ::ReverseDiff.TrackedReal,
+                                                     λ2::ReverseDiff.TrackedReal, πd::ReverseDiff.TrackedArray,
+                                                     g::GapData, season_counts::Vector{Int})
 
 function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp, b_mach, σ, πr, λr, κr,
                               hdrv, g::GapData, season_counts)
@@ -276,7 +334,7 @@ function ChainRulesCore.rrule(::typeof(paceloss_loglik_cc), γ, z_comp, σ_comp,
         val, dμt, dμc, dσ, dπ, dλ = paceloss_row_grads(st, σ, πr, λr, g)
         dbig = NoTangent()
     else
-        val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2 = pacebig_row_grads(st, σ, πr, λr, big[1], big[2], g)
+        val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2, _ = pacebig_row_grads(st, σ, πr, λr, big[1], big[2], g)
         dbig = [dρ, dλ2]
     end
     d = row_pullback_ab(dμt, dμc, st, g; κ = κr, κ_cars = false, hdrv = hdrv !== nothing)
@@ -663,7 +721,13 @@ dev_param_names(dev::Bool) = dev ? (:τ_dev, :u_dev) : ()
 circ_param_names(circ::Bool) = circ ? (:τ_cx, :u_cx) : ()
 
 "Names of the chassis and engine walk parameters (#95), if the model has them."
-walk_param_names(walk::Bool) = walk ? (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :δ_reg) : ()
+walk_param_names(walk::Bool, walk1::Bool = false) =
+    !walk ? () : walk1 ? (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :δ_reg) :
+    (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :δ_reg_ch, :δ_reg_en)
+
+"Names of the works-term (#100) and per-driver incident (#101) parameters, in sampling order."
+works_param_names(works::Bool) = works ? (:β_works,) : ()
+dinc_param_names(dinc::Bool) = dinc ? (:τ_dinc, :u_dinc) : ()
 
 """
     race_pace_scale(θ, cov) -> Vector
@@ -739,7 +803,7 @@ effects are then comparable across eras.
 @model function paceloss_effects(g::GapData, season_counts::Vector{Int}, cov::LossCovariates,
                                  loss_duration::Bool, era::Symbol, pace_scale::Bool, age_basis,
                                  big_loss::Bool, career_rows, dev_rows, centred_drivers::Bool, driver_ν,
-                                 race_hier::Bool, race_mean::Bool, ps, circ_rows, track::Bool)
+                                 race_hier::Bool, race_mean::Bool, ps, circ_rows, track::Bool, ext)
     # priors on %-of-winner quantities are in units of the dataset's gap scale ps.s
     # (#30; see PriorScale); unitless ones (probabilities, log/logit steps) are not
     σ_comp ~ truncated(Normal(0, 2ps.s); lower = 0)
@@ -845,13 +909,33 @@ effects are then comparable across eras.
             σ0_en ~ truncated(Normal(0, 2ps.s); lower = 0)
             z_en ~ filldist(Normal(), length(cw.engine.prev))
             δ_own ~ truncated(Normal(0, 1); lower = 0)            # larger steps: ownership, regulations
-            δ_reg ~ truncated(Normal(0, 1); lower = 0)          # one for chassis and engine rules (#95)
-            xc, xe = car_walk_states((; τ_ch, σ0_ch, z_ch, τ_en, σ0_en, z_en, δ_own, δ_reg), cw)
+            if ext.walk1            # one for chassis and engine rules (#97)
+                δ_reg ~ truncated(Normal(0, 1); lower = 0)
+                θw = (; τ_ch, σ0_ch, z_ch, τ_en, σ0_en, z_en, δ_own, δ_reg)
+            else                    # one per family, as in the #95 fit
+                δ_reg_ch ~ truncated(Normal(0, 1); lower = 0)
+                δ_reg_en ~ truncated(Normal(0, 1); lower = 0)
+                θw = (; τ_ch, σ0_ch, z_ch, τ_en, σ0_en, z_en, δ_own, δ_reg_ch, δ_reg_en)
+            end
+            xc, xe = car_walk_states(θw, cw)
             hw = walk_offsets(xc, cw.row_ch, xe, cw.row_en)
+            if ext.works            # the engine builder's own team (#100), scaled by κ like the walks
+                β_works ~ Normal(0, ps.s)
+                hw = hw .+ β_works .* cw.row_works
+            end
             hdrv = hdrv === nothing ? hw : hdrv .+ hw
         end
+        πd = nothing
+        if ext.dinc                 # per-driver incident proneness on logit π (#101), centred across drivers
+            τ_dinc ~ truncated(Normal(0, 0.5); lower = 0)
+            u_dinc ~ filldist(Normal(), length(g.competitors))
+            πd = τ_dinc .* (u_dinc .- mean(u_dinc))
+        end
         # each call matches a ReverseDiff binding of the fused rule (see paceloss_loglik_cc)
-        if big_loss
+        if big_loss && πd !== nothing
+            @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], hdrv,
+                                            logistic(a_ρ), exp(a_λ + δ_λ2), πd, g, season_counts)
+        elseif big_loss
             @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], hdrv,
                                             logistic(a_ρ), exp(a_λ + δ_λ2), g, season_counts)
         else
@@ -867,7 +951,8 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
                           pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                           slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false,
                           driver_ν = nothing, race_hier::Bool = false, race_mean::Bool = !race_hier,
-                          circ::Bool = false, track::Bool = false, walk::Bool = false,
+                          circ::Bool = false, track::Bool = false, walk::Bool = false, walk1::Bool = false,
+                          works::Bool = false, dinc::Bool = false,
                           circuits = circ || track ? circuit_table() : nothing, cars = walk ? car_table() : nothing,
                           prior_scale = PriorScale(g))
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
@@ -883,12 +968,14 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     dev && !pace_scale && throw(ArgumentError("in-season development is implemented for pace-scale models (pace_scale = true)"))
     circ && !pace_scale && throw(ArgumentError("circuit slopes are implemented for pace-scale models (pace_scale = true)"))
     walk && !pace_scale && throw(ArgumentError("chassis and engine walks are implemented for pace-scale models (pace_scale = true)"))
+    (walk1 || works) && !walk && throw(ArgumentError("walk1 and works need the chassis and engine walks (walk = true)"))
+    dinc && !big_loss && throw(ArgumentError("per-driver incident proneness is implemented for big-loss models (big_loss = true)"))
     age && length(g.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
                             age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, dev ? DevRows(g) : nothing,
                             centred_drivers, driver_ν === nothing ? nothing : Float64(driver_ν), race_hier, race_mean, prior_scale,
-                            circ ? CircuitRows(g, cov.circuits) : nothing, track)
+                            circ ? CircuitRows(g, cov.circuits) : nothing, track, (; walk1, works, dinc))
 end
 
 """
@@ -904,7 +991,8 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                       slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false, driver_ν = nothing,
                       race_hier::Bool = false, race_mean::Bool = !race_hier, circ::Bool = false, track::Bool = false,
-                      walk::Bool = false, circuits = circ || track ? circuit_table() : nothing,
+                      walk::Bool = false, walk1::Bool = false, works::Bool = false, dinc::Bool = false,
+                      circuits = circ || track ? circuit_table() : nothing,
                       cars = walk ? car_table() : nothing, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
@@ -914,7 +1002,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν,
-                             race_hier, race_mean, circ, track, walk, circuits, cars)
+                             race_hier, race_mean, circ, track, walk, walk1, works, dinc, circuits, cars)
     cov = model.args.cov
     race_gap = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
@@ -956,8 +1044,12 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
             cw = cov.cars
             p = (; p..., τ_ch = 0.05 + 0.05 * rand(rng), σ0_ch = scale(), z_ch = 0.1 .* randn(rng, length(cw.chassis.prev)),
                  τ_en = 0.05 + 0.05 * rand(rng), σ0_en = scale(), z_en = 0.1 .* randn(rng, length(cw.engine.prev)),
-                 δ_own = 0.1 + 0.1 * rand(rng), δ_reg = 0.1 + 0.1 * rand(rng))
+                 δ_own = 0.1 + 0.1 * rand(rng),
+                 (walk1 ? (; δ_reg = 0.1 + 0.1 * rand(rng)) :
+                  (; δ_reg_ch = 0.1 + 0.1 * rand(rng), δ_reg_en = 0.1 + 0.1 * rand(rng)))...)
+            works && (p = (; p..., β_works = 0.1 * randn(rng)))
         end
+        dinc && (p = (; p..., τ_dinc = 0.05 + 0.05 * rand(rng), u_dinc = 0.1 .* randn(rng, length(g.competitors))))
         race_hier && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng), τ_γ = std(race_gap) * (0.9 + 0.2 * rand(rng))))
         race_mean && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng)))
         centred_drivers && (p = (; (k => v for (k, v) in pairs(p) if k !== :z_comp)...,

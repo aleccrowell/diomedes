@@ -857,44 +857,73 @@ end
         @test ws.prev == [0, 1, 0, 3, 4] && ws.own == [0, 0, 0, 0, 1] && ws.reg == [0, 1, 0, 0, 0]
         @test ws.rootgap ≈ [1, sqrt(2), 1, 1, 1]
 
-        # the model: rows vs the fused rule with the walk offsets in the κ-scaled driver offset
+        # the model: rows vs the fused rule with the walk offsets (and the works term, #100)
+        # in the κ-scaled driver offset, and per-driver incident offsets on logit π (#101)
         nc, nm, nr = length(g.competitors), length(g.machines), length(g.races)
         cov = LossCovariates(g; cars)
         sc = Diomedes.season_counts(g)
+        @test sum(cw.row_works) > 0 && sum(cw.row_works) < length(cw.row_works)     # Ferrari, Mercedes, Renault rows
+        @test all(cw.row_works[findall(==("ferrari"), first.(split.(cw.chassis.names[cw.row_ch])))] .== 1)
         θ = (; σ_comp = 0.7, σ_mach = 0.5, σ = 0.4, z_comp = randn(rng, nc), μ_γ = 1.8, γ = randn(rng, nr),
              a_π = -1.2, a_λ = 0.6, β_dur_π = 0.25, β_dur_λ = 0.3,
              τ_π_rw = 0.1, τ_λ_rw = 0.2, e_π_rw = randn(rng, cov.n_seasons - 1), e_λ_rw = randn(rng, cov.n_seasons - 1),
-             τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm),
+             τ_κ = 0.3, e_κ = randn(rng, cov.n_seasons - 1), b_mach = randn(rng, nm), a_ρ = -2.5, δ_λ2 = 2.0,
              τ_ch = 0.4, σ0_ch = 0.9, z_ch = randn(rng, length(cw.chassis.prev)),
              τ_en = 0.3, σ0_en = 0.7, z_en = randn(rng, length(cw.engine.prev)),
-             δ_own = 0.5, δ_reg = 0.4)
+             δ_own = 0.5, δ_reg = 0.4, β_works = -0.3, τ_dinc = 0.6, u_dinc = randn(rng, nc))
         πr, λr = Diomedes.race_loss(θ, cov, true, :rw)
         xc, xe = car_walk_states(θ, cov.cars)
-        hw = Diomedes.walk_offsets(xc, cw.row_ch, xe, cw.row_en)
+        hw = Diomedes.walk_offsets(xc, cw.row_ch, xe, cw.row_en) .+ θ.β_works .* cw.row_works
+        πd = Diomedes.driver_incident_offsets(θ)
+        @test abs(sum(πd)) < 1e-10
+        ρ, λ2 = 1 / (1 + exp(-θ.a_ρ)), exp(θ.a_λ + θ.δ_λ2)
         @test sum(Diomedes.paceloss_rows(θ, g; loss_duration = true, era = :rw, cov)) ≈
-              Diomedes.paceloss_loglik_cc(θ.γ, θ.z_comp, θ.σ_comp, θ.b_mach, θ.σ, πr, λr, race_pace_scale(θ, cov), hw, g, sc)
+              Diomedes.paceloss_loglik_cc(θ.γ, θ.z_comp, θ.σ_comp, θ.b_mach, θ.σ, πr, λr, race_pace_scale(θ, cov), hw,
+                                          ρ, λ2, πd, g, sc)
+        # with all offsets zero, the driver-offset method equals the race-level one
+        @test Diomedes.paceloss_loglik_cc(θ.γ, θ.z_comp, θ.σ_comp, θ.b_mach, θ.σ, πr, λr, race_pace_scale(θ, cov), hw,
+                                          ρ, λ2, zeros(nc), g, sc) ≈
+              Diomedes.paceloss_loglik_cc(θ.γ, θ.z_comp, θ.σ_comp, θ.b_mach, θ.σ, πr, λr, race_pace_scale(θ, cov), hw,
+                                          ρ, λ2, g, sc)
+        # the driver-offset rule's gradient against ReverseDiff through the plain loop
+        w8 = randn(rng, nc)
+        fr(o) = Diomedes.paceloss_loglik_cc(θ.γ, θ.z_comp, θ.σ_comp, θ.b_mach, θ.σ, πr, λr, race_pace_scale(θ, cov), hw,
+                                            ρ, λ2, o, g, sc)
+        fp(o) = Diomedes._loglik_cc(θ.γ, θ.z_comp, θ.σ_comp, θ.b_mach, θ.σ, πr, λr, race_pace_scale(θ, cov), hw,
+                                    [ρ, λ2], o, g, sc)
+        @test RD.gradient(fr, πd) ≈ RD.gradient(fp, πd)
         # states centred within season
         @test all(abs(sum(xc[cw.chassis.season .== s])) < 1e-10 for s in 1:2)
         @test all(abs(sum(xe[cw.engine.season .== s])) < 1e-10 for s in 1:2)
-        # sampler gradient vs ForwardDiff, and the walk reaches ReverseDiff through the fused rules
-        model = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars)
-        @test Tuple(k for k in keys(θ) if k in Diomedes.walk_param_names(true)) == Diomedes.walk_param_names(true)
+        # sampler gradient vs ForwardDiff, and every term reaches ReverseDiff through the fused rules,
+        # for the combined model and for the #95 model (three step multipliers)
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
-        rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
-        fd = LDF(model; adtype = AutoForwardDiff())
-        for _ in 1:2
-            θx = map(v -> v isa AbstractVector ? 0.5 .* randn(rng, length(v)) : 0.5 * randn(rng), θ)
-            θx = merge(θx, NamedTuple(k => 0.2 + rand(rng) for k in keys(θ)
-                                      if any(p -> startswith(string(k), p), ("σ", "τ", "δ"))))
-            x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θx)])
-            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+        θ3 = (; (k => v for (k, v) in pairs(θ) if k ∉ (:a_ρ, :δ_λ2, :δ_reg, :β_works, :τ_dinc, :u_dinc))...,
+              δ_reg_ch = 0.4, δ_reg_en = 0.6)
+        for (θm, kw) in ((θ, (; big_loss = true, walk1 = true, works = true, dinc = true)), (θ3, (;)))
+            model = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars, kw...)
+            rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
+            fd = LDF(model; adtype = AutoForwardDiff())
+            for _ in 1:2
+                θx = map(v -> v isa AbstractVector ? 0.5 .* randn(rng, length(v)) : 0.5 * randn(rng), θm)
+                θx = merge(θx, NamedTuple(k => 0.2 + rand(rng) for k in keys(θm)
+                                          if any(p -> startswith(string(k), p), ("σ", "τ", "δ"))))
+                x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θx)])
+                @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+            end
+            tape = RD.GradientTape(z -> LDP.logdensity(LDF(model), z), reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θm)]))
+            @test length(tape.tape) < 1000
         end
-        tape = RD.GradientTape(z -> LDP.logdensity(LDF(model), z), reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θ)]))
-        @test length(tape.tape) < 1000
         s = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk")
-        @test s.walk && s.circ && Diomedes.model_param_names(s)[(end - 7):end] == Diomedes.walk_param_names(true)
+        @test s.walk && !s.walk1 && s.circ && Diomedes.model_param_names(s)[(end - 8):end] == Diomedes.walk_param_names(true)
+        s1 = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc")
+        @test s1.walk && s1.walk1 && s1.works && s1.dinc
+        @test Diomedes.model_param_names(s1)[(end - 10):end] ==
+              (Diomedes.walk_param_names(true, true)..., :β_works, :τ_dinc, :u_dinc)
         @test !model_spec("pl_dur_rw_kappa").walk
+        @test_throws ArgumentError paceloss_effects(g; pace_scale = true, works = true, cars)     # works needs the walks
+        @test_throws ArgumentError paceloss_effects(g; pace_scale = true, dinc = true)            # dinc needs big losses
         @test_throws ArgumentError paceloss_effects(g; walk = true, cars)        # needs the pace scale
     end
 

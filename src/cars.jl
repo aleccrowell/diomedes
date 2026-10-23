@@ -9,14 +9,16 @@ const CAR_DIR = joinpath(dirname(@__DIR__), "reference", "cars")
 The car reference tables (#95): `entries` (each Jolpica race entry matched to
 F1DB's chassis constructor and engine maker), `works` (the works that built each
 constructor's cars), `engines` (the builder behind each engine name), `ownership`
-(changes of a works' owner, by the first season raced under the new owner) and
+(changes of a works' owner, by the first season raced under the new owner),
 `regulations` (major pace-relevant regulation changes, tagged chassis and/or
-engine). Pass it to `CarWalks` or the race model (`paceloss_effects(…; walk = true)`).
+engine) and `works_engines` (seasons in which an engine builder owned the
+chassis works it supplied: its works team, #100). Pass it to `CarWalks` or the race model (`paceloss_effects(…; walk = true)`).
 """
 function car_table(dir::AbstractString = CAR_DIR)
     rd(f) = CSV.read(joinpath(dir, f), DataFrame; stringtype = String)
     return (; entries = rd("entries.csv"), works = rd("works.csv"), engines = rd("engine_builders.csv"),
-            ownership = rd("ownership_changes.csv"), regulations = rd("pace_regulations.csv"))
+            ownership = rd("ownership_changes.csv"), regulations = rd("pace_regulations.csv"),
+            works_engines = rd("works_engines.csv"))
 end
 
 """
@@ -52,7 +54,8 @@ end
 
 Per-row chassis and engine walk states for the race model (#95), rows in GapData
 order (timed, then lapped): `row_ch` and `row_en` index `chassis` and `engine`
-(see `WalkStates`). Each row's chassis is its F1DB constructor's works and its
+(see `WalkStates`). `row_works` is 1 for a row whose engine builder owned its
+chassis works that season (the builder's works team, #100), else 0. Each row's chassis is its F1DB constructor's works and its
 engine is its engine maker's builder, for that season. A row without an F1DB
 match takes its car-season's most common chassis and engine.
 """
@@ -61,6 +64,7 @@ struct CarWalks
     engine::WalkStates
     row_ch::Vector{Int}
     row_en::Vector{Int}
+    row_works::Vector{Float64}
 end
 
 function _lookup_range(tab, key::Symbol, val, y, out::Symbol)
@@ -113,8 +117,12 @@ function CarWalks(g::GapData, cars = car_table())
     regs = cars.regulations
     ch, ich = _walk_states(collect(zip(wk, rows.season)), s0, ns, own, regs.season[regs.chassis .== 1])
     en, ien = _walk_states(collect(zip(bd, rows.season)), s0, ns, Set{Tuple{String,Int}}(), regs.season[regs.engine .== 1])
+    we = hasproperty(cars, :works_engines) ? cars.works_engines : DataFrame(builder_id = String[], works_id = String[],
+                                                                            first_year = Int[], last_year = Int[])
+    isworks(b, w, y) = any(r -> r.builder_id == b && r.works_id == w && r.first_year <= y <= r.last_year, eachrow(we))
     return CarWalks(ch, en, [ich[(w, y)] for (w, y) in zip(wk, rows.season)],
-                    [ien[(b, y)] for (b, y) in zip(bd, rows.season)])
+                    [ien[(b, y)] for (b, y) in zip(bd, rows.season)],
+                    [Float64(isworks(b, w, y)) for (b, w, y) in zip(bd, wk, rows.season)])
 end
 
 """
@@ -183,10 +191,13 @@ The chassis and engine walk states for parameters θ, each centred within season
 (a shift shared by a season's walks is absorbed by the race intercepts), in
 average-season % units (the likelihood scales them by κ, like the driver effects).
 A step across a tagged regulation change widens by exp(δ_reg), one multiplier for
-both families: with one each, they were indistinguishable (#95).
+both families (`_walk1`, #97: with one each, they were indistinguishable), or by
+exp(δ_reg_ch) and exp(δ_reg_en) (`_walk`, the published #95 fit).
 """
 function car_walk_states(θ, cw::CarWalks)
-    xc = walk_path(walk_steps(θ.τ_ch, θ.σ0_ch, θ.δ_own, θ.δ_reg, θ.z_ch, cw.chassis), cw.chassis.prev)
-    xe = walk_path(walk_steps(θ.τ_en, θ.σ0_en, zero(θ.δ_own), θ.δ_reg, θ.z_en, cw.engine), cw.engine.prev)
+    # one regulation multiplier (`_walk1`, #97) or one per family (`_walk`, the #95 fit)
+    δc, δe = haskey(θ, :δ_reg) ? (θ.δ_reg, θ.δ_reg) : (θ.δ_reg_ch, θ.δ_reg_en)
+    xc = walk_path(walk_steps(θ.τ_ch, θ.σ0_ch, θ.δ_own, δc, θ.z_ch, cw.chassis), cw.chassis.prev)
+    xe = walk_path(walk_steps(θ.τ_en, θ.σ0_en, zero(θ.δ_own), δe, θ.z_en, cw.engine), cw.engine.prev)
     return center_by(xc, cw.chassis.season, cw.chassis.counts), center_by(xe, cw.engine.season, cw.engine.counts)
 end
