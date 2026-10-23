@@ -29,7 +29,12 @@ differ between modes.
 <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: car effect, % of race time relative to the other cars in the same season;
 <code>dev_mean</code>, <code>dev_sd</code>: in-season development trend, % from the season's first round to its last, relative to the field;
 <code>speed_*</code>, <code>rough_*</code>, <code>temp_*</code> (mean, sd): circuit slopes, % of race time per standard deviation of the race's
-average speed, road-surface roughness and air temperature, relative to the car's own races and to its field (positive = relatively slower)</td></tr>
+average speed, road-surface roughness and air temperature, relative to the car's own races and to its field (positive = relatively slower);
+<code>chassis_mean</code>, <code>engine_mean</code>, <code>residual_mean</code>: the car effect's mean split into its chassis-works walk, engine-builder walk and residual parts, each centred within season (they add up to <code>mean</code>)</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/race/walks.csv">walks.csv</a></td><td>walk × season</td>
+<td><code>family</code> (chassis or engine), <code>walk</code> (the works or engine builder, as in the <a href="https://github.com/aleccrowell/diomedes/tree/master/reference/cars">car reference tables</a>), <code>season</code>;
+<code>mean</code>, <code>q05</code>, <code>q95</code>: the walk's state, % of race time in average-season units, centred within season (negative = faster);
+<code>own_change</code>, <code>reg_change</code>: the step into this season crosses a change of ownership or a major regulation change</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/ranks.csv">ranks.csv</a></td><td>driver with ≥ 20 results</td>
 <td><code>id</code>, <code>name</code>, <code>rows</code>; <code>p_top1</code>, <code>p_top3</code>, <code>p_top10</code>: share of the
 posterior draws in which the driver ranks fastest, in the top 3, in the top 10 among these drivers;

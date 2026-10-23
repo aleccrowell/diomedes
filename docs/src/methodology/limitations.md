@@ -28,6 +28,14 @@
   temperatures come from a reanalysis with no satellite data, and many start
   times before 1996 are assumed from the circuit's or era's usual time
   ([#81](https://github.com/aleccrowell/diomedes/issues/81)).
+- **Chassis against engine is weakly identified** where an engine had one
+  user. The walks' engine levels also absorb some of their customers' pace, and
+  the works and engine-builder tables involve judgement calls (takeovers,
+  rebadged engines), marked uncertain in the
+  [reference tables](https://github.com/aleccrowell/diomedes/tree/master/reference/cars) ([#95](https://github.com/aleccrowell/diomedes/issues/95)).
+- **Sparse car-seasons stay imprecise.** A 1950s car with a few races is still
+  identified mostly by those races: pooling over a works' seasons cut posterior
+  sds by only about 10% ([#91](https://github.com/aleccrowell/diomedes/issues/91), [#95](https://github.com/aleccrowell/diomedes/issues/95)).
 - **The rain flag is per race,** dry, mixed or wet. It doesn't say when in the
   race it rained or how hard, and 48 of the calls are marked uncertain in the
   [reference table](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits).
