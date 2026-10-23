@@ -21,7 +21,7 @@ SPECIAL = {
                 (2002, 2011, "enstone", False, "Benetton renamed after Renault's 2000 purchase; same Enstone factory.", f"{F1DB} {WP}Renault_in_Formula_One"),
                 (2016, 2020, "enstone", False, "Lotus F1 bought back by Renault (Dec 2015); same Enstone factory.", f"{F1DB} {WP}Renault_in_Formula_One")],
     "lotus-f1": [(2012, 2015, "enstone", False, "Renault team renamed (Genii ownership); same Enstone factory. Unrelated to Team Lotus.", f"{F1DB} {WP}Lotus_F1")],
-    "alpine": [(2021, 2025, "enstone", False, "Renault team renamed; same Enstone factory.", f"{F1DB} {WP}Alpine_F1_Team")],
+    "alpine": [(2021, 2026, "enstone", False, "Renault team renamed; same Enstone factory.", f"{F1DB} {WP}Alpine_F1_Team")],
     # Silverstone: Jordan -> Midland -> Spyker -> Force India -> Racing Point -> Aston Martin
     "jordan": [(1991, 2005, "silverstone", False, "Jordan Grand Prix (Silverstone).", f"{F1DB} {WP}Jordan_Grand_Prix")],
     "midland": [(2006, 2006, "silverstone", False, "Jordan renamed by its owner Midland; same factory.", f"{F1DB} {WP}Midland_F1_Racing")],
@@ -29,7 +29,7 @@ SPECIAL = {
     "force-india": [(2008, 2018, "silverstone", False, "Spyker bought by Mallya and Mol; same factory. The 2018 administration and Racing Point entry from Belgium 2018 are the same works.", f"{F1DB} {WP}Force_India")],
     "racing-point": [(2019, 2020, "silverstone", False, "Force India bought out of administration by the Stroll consortium; same factory and staff.", f"{F1DB} {WP}Racing_Point_F1_Team")],
     "aston-martin": [(1959, 1960, "aston-martin-1959", False, "David Brown's Aston Martin works team (Feltham); unrelated to the 2021 team.", f"{WP}Aston_Martin_in_Formula_One"),
-                     (2021, 2025, "silverstone", False, "Racing Point renamed; same Silverstone factory.", f"{F1DB} {WP}Aston_Martin_in_Formula_One")],
+                     (2021, 2026, "silverstone", False, "Racing Point renamed; same Silverstone factory.", f"{F1DB} {WP}Aston_Martin_in_Formula_One")],
     # Tyrrell, then Brackley: BAR -> Honda -> Brawn -> Mercedes
     "tyrrell": [(1970, 1998, "tyrrell", False, "Tyrrell Racing (Ockham). Raced 1998 under BAR ownership.", f"{WP}Tyrrell_Racing")],
     "bar": [(1999, 2005, "brackley", True, "Break from Tyrrell (judgement): BAR bought Tyrrell's entry but built a new factory at Brackley with a new design team (Reynard, Oastler); F1DB chains them.", f"{F1DB} {WP}British_American_Racing")],
@@ -37,7 +37,7 @@ SPECIAL = {
               (2006, 2008, "brackley", False, "BAR renamed after Honda's full purchase; same Brackley factory.", f"{F1DB} {WP}Honda_Racing_F1")],
     "brawn": [(2009, 2009, "brackley", False, "Honda team bought by its management; same factory and staff.", f"{F1DB} {WP}Brawn_GP")],
     "mercedes": [(1954, 1955, "mercedes-1954", False, "Daimler-Benz works team (Stuttgart); unrelated to the Brackley team.", f"{WP}Mercedes-Benz_in_Formula_One"),
-                 (2010, 2025, "brackley", False, "Brawn bought by Mercedes; same Brackley factory.", f"{F1DB} {WP}Mercedes-Benz_in_Formula_One")],
+                 (2010, 2026, "brackley", False, "Brawn bought by Mercedes; same Brackley factory.", f"{F1DB} {WP}Mercedes-Benz_in_Formula_One")],
     # Hinwil: Sauber -> BMW Sauber -> Sauber -> Alfa Romeo -> Kick Sauber
     "sauber": [(1993, 2005, "hinwil", False, "Sauber (Hinwil).", f"{F1DB} {WP}Sauber_Motorsport"),
                (2010, 2018, "hinwil", False, "BMW sold the team back to Peter Sauber; same factory.", f"{F1DB} {WP}Sauber_Motorsport")],
@@ -46,16 +46,17 @@ SPECIAL = {
                    (1979, 1985, "alfa-romeo-1979", False, "Alfa Romeo works chassis: Autodelta 1979-82, run by Euroracing 1983-85.", f"{WP}Alfa_Romeo_in_Formula_One"),
                    (2019, 2023, "hinwil", False, "Sauber under Alfa Romeo title sponsorship; same Hinwil factory.", f"{F1DB} {WP}Alfa_Romeo_in_Formula_One")],
     "kick-sauber": [(2024, 2025, "hinwil", False, "Sauber renamed for sponsorship; same factory.", f"{F1DB} {WP}Sauber_Motorsport")],
+    "audi": [(2026, 2026, "hinwil", False, "Sauber renamed Audi after Audi's takeover; same Hinwil factory (power units from Neuburg).", f"{F1DB} {WP}Audi_in_Formula_One")],
     # Faenza: Minardi -> Toro Rosso -> AlphaTauri -> RB -> Racing Bulls
     "minardi": [(1985, 2005, "faenza", False, "Minardi (Faenza).", f"{F1DB} {WP}Minardi")],
     "toro-rosso": [(2006, 2019, "faenza", False, "Minardi bought by Red Bull; same Faenza factory.", f"{F1DB} {WP}Scuderia_Toro_Rosso")],
     "alphatauri": [(2020, 2023, "faenza", False, "Toro Rosso renamed; same factory.", f"{F1DB} {WP}Scuderia_AlphaTauri")],
     "rb": [(2024, 2024, "faenza", False, "AlphaTauri renamed; same factory.", f"{F1DB} {WP}Racing_Bulls")],
-    "racing-bulls": [(2025, 2025, "faenza", False, "RB renamed; same factory.", f"{F1DB} {WP}Racing_Bulls")],
+    "racing-bulls": [(2025, 2026, "faenza", False, "RB renamed; same factory.", f"{F1DB} {WP}Racing_Bulls")],
     # Milton Keynes: Stewart -> Jaguar -> Red Bull
     "stewart": [(1997, 1999, "milton-keynes", False, "Stewart Grand Prix (Milton Keynes).", f"{F1DB} {WP}Stewart_Grand_Prix")],
     "jaguar": [(2000, 2004, "milton-keynes", False, "Stewart bought by Ford, renamed Jaguar; same factory.", f"{F1DB} {WP}Jaguar_Racing")],
-    "red-bull": [(2005, 2025, "milton-keynes", False, "Jaguar bought by Red Bull; same factory.", f"{F1DB} {WP}Red_Bull_Racing")],
+    "red-bull": [(2005, 2026, "milton-keynes", False, "Jaguar bought by Red Bull; same factory.", f"{F1DB} {WP}Red_Bull_Racing")],
     # Others chained in F1DB
     "lotus-racing": [(2010, 2011, "caterham", False, "Lotus Racing (Fernandes), new team in 2010; unrelated to Team Lotus. Renamed Caterham 2012 (moved Hingham -> Leafield).", f"{F1DB} {WP}Caterham_F1")],
     "caterham": [(2012, 2014, "caterham", False, "Lotus Racing renamed, same owner and staff.", f"{F1DB} {WP}Caterham_F1")],
@@ -76,7 +77,7 @@ SPECIAL = {
     "frank-williams-racing-cars": [(1975, 1975, "fwrc", False, "Frank Williams Racing Cars.", f"{F1DB} {WP}Frank_Williams_Racing_Cars")],
     "wolf-williams": [(1976, 1976, "fwrc", False, "FWRC after Walter Wolf's majority purchase; same team (Reading).", f"{F1DB} {WP}Walter_Wolf_Racing")],
     "wolf": [(1977, 1979, "fwrc", False, "Walter Wolf Racing: FWRC after Frank Williams left; same works.", f"{F1DB} {WP}Walter_Wolf_Racing")],
-    "williams": [(1978, 2025, "williams", False, "Williams Grand Prix Engineering, founded 1977 after Frank Williams left Wolf: a new works.", f"{WP}Williams_Racing")],
+    "williams": [(1978, 2026, "williams", False, "Williams Grand Prix Engineering, founded 1977 after Frank Williams left Wolf: a new works.", f"{WP}Williams_Racing")],
     "march": [(1970, 1977, "march", False, "March Engineering (Bicester).", f"{F1DB} {WP}March_Engineering"),
               (1981, 1982, "march", True, "March's 1981-82 return (run with RAM's John Macdonald); same March Engineering design base (judgement).", f"{F1DB} {WP}March_Engineering"),
               (1987, 1989, "march", True, "March's 1987 return (March Racing, Bicester), Leyton House-backed; F1DB chains it (judgement: same works across the gap).", f"{F1DB} {WP}March_Engineering"),

@@ -1,4 +1,4 @@
-# Race start times and race-window air temperature and rain for every GP 1950-2025.
+# Race start times and race-window air temperature and rain for every GP run, 1950 on.
 # Start times: 1950-2004 from the documented tables (start_times_1950_1995.csv,
 # start_times_1996_2004.csv); 2005-06 Jolpica times are local clock times mislabelled "Z";
 # 2007+ Jolpica times are UTC. Temperature: Open-Meteo archive (ERA5), mean of the two hours
@@ -57,6 +57,7 @@ for (y, rd), r in races.items():
     years.setdefault(r['Circuit']['circuitId'], []).append(y)
 out = []
 for (y, rd), r in sorted(races.items()):
+    if (y, rd) not in win_ms: continue      # scheduled but not run yet (no winner's time)
     c = r['Circuit']; cid = c['circuitId']; lat, lon = c['Location']['lat'], c['Location']['long']
     tz = tz_of(cid, lat, lon)
     if y <= 2004:

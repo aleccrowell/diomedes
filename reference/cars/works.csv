@@ -6,7 +6,7 @@ alfa-romeo,1979,1985,alfa-romeo-1979,,"Alfa Romeo works chassis: Autodelta 1979-
 alfa-romeo,2019,2023,hinwil,,Sauber under Alfa Romeo title sponsorship; same Hinwil factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Alfa_Romeo_in_Formula_One
 alfa-special,1963,1965,alfa-special,,own works,https://github.com/f1db/f1db
 alphatauri,2020,2023,faenza,,Toro Rosso renamed; same factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Scuderia_AlphaTauri
-alpine,2021,2025,enstone,,Renault team renamed; same Enstone factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Alpine_F1_Team
+alpine,2021,2026,enstone,,Renault team renamed; same Enstone factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Alpine_F1_Team
 alta,1950,1952,alta,,own works,https://github.com/f1db/f1db
 amon,1974,1974,amon,,own works,https://github.com/f1db/f1db
 andrea-moda,1992,1992,andrea-moda,uncertain,Break from Coloni (judgement): Andrea Sassetti bought Coloni's entry but ran new Simtek-designed cars with a new team; F1DB chains them.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Andrea_Moda_Formula
@@ -15,9 +15,10 @@ arrows,1997,2002,arrows,,Footwork renamed back after TWR's purchase; moved to Le
 arzani-volpini,1955,1955,arzani-volpini,,own works,https://github.com/f1db/f1db
 aston-butterworth,1952,1952,aston-butterworth,,own works,https://github.com/f1db/f1db
 aston-martin,1959,1960,aston-martin-1959,,David Brown's Aston Martin works team (Feltham); unrelated to the 2021 team.,https://en.wikipedia.org/wiki/Aston_Martin_in_Formula_One
-aston-martin,2021,2025,silverstone,,Racing Point renamed; same Silverstone factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Aston_Martin_in_Formula_One
+aston-martin,2021,2026,silverstone,,Racing Point renamed; same Silverstone factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Aston_Martin_in_Formula_One
 ats,1963,1963,ats,,own works,https://github.com/f1db/f1db
 ats-wheels,1978,1984,ats-wheels,,own works,https://github.com/f1db/f1db
+audi,2026,2026,hinwil,,Sauber renamed Audi after Audi's takeover; same Hinwil factory (power units from Neuburg).,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Audi_in_Formula_One
 balsa,1952,1952,balsa,,own works,https://github.com/f1db/f1db
 bar,1999,2005,brackley,uncertain,"Break from Tyrrell (judgement): BAR bought Tyrrell's entry but built a new factory at Brackley with a new design team (Reynard, Oastler); F1DB chains them.",https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/British_American_Racing
 behra-porsche,1960,1960,behra-porsche,,own works,https://github.com/f1db/f1db
@@ -30,6 +31,7 @@ brawn,2009,2009,brackley,,Honda team bought by its management; same factory and 
 brm,1951,1977,brm,,own works,https://github.com/f1db/f1db
 brp,1963,1964,brp,,own works,https://github.com/f1db/f1db
 bugatti,1956,1956,bugatti,,own works,https://github.com/f1db/f1db
+cadillac,2026,2026,cadillac,,own works,https://github.com/f1db/f1db
 caterham,2012,2014,caterham,,"Lotus Racing renamed, same owner and staff.",https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Caterham_F1
 coloni,1987,1989,coloni,,Coloni.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Coloni
 connaught,1952,1959,connaught,,own works,https://github.com/f1db/f1db
@@ -47,7 +49,7 @@ ensign,1973,1982,ensign,,own works,https://github.com/f1db/f1db
 era,1950,1952,era,,own works,https://github.com/f1db/f1db
 eurobrun,1988,1990,eurobrun,,own works,https://github.com/f1db/f1db
 ferguson,1961,1961,ferguson,,own works,https://github.com/f1db/f1db
-ferrari,1950,2025,ferrari,,own works,https://github.com/f1db/f1db
+ferrari,1950,2026,ferrari,,own works,https://github.com/f1db/f1db
 fittipaldi,1975,1982,fittipaldi,,own works,https://github.com/f1db/f1db
 fondmetal,1991,1992,osella,,Osella renamed after Gabriele Rumi's takeover; same team.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Fondmetal
 footwork,1991,1996,arrows,,Arrows renamed for its owner Footwork; same team (Milton Keynes).,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Arrows_Grand_Prix_International
@@ -58,7 +60,7 @@ frazer-nash,1952,1952,frazer-nash,,own works,https://github.com/f1db/f1db
 gilby,1961,1963,gilby,,own works,https://github.com/f1db/f1db
 gordini,1952,1956,gordini,,own works,https://github.com/f1db/f1db
 greifzu,1953,1953,greifzu,,own works,https://github.com/f1db/f1db
-haas,2016,2025,haas,,own works,https://github.com/f1db/f1db
+haas,2016,2026,haas,,own works,https://github.com/f1db/f1db
 heck,1952,1953,heck,,own works,https://github.com/f1db/f1db
 hesketh,1974,1978,hesketh,,own works,https://github.com/f1db/f1db
 hill,1975,1975,hill,,own works,https://github.com/f1db/f1db
@@ -95,9 +97,9 @@ martini,1978,1978,martini,,own works,https://github.com/f1db/f1db
 marussia,2012,2015,manor,,Virgin renamed after Marussia's purchase; same works (Banbury from 2011).,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Marussia_F1
 maserati,1950,1960,maserati,,own works,https://github.com/f1db/f1db
 matra,1967,1972,matra,,own works,https://github.com/f1db/f1db
-mclaren,1966,2025,mclaren,,own works,https://github.com/f1db/f1db
+mclaren,1966,2026,mclaren,,own works,https://github.com/f1db/f1db
 mercedes,1954,1955,mercedes-1954,,Daimler-Benz works team (Stuttgart); unrelated to the Brackley team.,https://en.wikipedia.org/wiki/Mercedes-Benz_in_Formula_One
-mercedes,2010,2025,brackley,,Brawn bought by Mercedes; same Brackley factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Mercedes-Benz_in_Formula_One
+mercedes,2010,2026,brackley,,Brawn bought by Mercedes; same Brackley factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Mercedes-Benz_in_Formula_One
 merzario,1978,1979,merzario,,own works,https://github.com/f1db/f1db
 midland,2006,2006,silverstone,,Jordan renamed by its owner Midland; same factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Midland_F1_Racing
 minardi,1985,2005,faenza,,Minardi (Faenza).,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Minardi
@@ -113,12 +115,12 @@ politoys,1972,1972,fwrc,,Frank Williams Racing Cars' own chassis (Politoys spons
 porsche,1957,1964,porsche,,own works,https://github.com/f1db/f1db
 prost,1997,2001,ligier,uncertain,"Ligier bought by Alain Prost; same team, though it moved to Guyancourt in 1998 (judgement: same works).",https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Prost_Grand_Prix
 protos,1967,1967,protos,,own works,https://github.com/f1db/f1db
-racing-bulls,2025,2025,faenza,,RB renamed; same factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Racing_Bulls
+racing-bulls,2025,2026,faenza,,RB renamed; same factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Racing_Bulls
 racing-point,2019,2020,silverstone,,Force India bought out of administration by the Stroll consortium; same factory and staff.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Racing_Point_F1_Team
 ram,1983,1985,ram,,own works,https://github.com/f1db/f1db
 rb,2024,2024,faenza,,AlphaTauri renamed; same factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Racing_Bulls
 rebaque,1979,1979,rebaque,,own works,https://github.com/f1db/f1db
-red-bull,2005,2025,milton-keynes,,Jaguar bought by Red Bull; same factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Red_Bull_Racing
+red-bull,2005,2026,milton-keynes,,Jaguar bought by Red Bull; same factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Red_Bull_Racing
 reif,1952,1952,reif,,own works,https://github.com/f1db/f1db
 renault,1977,1985,renault-viry,,Renault Sport works team 1977-85 (Viry-Chatillon); unrelated to the Enstone team that raced as Renault from 2002.,https://en.wikipedia.org/wiki/Renault_in_Formula_One
 renault,2002,2011,enstone,,Benetton renamed after Renault's 2000 purchase; same Enstone factory.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Renault_in_Formula_One
@@ -153,7 +155,7 @@ vanwall,1954,1960,vanwall,,own works,https://github.com/f1db/f1db
 venturi,1992,1992,larrousse,,Larrousse under the Venturi name; same team.,https://en.wikipedia.org/wiki/Larrousse
 veritas,1951,1953,veritas,,own works,https://github.com/f1db/f1db
 virgin,2010,2011,manor,,"Virgin Racing, run by Manor Grand Prix (Dinnington).",https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Virgin_Racing
-williams,1978,2025,williams,,"Williams Grand Prix Engineering, founded 1977 after Frank Williams left Wolf: a new works.",https://en.wikipedia.org/wiki/Williams_Racing
+williams,1978,2026,williams,,"Williams Grand Prix Engineering, founded 1977 after Frank Williams left Wolf: a new works.",https://en.wikipedia.org/wiki/Williams_Racing
 wolf,1977,1979,fwrc,,Walter Wolf Racing: FWRC after Frank Williams left; same works.,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Walter_Wolf_Racing
 wolf-williams,1976,1976,fwrc,,FWRC after Walter Wolf's majority purchase; same team (Reading).,https://github.com/f1db/f1db (constructors chronology) https://en.wikipedia.org/wiki/Walter_Wolf_Racing
 zakspeed,1985,1989,zakspeed,,own works,https://github.com/f1db/f1db

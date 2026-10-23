@@ -459,6 +459,23 @@ end
 
 const ERA_TERMS = (:none, :decade, :regime, :rw)
 
+# Independent normals N(0, s[i]) as one multivariate distribution (#102). Its
+# log density is a few vectorised operations, so through ReverseDiff it costs
+# far less than `arraydist(Normal.(0, s))`, which tracks every element
+# (centred car effects: ~13 ms and ~65k allocations less per gradient).
+# A subtype of AbstractMvNormal so the samplers' transforms treat it as
+# unconstrained (Bijectors maps that type to the identity).
+struct IndepNormal{T<:AbstractVector{<:Real}} <: Turing.Distributions.AbstractMvNormal
+    s::T
+end
+Base.length(d::IndepNormal) = length(d.s)
+Turing.Distributions._logpdf(d::IndepNormal, x::AbstractVector{<:Real}) =
+    -sum(log, d.s) - sum(abs2, x ./ d.s) / 2 - length(x) * log(2π) / 2
+Turing.Distributions._rand!(rng::AbstractRNG, d::IndepNormal, x::AbstractVector{<:Real}) =
+    (x .= randn(rng, length(x)) .* d.s; x)
+Turing.Distributions.mean(d::IndepNormal) = zeros(eltype(d.s), length(d.s))
+Turing.Distributions.var(d::IndepNormal) = abs2.(d.s)
+
 # Random-walk path from its increments, centred to mean zero over seasons:
 # path[1] = 0, path[s] = Σ_{t<s} steps[t]. Written as a product with a constant
 # lower-triangular matrix (no cumsum on tracked arrays).
@@ -865,7 +882,7 @@ effects are then comparable across eras.
         τ_κ ~ truncated(Normal(0, 0.25); lower = 0)
         e_κ ~ filldist(TDist(3), cov.n_seasons - 1)
         κs = season_pace_scale((; τ_κ, e_κ))
-        b_mach ~ arraydist(Normal.(0, σ_mach .* κs[cov.mach_season]))     # centred car effects
+        b_mach ~ IndepNormal(σ_mach .* κs[cov.mach_season])       # centred car effects (vectorised, #102)
         fage = nothing
         if age_basis !== nothing
             τ_age ~ truncated(Normal(0, 0.2ps.s); lower = 0)

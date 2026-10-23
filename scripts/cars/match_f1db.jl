@@ -1,7 +1,7 @@
 # Match Jolpica race results to F1DB race entries (#95), for each entry's chassis
 # constructor and engine manufacturer, which Jolpica doesn't have.
 #
-#   julia --project scripts/cars/match_f1db.jl <f1db csv dir> [out=reference/cars/entries.csv]
+#   julia --project scripts/cars/match_f1db.jl <f1db csv dir> [out=reference/cars/entries.csv] [to=2026]
 #
 # <f1db csv dir>: the unzipped `f1db-csv.zip` of an F1DB release
 # (github.com/f1db/f1db). Within each race, a Jolpica row matches the F1DB entries
@@ -12,9 +12,11 @@
 using Diomedes, DataFrames, CSV, Unicode
 
 dir = ARGS[1]
-out = get(Dict(split(a, "="; limit = 2) for a in ARGS[2:end] if occursin("=", a)), "out", "reference/cars/entries.csv")
+opts = Dict(split(a, "="; limit = 2) for a in ARGS[2:end] if occursin("=", a))
+out = get(opts, "out", "reference/cars/entries.csv")
+to = parse(Int, get(opts, "to", "2026"))
 
-jol = fetch_results(JolpicaF1(), 1950:2025)
+jol = fetch_results(JolpicaF1(), 1950:to)
 f1 = CSV.read(joinpath(dir, "f1db-races-race-results.csv"), DataFrame)
 drv = CSV.read(joinpath(dir, "f1db-drivers.csv"), DataFrame)
 lastname = Dict(r.id => r.lastName for r in eachrow(drv))

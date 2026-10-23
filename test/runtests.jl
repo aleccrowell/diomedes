@@ -680,11 +680,11 @@ end
         @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
                                           big_loss = false, slopes = false, dev = false,
                                           centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true,
-                                          circ = false, track = false, walk = false)
+                                          circ = false, track = false, walk = false, walk1 = false, works = false, dinc = false)
         @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
                                                 big_loss = false, slopes = false, dev = false,
                                           centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true,
-                                          circ = false, track = false, walk = false)
+                                          circ = false, track = false, walk = false, walk1 = false, works = false, dinc = false)
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
         @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
         let s = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track")

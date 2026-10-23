@@ -1,5 +1,5 @@
 builder_id,works_id,first_year,last_year,uncertain,notes,sources
-ferrari,ferrari,1950,2025,,Scuderia Ferrari: Ferrari chassis with Ferrari engines throughout. Private Ferraris of the 1950s share the works and engine and count as works under this rule.,https://en.wikipedia.org/wiki/Scuderia_Ferrari
+ferrari,ferrari,1950,2026,,Scuderia Ferrari: Ferrari chassis with Ferrari engines throughout. Private Ferraris of the 1950s share the works and engine and count as works under this rule.,https://en.wikipedia.org/wiki/Scuderia_Ferrari
 alfa-romeo,alfa-romeo-1950,1950,1951,,Alfa Corse: Alfa Romeo's own team and engines.,https://en.wikipedia.org/wiki/Alfa_Romeo_in_Formula_One
 alfa-romeo,alfa-romeo-1979,1979,1985,,Alfa Romeo works chassis with Alfa Romeo engines (Autodelta 1979-82; Euroracing 1983-85).,https://en.wikipedia.org/wiki/Alfa_Romeo_in_Formula_One
 talbot-lago,talbot-lago,1950,1951,,Talbot-Lago chassis and engines.,https://en.wikipedia.org/wiki/Talbot-Lago
@@ -28,4 +28,7 @@ renault,enstone,2016,2025,,Renault bought the team back for 2016 (Renault 2016-2
 toyota,toyota,2002,2009,,Toyota Racing: own chassis and engines.,https://en.wikipedia.org/wiki/Toyota_Racing
 honda,brackley,2006,2008,,Honda Racing F1 (Brackley) after Honda's full purchase of BAR. BAR-Honda before 2006 (Honda 45% from late 2004) is a customer under this rule.,https://en.wikipedia.org/wiki/Honda_Racing_F1
 bmw,hinwil,2006,2009,,BMW Sauber: BMW owned the Hinwil team.,https://en.wikipedia.org/wiki/BMW_Sauber
-mercedes,brackley,2010,2025,,Mercedes-AMG Petronas: Mercedes owned the Brackley team (Brixworth engines). McLaren-Mercedes (Mercedes held 40% of the McLaren Group 2000-09) is a customer under this rule.,https://en.wikipedia.org/wiki/Mercedes-Benz_in_Formula_One
+mercedes,brackley,2010,2026,,Mercedes-AMG Petronas: Mercedes owned the Brackley team (Brixworth engines). McLaren-Mercedes (Mercedes held 40% of the McLaren Group 2000-09) is a customer under this rule.,https://en.wikipedia.org/wiki/Mercedes-Benz_in_Formula_One
+audi,hinwil,2026,2026,,Audi's own team (the Hinwil works) with Audi power units from Neuburg.,https://en.wikipedia.org/wiki/Audi_in_Formula_One
+red-bull-powertrains,milton-keynes,2026,2026,,Red Bull Racing with Red Bull Powertrains' own power unit (Ford as partner); Red Bull owns both.,https://en.wikipedia.org/wiki/Red_Bull_Powertrains
+red-bull-powertrains,faenza,2026,2026,,Racing Bulls (Red Bull-owned) with Red Bull Powertrains' power unit.,https://en.wikipedia.org/wiki/Red_Bull_Powertrains
