@@ -182,9 +182,11 @@ ReverseDiff.@grad_from_chainrules walk_offsets(xc::ReverseDiff.TrackedArray, row
 The chassis and engine walk states for parameters θ, each centred within season
 (a shift shared by a season's walks is absorbed by the race intercepts), in
 average-season % units (the likelihood scales them by κ, like the driver effects).
+A step across a tagged regulation change widens by exp(δ_reg), one multiplier for
+both families: with one each, they were indistinguishable (#95).
 """
 function car_walk_states(θ, cw::CarWalks)
-    xc = walk_path(walk_steps(θ.τ_ch, θ.σ0_ch, θ.δ_own, θ.δ_reg_ch, θ.z_ch, cw.chassis), cw.chassis.prev)
-    xe = walk_path(walk_steps(θ.τ_en, θ.σ0_en, zero(θ.δ_own), θ.δ_reg_en, θ.z_en, cw.engine), cw.engine.prev)
+    xc = walk_path(walk_steps(θ.τ_ch, θ.σ0_ch, θ.δ_own, θ.δ_reg, θ.z_ch, cw.chassis), cw.chassis.prev)
+    xe = walk_path(walk_steps(θ.τ_en, θ.σ0_en, zero(θ.δ_own), θ.δ_reg, θ.z_en, cw.engine), cw.engine.prev)
     return center_by(xc, cw.chassis.season, cw.chassis.counts), center_by(xe, cw.engine.season, cw.engine.counts)
 end

@@ -447,8 +447,7 @@ function export_race(model, source)
                                                  ("engine_step", vec(chain[:τ_en])), ("engine_first", vec(chain[:σ0_en])),
                                                  ("residual_sd", vec(chain[:σ_mach])),
                                                  ("ownership_multiplier", exp.(vec(chain[:δ_own]))),
-                                                 ("chassis_rule_multiplier", exp.(vec(chain[:δ_reg_ch]))),
-                                                 ("engine_rule_multiplier", exp.(vec(chain[:δ_reg_en])))))...,
+                                                 ("regulation_multiplier", exp.(vec(chain[:δ_reg])))))...,
                      states = (; chassis = length(cw.chassis.prev), engine = length(cw.engine.prev))) : missing,
                 exported_by = "scripts/export_site.jl race")
     write_manifest(outdir, manifest)
