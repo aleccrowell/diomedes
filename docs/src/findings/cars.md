@@ -6,7 +6,9 @@ other cars **in the same season**: the model can't compare cars across seasons
 
 ## One season's field
 
-Choose a season to see its cars with 90% intervals.
+Choose a season to see its cars with 90% intervals. Each effect is the sum of
+a chassis part, an engine part and a residual (see
+[Chassis and engines](@ref)); the tooltip splits it.
 
 ```@raw html
 <div id="fig-car-season" class="diomedes-figure"></div>
@@ -15,7 +17,8 @@ diomedesFigure("fig-car-season", {
   data: { url: "assets/data/race/cars.csv",
           format: { type: "csv", parse: { season: "number", rows: "number", mean: "number", sd: "number",
                                           q05: "number", q95: "number", dev_mean: "number", dev_sd: "number",
-                                          speed_mean: "number", rough_mean: "number", temp_mean: "number" } } },
+                                          speed_mean: "number", rough_mean: "number", temp_mean: "number",
+                                          chassis_mean: "number", engine_mean: "number", residual_mean: "number" } } },
   params: [{ name: "chosen", value: 1988,
              bind: { input: "range", min: 1950, max: 2025, step: 1, name: "Season " } }],
   // "constructor" can't be a sort field (it collides with Object.prototype.constructor
@@ -30,6 +33,9 @@ diomedesFigure("fig-car-season", {
       { field: "rows", title: "Results" },
       { field: "mean", title: "Effect (%)", format: ".2f" },
       { field: "q05", title: "5%", format: ".2f" }, { field: "q95", title: "95%", format: ".2f" },
+      { field: "chassis_mean", title: "Chassis part (%)", format: ".2f" },
+      { field: "engine_mean", title: "Engine part (%)", format: ".2f" },
+      { field: "residual_mean", title: "Residual (%)", format: ".2f" },
       { field: "dev_mean", title: "Development trend (% per season)", format: ".2f" },
       { field: "speed_mean", title: "Speed slope (% per sd)", format: ".2f" },
       { field: "rough_mean", title: "Roughness slope (% per sd)", format: ".2f" },
@@ -192,8 +198,62 @@ uncertainty. The clearest are from 1996 on, when cars ran more races per
 season; earlier slopes shrink towards zero. The slopes typically spread by
 0.15% per sd for speed, 0.11% for roughness and 0.09% for temperature.
 
+## Chassis and engines
+
+Each car-season's effect combines three parts
+([#95](https://github.com/aleccrowell/diomedes/issues/95)):
+
+- **chassis:** the works that built the car, followed across its seasons as a
+  random walk. A rename keeps the works: Toleman → Benetton → Renault → Lotus →
+  Alpine is one walk (Enstone), as is Jordan → … → Aston Martin (Silverstone).
+- **engine:** the works that built the engine, also a random walk. Rebadged
+  engines go to their builder: TAG Heuer is Renault, Petronas is Ferrari.
+- **residual:** what's left for that car-season, such as a works team against a
+  customer with the same chassis and engine.
+
+A walk moves a little each season: about 0.35% of race time per year for a
+chassis and 0.17% for an engine, more after a change of ownership (×1.9) or a
+major rule change. The walks carry most of the variation between cars (the
+residual's spread is 0.43%). Choose a walk to see its path, relative to each
+season's field (negative = faster), with 90% intervals:
+
+```@raw html
+<div id="fig-car-walks" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-car-walks", {
+  data: { url: "assets/data/race/walks.csv",
+          format: { type: "csv", parse: { season: "number", mean: "number", q05: "number", q95: "number" } } },
+  params: [{ name: "pick", value: "chassis: brackley",
+             bind: { input: "select", options: ["chassis: brackley", "chassis: milton-keynes", "chassis: enstone", "chassis: silverstone", "chassis: hinwil", "chassis: faenza", "chassis: ferrari", "chassis: mclaren", "chassis: williams", "chassis: lotus", "chassis: brabham", "chassis: tyrrell", "chassis: ligier", "chassis: arrows", "chassis: march", "chassis: cooper", "chassis: brm", "chassis: maserati", "chassis: lola", "chassis: ensign", "chassis: osella", "chassis: haas", "engine: ferrari", "engine: mercedes", "engine: renault", "engine: honda", "engine: cosworth", "engine: bmw", "engine: porsche", "engine: climax", "engine: brm", "engine: maserati", "engine: alfa-romeo", "engine: hart"], name: "Walk " } }],
+  transform: [{ calculate: "datum.family + ': ' + datum.walk", as: "key" }, { filter: "datum.key == pick" },
+              { calculate: "datum.own_change == 'true' ? 'change of ownership' : datum.reg_change == 'true' ? 'rule change' : 'none'", as: "change" }],
+  width: "container", height: 280,
+  encoding: { x: { field: "season", type: "quantitative", title: "Season", axis: { format: "d" } } },
+  layer: [
+    { mark: { type: "area", opacity: 0.25 },
+      encoding: { y: { field: "q05", type: "quantitative", title: "Walk state, % of race time (negative = faster)" }, y2: { field: "q95" } } },
+    { mark: { type: "line", point: true },
+      encoding: { y: { field: "mean", type: "quantitative" },
+                  tooltip: [{ field: "walk", title: "Walk" }, { field: "season", title: "Season" },
+                            { field: "mean", title: "State (%)", format: ".2f" },
+                            { field: "q05", title: "5%", format: ".2f" }, { field: "q95", title: "95%", format: ".2f" },
+                            { field: "change", title: "Larger step into this season" }] } },
+    { mark: { type: "point", shape: "diamond", size: 90, filled: true, color: "#e45756" },
+      transform: [{ filter: "datum.change != 'none'" }],
+      encoding: { y: { field: "mean", type: "quantitative" } } }
+  ]
+});
+</script>
+```
+
+Red diamonds mark seasons entered across a change of ownership or a major rule
+change, where the walk may take a larger step. Gaps in a line are seasons the
+works or builder didn't race. Engine levels partly reflect their customers:
+Ferrari's engine sits slightly slow throughout, likely because its customers were
+slower teams. Read engine levels as the engine and its customers together.
+
 ## Download the data
 
 ```@raw html
-<p><a class="diomedes-data" data-path="assets/data/race/cars.csv"><code>cars.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
+<p><a class="diomedes-data" data-path="assets/data/race/cars.csv"><code>cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/race/walks.csv"><code>walks.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
 ```

@@ -49,6 +49,13 @@ effects are meaningless even when predictions are fine.
   covariates are also centred over its own races. A slope then only describes
   how a car's form changed between circuits, never its overall level, and a car
   that raced one kind of circuit has no slope at all ([#81](https://github.com/aleccrowell/diomedes/issues/81)).
+- **Chassis and engine walks** are centred within each season, like the car
+  effects. Chassis and engine separate only where they cross: customer engines,
+  a works changing engine supplier, and 1960s chassis that ran several engines.
+  Where an engine had one user for a stretch, the split rests on the walks'
+  priors. Engine levels mix in their customers' pace: Ferrari's engine walk sits
+  slightly slow throughout, likely because its customers were slow teams
+  ([#95](https://github.com/aleccrowell/diomedes/issues/95)).
 
 ## Measuring convergence on what is identified
 

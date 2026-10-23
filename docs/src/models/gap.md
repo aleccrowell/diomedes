@@ -110,6 +110,11 @@ the scripts (see [`model_spec`](@ref)):
   car that raced only one kind of circuit has none. The slopes are then centred
   within season, since a slope shared by the field is absorbed by the race
   intercepts. They say which conditions suited a car relative to the field.
+- **Chassis and engine walks** are centred within season. Chassis and engine
+  separate only where they cross (customer engines, engine changes, 1960s
+  chassis with several engines); elsewhere the split rests on the walks'
+  priors. Car-season effects reported for a walk model are totals: residual +
+  chassis + engine.
 - **Track terms** are measured against a dry race at an open circuit, so `a_π`
   and `a_λ` refer to that race. The circuit data come from the hand-checked
   [reference tables](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits)
