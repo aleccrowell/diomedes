@@ -21,7 +21,11 @@
 #                 faster), with career slopes if the model has them
 #   cars.csv      car-season effects (% of race time within season), with in-season
 #                 development trends and circuit slopes (speed, rough, temp; #81) if the
-#                 model has them
+#                 model has them. With chassis and engine walks (#95) the effect is the
+#                 total, and chassis_mean + engine_mean + residual_mean split its mean
+#                 (each centred within season, so they add up)
+#   walks.csv     chassis and engine walks (#95): each walk's state per season (% in
+#                 average-season units, centred within season; negative = faster)
 #   track.csv     track terms (#81): incident odds and loss-size multipliers for walls,
 #                 mixed and wet races
 #   seasons.csv   per season: incident probability π, mean loss λ (for a dry race at a
@@ -48,7 +52,8 @@
 #   data could differ from the fit's; the manifest points to where it was reported.
 
 using Diomedes, CSV, DataFrames, Dates, JSON3, Serialization, Statistics, Turing
-using Diomedes: draw, model_param_names, rw_path, season_counts, sum_to_zero, sum_to_zero_by, CareerRows, driver_offsets
+using Diomedes: draw, model_param_names, rw_path, season_counts, sum_to_zero, sum_to_zero_by, CareerRows, driver_offsets,
+                 walk_offsets
 using LogExpFunctions: logistic
 
 
@@ -209,6 +214,22 @@ function export_race(model, source)
     AC = spec.age ? zeros(ndraw, length(g.age_years)) : nothing
     CX = spec.circ ? zeros(ndraw, 3length(g.machines)) : nothing      # circuit slopes (#81), stacked by covariate
     TR = spec.track ? zeros(ndraw, 6) : nothing                         # track terms (#81): β_π, then β_λ
+    # chassis and engine walks (#95): states, and each car-season's centred chassis and
+    # engine parts (its rows' κ·state, averaged, then centred within season)
+    cw = spec.walk ? cov.cars : nothing
+    nm = length(g.machines)
+    machs = vcat(g.t_mach, g.c_mach)
+    nrows_m = [count(==(m), machs) for m in 1:nm]
+    rowrace = vcat(g.t_race, g.c_race)
+    WC = spec.walk ? zeros(ndraw, length(cw.chassis.prev)) : nothing
+    WE = spec.walk ? zeros(ndraw, length(cw.engine.prev)) : nothing
+    CH = spec.walk ? zeros(ndraw, nm) : nothing
+    EN = spec.walk ? zeros(ndraw, nm) : nothing
+    function carpart(x, rowstate, κr)
+        v = zeros(nm)
+        for (r, m) in enumerate(machs); v[m] += κr[rowrace[r]] * x[rowstate[r]]; end
+        return sum_to_zero_by(v ./ nrows_m, g.mach_season, sc)
+    end
     let k = 0
         for c in 1:nc, i in 1:ni
             θ = draw(chain, pnames, i, c)
@@ -222,6 +243,12 @@ function export_race(model, source)
             spec.slopes && (SL[k, :] = career_slopes(θ.τ_slope, θ.u_slope))
             spec.dev && (DV[k, :] = dev_trends(θ.τ_dev, θ.u_dev, g, sc))
             spec.age && (AC[k, :] = age_curve(θ.τ_age, θ.e_age, B))
+            if spec.walk
+                xc, xe = car_walk_states(θ, cw)
+                WC[k, :], WE[k, :] = xc, xe
+                κr = race_pace_scale(θ, cov)
+                CH[k, :], EN[k, :] = carpart(xc, cw.row_ch, κr), carpart(xe, cw.row_en, κr)
+            end
         end
     end
     q(X, p) = [quantile(c, p) for c in eachcol(X)]
@@ -248,8 +275,9 @@ function export_race(model, source)
     end
     CSV.write(joinpath(outdir, "drivers.csv"), dt)
 
-    # car-seasons
-    machs = vcat(g.t_mach, g.c_mach)
+    # car-seasons (per-draw residuals; with walks the effect is residual + chassis + engine)
+    Bm = mapslices(b -> sum_to_zero_by(b, g.mach_season, sc), stack(vec(chain[:b_mach]); dims = 1); dims = 2)
+    TOT = spec.walk ? Bm .+ CH .+ EN : Bm                                     # draws × cars
     ct = DataFrame(id = g.machines, season = [seasons[s] for s in g.mach_season],
                    rows = [count(==(m), machs) for m in eachindex(g.machines)])
     ct.constructor = [replace(m, Regex("_$(s)\$") => "") for (m, s) in zip(ct.id, ct.season)]
@@ -263,9 +291,15 @@ function export_race(model, source)
             ct[!, Symbol(n, "_mean")], ct[!, Symbol(n, "_sd")] = vec(mean(X; dims = 1)), vec(std(X; dims = 1))
         end
     end
-    ct = leftjoin(ct, select(eff.machines, :label => :id, :mean, :sd, :q05, :q95); on = :id, order = :left)
+    if spec.walk                                  # totals from the draws, in g.machines order
+        ct.mean, ct.sd, ct.q05, ct.q95 = vec(mean(TOT; dims = 1)), vec(std(TOT; dims = 1)), q(TOT, 0.05), q(TOT, 0.95)
+        ct.chassis_mean, ct.engine_mean, ct.residual_mean = vec(mean(CH; dims = 1)), vec(mean(EN; dims = 1)), vec(mean(Bm; dims = 1))
+    else
+        ct = leftjoin(ct, select(eff.machines, :label => :id, :mean, :sd, :q05, :q95); on = :id, order = :left)
+    end
     sort!(ct, [:season, :mean])
     for c in (:mean, :sd, :q05, :q95, (spec.dev ? (:dev_mean, :dev_sd) : ())...,
+              (spec.walk ? (:chassis_mean, :engine_mean, :residual_mean) : ())...,
               (spec.circ ? Tuple(Symbol(n, s) for n in cov.circuits.x_names for s in ("_mean", "_sd")) : ())...)
         ct[!, c] = r4(ct[!, c])
     end
@@ -304,13 +338,24 @@ function export_race(model, source)
                             q05 = r4(q(AC, 0.05)), q95 = r4(q(AC, 0.95))))
     end
 
+    # chassis and engine walks (#95)
+    if spec.walk
+        wt = DataFrame()
+        for (family, ws, W) in (("chassis", cw.chassis, WC), ("engine", cw.engine, WE))
+            parts = split.(ws.names)
+            append!(wt, DataFrame(family = family, walk = first.(parts), season = parse.(Int, last.(parts)),
+                                  mean = r4(vec(mean(W; dims = 1))), q05 = r4(q(W, 0.05)), q95 = r4(q(W, 0.95)),
+                                  own_change = Bool.(ws.own), reg_change = Bool.(ws.reg)))
+        end
+        CSV.write(joinpath(outdir, "walks.csv"), wt)
+    end
+
     # per-draw effects, in the draw order of the loop above (iterations within chains),
     # as gap_effects_table computes them (centred drivers and cars)
     stackd(sym) = stack(vec(chain[sym]); dims = 1)
     hasp(sym) = any(vn -> string(vn) == string(sym), Turing.FlexiChains.parameters(chain))
     A = hasp(:a_comp) ? mapslices(sum_to_zero, stackd(:a_comp); dims = 2) :         # draws × drivers
         mapslices(sum_to_zero, stackd(:z_comp); dims = 2) .* vec(chain[:σ_comp])
-    Bm = mapslices(b -> sum_to_zero_by(b, g.mach_season, sc), stackd(:b_mach); dims = 2)   # draws × cars
     K = exp.(lk)                                                              # draws × seasons
     # the stacked draws must line up with the loop's (i within c) order
     for (i, c) in ((1, 1), (ni, 1), (1, nc))
@@ -366,7 +411,7 @@ function export_race(model, source)
         n = dm[(d, m)]
         si = g.mach_season[m]
         dpart = K[:, si] .* (A[:, d] .+ H[:, pj])
-        cpart = Bm[:, m]
+        cpart = TOT[:, m]
         push!(ds, (g.competitors[d], dname[g.competitors[d]], seasons[si], g.machines[m], ct.constructor[findfirst(==(g.machines[m]), ct.id)], n,
                    qs(dpart)..., qs(cpart)..., qs(dpart .+ cpart)...))
     end
@@ -395,6 +440,15 @@ function export_race(model, source)
                      tau_cx = spec.circ ? [(; mean = r4(mean(x)), q05 = r4(quantile(x, 0.05)), q95 = r4(quantile(x, 0.95)))
                                            for x in eachrow(stack(vec(chain[:τ_cx])))] : missing,
                      seasons_note = "π and λ by season are for a dry race at a circuit of average tightness") : missing,
+                walks = spec.walk ?
+                    (; units = "% of race time in average-season units",
+                     NamedTuple(Symbol(lbl) => (; mean = r4(mean(x)), q05 = r4(quantile(x, 0.05)), q95 = r4(quantile(x, 0.95)))
+                                for (lbl, x) in (("chassis_step", vec(chain[:τ_ch])), ("chassis_first", vec(chain[:σ0_ch])),
+                                                 ("engine_step", vec(chain[:τ_en])), ("engine_first", vec(chain[:σ0_en])),
+                                                 ("residual_sd", vec(chain[:σ_mach])),
+                                                 ("ownership_multiplier", exp.(vec(chain[:δ_own]))),
+                                                 ("regulation_multiplier", exp.(vec(chain[:δ_reg])))))...,
+                     states = (; chassis = length(cw.chassis.prev), engine = length(cw.engine.prev))) : missing,
                 exported_by = "scripts/export_site.jl race")
     write_manifest(outdir, manifest)
     println("wrote $(outdir): $(nrow(dt)) drivers, $(nrow(ct)) car-seasons, $(nrow(st)) seasons; ",

@@ -379,10 +379,12 @@ struct LossCovariates
     n_seasons::Int
     mach_season::Vector{Int}        # season index (as `season`) of each machine level
     circuits::Union{Nothing,RaceCircuits}   # circuit covariates (#81), if given
+    cars::Union{Nothing,CarWalks}           # chassis and engine walks (#95), if given
 end
 LossCovariates(g::GapData, spec) =
-    LossCovariates(g; circuits = get(spec, :circ, false) || get(spec, :track, false) ? circuit_table() : nothing)
-function LossCovariates(g::GapData; circuits = nothing)
+    LossCovariates(g; circuits = get(spec, :circ, false) || get(spec, :track, false) ? circuit_table() : nothing,
+                   cars = get(spec, :walk, false) ? car_table() : nothing)
+function LossCovariates(g::GapData; circuits = nothing, cars = nothing)
     ld = log.(g.race_minutes)
     decades = g.race_season .÷ 10
     d0 = minimum(decades)
@@ -393,7 +395,8 @@ function LossCovariates(g::GapData; circuits = nothing)
                           regime, length(REGIME_STARTS),
                           g.race_season .- s0 .+ 1, maximum(g.race_season) - s0 + 1,
                           data_seasons[g.mach_season] .- s0 .+ 1,
-                          circuits === nothing ? nothing : RaceCircuits(g, circuits))
+                          circuits === nothing ? nothing : RaceCircuits(g, circuits),
+                          cars === nothing ? nothing : CarWalks(g, cars))
 end
 
 const ERA_TERMS = (:none, :decade, :regime, :rw)
@@ -659,6 +662,9 @@ dev_param_names(dev::Bool) = dev ? (:τ_dev, :u_dev) : ()
 "Names of the circuit-slope parameters (#81), in sampling order (after the development trends)."
 circ_param_names(circ::Bool) = circ ? (:τ_cx, :u_cx) : ()
 
+"Names of the chassis and engine walk parameters (#95), if the model has them."
+walk_param_names(walk::Bool) = walk ? (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :δ_reg) : ()
+
 """
     race_pace_scale(θ, cov) -> Vector
 
@@ -830,6 +836,20 @@ effects are then comparable across eras.
                                   row_season)
             hdrv = hdrv === nothing ? hcx : hdrv .+ hcx
         end
+        if cov.cars !== nothing     # chassis and engine walks over seasons (#95), average-season units like hdrv
+            cw = cov.cars
+            τ_ch ~ truncated(Normal(0, ps.s); lower = 0)          # step sd per year
+            σ0_ch ~ truncated(Normal(0, 2ps.s); lower = 0)        # spread of a works' first season
+            z_ch ~ filldist(Normal(), length(cw.chassis.prev))
+            τ_en ~ truncated(Normal(0, ps.s); lower = 0)
+            σ0_en ~ truncated(Normal(0, 2ps.s); lower = 0)
+            z_en ~ filldist(Normal(), length(cw.engine.prev))
+            δ_own ~ truncated(Normal(0, 1); lower = 0)            # larger steps: ownership, regulations
+            δ_reg ~ truncated(Normal(0, 1); lower = 0)          # one for chassis and engine rules (#95)
+            xc, xe = car_walk_states((; τ_ch, σ0_ch, z_ch, τ_en, σ0_en, z_en, δ_own, δ_reg), cw)
+            hw = walk_offsets(xc, cw.row_ch, xe, cw.row_en)
+            hdrv = hdrv === nothing ? hw : hdrv .+ hw
+        end
         # each call matches a ReverseDiff binding of the fused rule (see paceloss_loglik_cc)
         if big_loss
             @addlogprob! paceloss_loglik_cc(γ, z_comp, σ_comp, b_mach, σ, πr, λr, κs[cov.season], hdrv,
@@ -847,12 +867,14 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
                           pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                           slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false,
                           driver_ν = nothing, race_hier::Bool = false, race_mean::Bool = !race_hier,
-                          circ::Bool = false, track::Bool = false,
-                          circuits = circ || track ? circuit_table() : nothing, prior_scale = PriorScale(g))
+                          circ::Bool = false, track::Bool = false, walk::Bool = false,
+                          circuits = circ || track ? circuit_table() : nothing, cars = walk ? car_table() : nothing,
+                          prior_scale = PriorScale(g))
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     race_hier && race_mean && throw(ArgumentError("race_hier and race_mean are alternatives"))
     (circ || track) && circuits === nothing && throw(ArgumentError("circ and track need a circuit table (circuits)"))
-    cov = LossCovariates(g; circuits = circ || track ? circuits : nothing)
+    walk && cars === nothing && throw(ArgumentError("walk needs the car tables (cars)"))
+    cov = LossCovariates(g; circuits = circ || track ? circuits : nothing, cars = walk ? cars : nothing)
     (era === :rw || pace_scale) && cov.n_seasons < 2 &&
         throw(ArgumentError("random walks over seasons need at least 2 seasons"))
     age && !pace_scale && throw(ArgumentError("the age curve is implemented for pace-scale models (pace_scale = true)"))
@@ -860,6 +882,7 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     slopes && !pace_scale && throw(ArgumentError("career slopes are implemented for pace-scale models (pace_scale = true)"))
     dev && !pace_scale && throw(ArgumentError("in-season development is implemented for pace-scale models (pace_scale = true)"))
     circ && !pace_scale && throw(ArgumentError("circuit slopes are implemented for pace-scale models (pace_scale = true)"))
+    walk && !pace_scale && throw(ArgumentError("chassis and engine walks are implemented for pace-scale models (pace_scale = true)"))
     age && length(g.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
@@ -881,7 +904,8 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
                       pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false,
                       slopes::Bool = false, dev::Bool = false, centred_drivers::Bool = false, driver_ν = nothing,
                       race_hier::Bool = false, race_mean::Bool = !race_hier, circ::Bool = false, track::Bool = false,
-                      circuits = circ || track ? circuit_table() : nothing, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
+                      walk::Bool = false, circuits = circ || track ? circuit_table() : nothing,
+                      cars = walk ? car_table() : nothing, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
                       checkpoint::Union{Nothing,AbstractString} = nothing, seed::Int = 1, kwargs...)
@@ -890,7 +914,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν,
-                             race_hier, race_mean, circ, track, circuits)
+                             race_hier, race_mean, circ, track, walk, circuits, cars)
     cov = model.args.cov
     race_gap = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
@@ -927,6 +951,12 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         if track
             nx = size(cov.circuits.track, 2)
             p = (; p..., β_track_π = 0.1 .* randn(rng, nx), β_track_λ = 0.1 .* randn(rng, nx))
+        end
+        if walk
+            cw = cov.cars
+            p = (; p..., τ_ch = 0.05 + 0.05 * rand(rng), σ0_ch = scale(), z_ch = 0.1 .* randn(rng, length(cw.chassis.prev)),
+                 τ_en = 0.05 + 0.05 * rand(rng), σ0_en = scale(), z_en = 0.1 .* randn(rng, length(cw.engine.prev)),
+                 δ_own = 0.1 + 0.1 * rand(rng), δ_reg = 0.1 + 0.1 * rand(rng))
         end
         race_hier && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng), τ_γ = std(race_gap) * (0.9 + 0.2 * rand(rng))))
         race_mean && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng)))
