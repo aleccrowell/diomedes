@@ -87,6 +87,7 @@ the scripts (see [`model_spec`](@ref)):
 | `dev` | `_dev` | per-car linear in-season development trend, centred within season ([`DevRows`](@ref), [`dev_trends`](@ref)) |
 | `circ` | `_circ` | per-car slopes on the race's average speed, roughness (surface score) and temperature, standardised; covariates centred over each car-season's races, slopes centred within season ([`RaceCircuits`](@ref), [`CircuitRows`](@ref), [`circuit_slopes`](@ref)) |
 | `track` | `_track` | slopes of logit π and log λ on the circuit's walls score and on mixed and wet races (from the documented race conditions) |
+| `walk` | `_walk` | chassis and engine random walks over seasons: each row's car part adds the walk of the works that built its chassis and of the builder of its engine, in average-season units scaled by κ and centred within season; `b_mach` becomes a per-car-season residual. Steps widen with gaps and, by learned multipliers, at changes of ownership and major regulation changes ([`CarWalks`](@ref), [`WalkStates`](@ref), [`car_walk_states`](@ref), [`car_table`](@ref); tables in [reference/cars](https://github.com/aleccrowell/diomedes/tree/master/reference/cars)) |
 | `centred_drivers` | `_cdrv` | driver effects sampled in % units rather than non-centred |
 | `driver_ν = 3.0` | `_tdrv` | Student-t driver prior |
 | `race_mean` (default `true`) | (default; `_mgam` accepted) | race intercepts γ ~ N(μ_γ, 4s) with a learned common level μ_γ |

@@ -2,7 +2,7 @@
 
 ```@autodocs
 Modules = [Diomedes]
-Pages = ["noise.jl", "gap_model.jl", "paceloss.jl", "likelihoods.jl", "partial.jl"]
+Pages = ["noise.jl", "gap_model.jl", "paceloss.jl", "likelihoods.jl", "partial.jl", "cars.jl"]
 Private = false
 ```
 
@@ -10,6 +10,6 @@ Private = false
 
 ```@autodocs
 Modules = [Diomedes]
-Pages = ["noise.jl", "gap_model.jl", "paceloss.jl", "likelihoods.jl", "partial.jl"]
+Pages = ["noise.jl", "gap_model.jl", "paceloss.jl", "likelihoods.jl", "partial.jl", "cars.jl"]
 Public = false
 ```
