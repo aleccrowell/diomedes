@@ -476,6 +476,18 @@ Turing.Distributions._rand!(rng::AbstractRNG, d::IndepNormal, x::AbstractVector{
 Turing.Distributions.mean(d::IndepNormal) = zeros(eltype(d.s), length(d.s))
 Turing.Distributions.var(d::IndepNormal) = abs2.(d.s)
 
+# An improper flat density on R^n (#102), for parameters whose prior is added with
+# @addlogprob! (walk states and the κ path sampled directly). `filldist(Flat(), n)`
+# takes a per-element transform path when the sampler links its coordinates (~30×
+# slower gradients); as an AbstractMvNormal subtype the transform is the identity.
+struct FlatVec <: Turing.Distributions.AbstractMvNormal
+    n::Int
+end
+Base.length(d::FlatVec) = d.n
+Turing.Distributions._logpdf(::FlatVec, x::AbstractVector{<:Real}) = zero(eltype(x))
+Turing.Distributions._rand!(rng::AbstractRNG, d::FlatVec, x::AbstractVector{<:Real}) = (x .= randn(rng, length(x)); x)
+Turing.Distributions.mean(d::FlatVec) = zeros(d.n)
+
 # Random-walk path from its increments, centred to mean zero over seasons:
 # path[1] = 0, path[s] = Σ_{t<s} steps[t]. Written as a product with a constant
 # lower-triangular matrix (no cumsum on tracked arrays).
@@ -901,7 +913,7 @@ effects are then comparable across eras.
     if pace_scale
         τ_κ ~ truncated(Normal(0, 0.25); lower = 0)
         if ext.kst              # the log path itself (#102): each season's κ is pinned by its own races
-            l_κ ~ filldist(Flat(), cov.n_seasons)
+            l_κ ~ FlatVec(cov.n_seasons)
             dκ = l_κ[2:end] .- l_κ[1:(end - 1)]
             @addlogprob! sum(logpdf.(LocationScale(0.0, τ_κ, TDist(3)), dκ))
             # the mean level is unidentified (κ uses the centred path): a tight proper prior, so
@@ -960,7 +972,7 @@ effects are then comparable across eras.
             τ_ch ~ truncated(Normal(0, ps.s); lower = 0)          # step sd per year
             σ0_ch ~ truncated(Normal(0, 2ps.s); lower = 0)        # spread of a works' first season
             if ext.wst              # states sampled directly (#102); prior below
-                xs_ch ~ filldist(Flat(), length(cw.chassis.prev))
+                xs_ch ~ FlatVec(length(cw.chassis.prev))
             elseif ext.wlev         # level parametrisation (#102): see walk_level_path
                 zl_ch ~ filldist(Normal(), length(cw.chassis.prev))
             else
@@ -969,7 +981,7 @@ effects are then comparable across eras.
             τ_en ~ truncated(Normal(0, ps.s); lower = 0)
             σ0_en ~ truncated(Normal(0, 2ps.s); lower = 0)
             if ext.wst
-                xs_en ~ filldist(Flat(), length(cw.engine.prev))
+                xs_en ~ FlatVec(length(cw.engine.prev))
             elseif ext.wlev
                 zl_en ~ filldist(Normal(), length(cw.engine.prev))
             else
