@@ -1,8 +1,9 @@
 # Mixing of the hard-to-mix quantities in short probe fits (#102).
 #
-#   julia --project scripts/bench/probe_mixing.jl <model> [data=<mode>] [prefix=probe]
+#   julia --project scripts/bench/probe_mixing.jl <model> [data=<mode>] [prefix=probe] [n=<draws>]
 #
-# Reads output/<prefix>_<data>_<model>_chain<k>.jls (scripts/bench/race_depth_probe.jl)
+# Reads output/<prefix>_<data>_<model>_chain<k>.jls (scripts/bench/race_depth_probe.jl;
+# prefix=gap for full fits, with n=100 to compare on a probe's number of draws)
 # and prints, per chain, tree depth and step size, then per-chain means and ESS and
 # the combined R-hat and ESS of the quantities that mixed worst in the
 # directly-sampled-states fit: σ0_en, τ_en, σ0_ch, τ_ch, Ferrari's 1966 engine and 1968 chassis
@@ -14,6 +15,7 @@ include(joinpath(@__DIR__, "..", "gap_data.jl"))
 mode, args = data_arg(ARGS)
 pi_ = findfirst(a -> startswith(a, "prefix="), args)
 prefix = pi_ === nothing ? "probe" : String(split(args[pi_], "=")[2])
+ni_ = findfirst(a -> startswith(a, "n="), args)
 model = first(filter(a -> !occursin("=", a), args))
 _, g = gap_data(mode; io = devnull)
 spec = model_spec(model); cov = LossCovariates(g, spec); cw = cov.cars
@@ -28,7 +30,7 @@ ie = findfirst(==("ferrari 1966"), cw.engine.names); ic = findfirst(==("ferrari 
 qs = [("σ0_en", θ -> θ.σ0_en), ("τ_en", θ -> θ.τ_en), ("σ0_ch", θ -> θ.σ0_ch), ("τ_ch", θ -> θ.τ_ch), ("engine ferrari 1966", θ -> car_walk_states(θ, cw)[2][ie]),
       ("chassis ferrari 1968", θ -> car_walk_states(θ, cw)[1][ic])]
 haskey(Diomedes.draw(chs[1], names, 1, 1), :β_works) && push!(qs, ("β_works", θ -> θ.β_works))
-ni = size(chs[1][:σ_comp], 1)
+ni = ni_ === nothing ? size(chs[1][:σ_comp], 1) : parse(Int, split(args[ni_], "=")[2])
 for (lbl, f) in qs
     M = [f(Diomedes.draw(c, names, i, 1)) for i in 1:ni, c in chs]        # draws × chains
     A = reshape(M, size(M, 1), size(M, 2), 1)

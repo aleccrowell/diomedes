@@ -218,22 +218,25 @@ ReverseDiff.@grad_from_chainrules walk_level_path(v::ReverseDiff.TrackedArray, p
 Per-row car part from the walks, xc[row_ch[i]] + xe[row_en[i]], with a
 hand-written rule (indexing tracked vectors row by row allocated heavily, #92).
 """
-function walk_offsets(xc, row_ch::Vector{Int}, xe, row_en::Vector{Int})
+walk_offsets(xc, row_ch::Vector{Int}, xe, row_en::Vector{Int}) = _walk_offsets(xc, xe, (; row_ch, row_en))
+# row indices in a NamedTuple, which ReverseDiff does not copy per call (see `car_row_offsets`)
+function _walk_offsets(xc, xe, rows::NamedTuple)
+    (; row_ch, row_en) = rows
     out = zeros(promote_type(eltype(xc), eltype(xe)), length(row_ch))
     for i in eachindex(out); out[i] = xc[row_ch[i]] + xe[row_en[i]]; end
     return out
 end
-function ChainRulesCore.rrule(::typeof(walk_offsets), xc, row_ch::Vector{Int}, xe, row_en::Vector{Int})
+function ChainRulesCore.rrule(::typeof(_walk_offsets), xc, xe, rows::NamedTuple)
+    (; row_ch, row_en) = rows
     function pullback(ȳ)
         ȳ = ChainRulesCore.unthunk(ȳ)
         ∂c, ∂e = zeros(length(xc)), zeros(length(xe))
         for i in eachindex(row_ch); ∂c[row_ch[i]] += ȳ[i]; ∂e[row_en[i]] += ȳ[i]; end
-        return NoTangent(), ∂c, NoTangent(), ∂e, NoTangent()
+        return NoTangent(), ∂c, ∂e, NoTangent()
     end
-    return walk_offsets(xc, row_ch, xe, row_en), pullback
+    return _walk_offsets(xc, xe, rows), pullback
 end
-ReverseDiff.@grad_from_chainrules walk_offsets(xc::ReverseDiff.TrackedArray, row_ch::Vector{Int},
-                                               xe::ReverseDiff.TrackedArray, row_en::Vector{Int})
+ReverseDiff.@grad_from_chainrules _walk_offsets(xc::ReverseDiff.TrackedArray, xe::ReverseDiff.TrackedArray, rows::NamedTuple)
 
 """
     car_walk_states(θ, cw::CarWalks) -> (chassis, engine)

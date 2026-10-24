@@ -171,6 +171,43 @@ row_π(πr, r, πd, d) = πd === nothing ? πr[r] : logistic(logit(πr[r]) + πd
     end
 end
 
+# Value and (μ, σ, π, λ, ρ, λ2) derivatives of one row of the big-loss model:
+# `pacebig_logpdf(y - μ, …)` for a timed row, `pacebig_loginterval(lo - μ, hi - μ, …)`
+# for a lapped one (#102). Only the three components (pace noise, the two EMGs)
+# carry duals, over (μ, σ, loss mean); the mixture over π and ρ is differentiated
+# in closed form. With all six arguments as duals this was ~2/3 of a gradient.
+@inline function pacebig_row_vg(y, lo, hi, interval::Bool, μ, σ, π, λ, ρ, λ2)
+    D = FD.Dual{Nothing}
+    μd, σd, λd, λ2d = D(μ, 1.0, 0.0, 0.0), D(σ, 0.0, 1.0, 0.0), D(λ, 0.0, 0.0, 1.0), D(λ2, 0.0, 0.0, 1.0)
+    if interval
+        l, h = lo - μd, hi - μd
+        A = logdiffΦ(l / σd, h / σd)
+        E1, E2 = log_pemg(l, h, σd, λd, A), log_pemg(l, h, σd, λ2d, A)
+    else
+        x = y - μd
+        A = normlogpdf(x / σd) - log(σd)
+        E1, E2 = log_emg_pdf(x, σd, λd), log_emg_pdf(x, σd, λ2d)
+    end
+    a, e1, e2 = FD.value(A), FD.value(E1), FD.value(E2)
+    pA, p1, p2 = FD.partials(A), FD.partials(E1), FD.partials(E2)
+    # loss part B = log((1-ρ)·e^E1 + ρ·e^E2), weights w1 + w2 = 1
+    B = logaddexp(log1p(-ρ) + e1, log(ρ) + e2)
+    w1, w2 = exp(log1p(-ρ) + e1 - B), exp(log(ρ) + e2 - B)
+    wp(w, q) = w == 0 ? 0.0 : w * q          # a zero-weight component's partials may be non-finite
+    finite_B = B > -Inf
+    dBμ = finite_B ? wp(w1, p1[1]) + wp(w2, p2[1]) : 0.0
+    dBσ = finite_B ? wp(w1, p1[2]) + wp(w2, p2[2]) : 0.0
+    dBλ, dBλ2 = finite_B ? (wp(w1, p1[3]), wp(w2, p2[3])) : (0.0, 0.0)
+    dBρ = finite_B ? exp(e2 - B) - exp(e1 - B) : 0.0
+    # row: ℓ = log((1-π)·e^A + π·e^B)
+    ℓ = logaddexp(log1p(-π) + a, log(π) + B)
+    u1, u2 = exp(log1p(-π) + a - ℓ), exp(log(π) + B - ℓ)
+    dμ = wp(u1, pA[1]) + u2 * dBμ
+    dσ = wp(u1, pA[2]) + u2 * dBσ
+    dπ = exp(B - ℓ) - exp(a - ℓ)
+    return ℓ, dμ, dσ, dπ, u2 * dBλ, u2 * dBρ, u2 * dBλ2
+end
+
 # Per-row values and derivatives with the big-loss component (#16): as
 # paceloss_row_grads, plus scalar derivatives for ρ and λ2. `πd`: per-driver
 # logit offsets on π (#101), or nothing; their derivatives come back in dπd.
@@ -180,18 +217,18 @@ function pacebig_row_grads(st, σ, πr, λr, ρ, λ2, g; πd = nothing)
     dπd = πd === nothing ? nothing : zeros(length(πd))
     val, dσ, dρ, dλ2 = 0.0, 0.0, 0.0, 0.0
     for i in eachindex(st.μt)
-        r, y = g.t_race[i], g.y[i]
-        v, p = value_gradN((μ, s, q, l, h, l2) -> pacebig_logpdf(y - μ, s, q, l, h, l2),
-                           st.μt[i], σ, row_π(πr, r, πd, g.t_comp[i]), λr[r], ρ, λ2)
-        val += v; dμt[i] = p[1]; dσ += p[2]; dλ[r] += p[4]; dρ += p[5]; dλ2 += p[6]
-        scatter_π!(dπ, dπd, p[3], πr, r, πd, g.t_comp[i])
+        r = g.t_race[i]
+        v, pμ, pσ, pπ, pλ, pρ, pλ2 = pacebig_row_vg(g.y[i], 0.0, 0.0, false, st.μt[i], σ,
+                                                    row_π(πr, r, πd, g.t_comp[i]), λr[r], ρ, λ2)
+        val += v; dμt[i] = pμ; dσ += pσ; dλ[r] += pλ; dρ += pρ; dλ2 += pλ2
+        scatter_π!(dπ, dπd, pπ, πr, r, πd, g.t_comp[i])
     end
     for i in eachindex(st.μc)
-        r, lo, hi = g.c_race[i], g.lo[i], g.hi[i]
-        v, p = value_gradN((μ, s, q, l, h, l2) -> pacebig_loginterval(lo - μ, hi - μ, s, q, l, h, l2),
-                           st.μc[i], σ, row_π(πr, r, πd, g.c_comp[i]), λr[r], ρ, λ2)
-        val += v; dμc[i] = p[1]; dσ += p[2]; dλ[r] += p[4]; dρ += p[5]; dλ2 += p[6]
-        scatter_π!(dπ, dπd, p[3], πr, r, πd, g.c_comp[i])
+        r = g.c_race[i]
+        v, pμ, pσ, pπ, pλ, pρ, pλ2 = pacebig_row_vg(0.0, g.lo[i], g.hi[i], true, st.μc[i], σ,
+                                                    row_π(πr, r, πd, g.c_comp[i]), λr[r], ρ, λ2)
+        val += v; dμc[i] = pμ; dσ += pσ; dλ[r] += pλ; dρ += pρ; dλ2 += pλ2
+        scatter_π!(dπ, dπd, pπ, πr, r, πd, g.c_comp[i])
     end
     return val, dμt, dμc, dσ, dπ, dλ, dρ, dλ2, dπd
 end
@@ -470,11 +507,54 @@ struct IndepNormal{T<:AbstractVector{<:Real}} <: Turing.Distributions.AbstractMv
 end
 Base.length(d::IndepNormal) = length(d.s)
 Turing.Distributions._logpdf(d::IndepNormal, x::AbstractVector{<:Real}) =
-    -sum(log, d.s) - sum(abs2, x ./ d.s) / 2 - length(x) * log(2π) / 2
+    -sum(log, d.s) - sum(abs2.(x ./ d.s)) / 2 - length(x) * log(2π) / 2
 Turing.Distributions._rand!(rng::AbstractRNG, d::IndepNormal, x::AbstractVector{<:Real}) =
     (x .= randn(rng, length(x)) .* d.s; x)
 Turing.Distributions.mean(d::IndepNormal) = zeros(eltype(d.s), length(d.s))
 Turing.Distributions.var(d::IndepNormal) = abs2.(d.s)
+
+# Independent standard normals on R^n (#102), the same density as
+# `filldist(Normal(), n)`. That one sums its elements' log densities one by one
+# (`sum(abs2, x)`), so ReverseDiff records a scalar instruction per element
+# (~4.7 ms per gradient for the 2,727 circuit slopes); `sum(abs2.(x))` is two
+# array instructions. An AbstractMvNormal subtype: an identity transform.
+struct StdNormalVec <: Turing.Distributions.AbstractMvNormal
+    n::Int
+end
+Base.length(d::StdNormalVec) = d.n
+Turing.Distributions._logpdf(d::StdNormalVec, x::AbstractVector{<:Real}) = -sum(abs2.(x)) / 2 - d.n * log(2π) / 2
+Turing.Distributions._rand!(rng::AbstractRNG, d::StdNormalVec, x::AbstractVector{<:Real}) = (x .= randn(rng, length(x)); x)
+Turing.Distributions.mean(d::StdNormalVec) = zeros(d.n)
+Turing.Distributions.var(d::StdNormalVec) = ones(d.n)
+
+# Independent N(μ, s) with scalar μ and s (#102), as `filldist(Normal(μ, s), n)`
+# (the race intercepts), vectorised for the same reason.
+struct IsoNormalVec{T<:Real,S<:Real} <: Turing.Distributions.AbstractMvNormal
+    μ::T
+    s::S
+    n::Int
+end
+Base.length(d::IsoNormalVec) = d.n
+Turing.Distributions._logpdf(d::IsoNormalVec, x::AbstractVector{<:Real}) =
+    -sum(abs2.(x .- d.μ)) / (2 * d.s^2) - d.n * (log(d.s) + log(2π) / 2)
+Turing.Distributions._rand!(rng::AbstractRNG, d::IsoNormalVec, x::AbstractVector{<:Real}) =
+    (x .= d.μ .+ d.s .* randn(rng, length(x)); x)
+Turing.Distributions.mean(d::IsoNormalVec) = fill(d.μ, d.n)
+Turing.Distributions.var(d::IsoNormalVec) = fill(d.s^2, d.n)
+
+# Independent Student-t(ν) on R^n (#102), as `filldist(TDist(ν), n)` (random-walk
+# steps), vectorised for the same reason. Unconstrained, like the normals above.
+struct StdTVec <: Turing.Distributions.AbstractMvNormal
+    ν::Float64
+    n::Int
+end
+Base.length(d::StdTVec) = d.n
+Turing.Distributions._logpdf(d::StdTVec, x::AbstractVector{<:Real}) =
+    d.n * (loggamma((d.ν + 1) / 2) - loggamma(d.ν / 2) - log(d.ν * π) / 2) - (d.ν + 1) / 2 * sum(log1p.(abs2.(x) ./ d.ν))
+Turing.Distributions._rand!(rng::AbstractRNG, d::StdTVec, x::AbstractVector{<:Real}) =
+    (x .= rand(rng, TDist(d.ν), length(x)); x)
+Turing.Distributions.mean(d::StdTVec) = zeros(d.n)
+Turing.Distributions.var(d::StdTVec) = fill(d.ν > 2 ? d.ν / (d.ν - 2) : Inf, d.n)
 
 # An improper flat density on R^n (#102), for parameters whose prior is added with
 # @addlogprob! (walk states and the κ path sampled directly). `filldist(Flat(), n)`
@@ -630,6 +710,26 @@ function driver_offsets(cr::CareerRows, fage, slope)
     hs = slope[cr.comp] .* cr.agec
     return h === nothing ? hs : h .+ hs
 end
+# Both terms: one pass with a hand-written rule (#102). Through ReverseDiff the
+# indexing copied the per-row index vectors and allocated a tracked vector per
+# operation on every gradient call.
+function driver_offsets(cr::CareerRows, fage::AbstractVector, slope::AbstractVector)
+    out = zeros(promote_type(eltype(fage), eltype(slope)), length(cr.bin))
+    for i in eachindex(out); out[i] = fage[cr.bin[i]] * cr.known[i] + slope[cr.comp[i]] * cr.agec[i]; end
+    return out
+end
+function ChainRulesCore.rrule(::typeof(driver_offsets), cr::CareerRows, fage::AbstractVector, slope::AbstractVector)
+    function pullback(ȳ)
+        ȳ = ChainRulesCore.unthunk(ȳ)
+        ∂f, ∂s = zeros(length(fage)), zeros(length(slope))
+        for i in eachindex(cr.bin)
+            ∂f[cr.bin[i]] += ȳ[i] * cr.known[i]; ∂s[cr.comp[i]] += ȳ[i] * cr.agec[i]
+        end
+        return NoTangent(), NoTangent(), ∂f, ∂s
+    end
+    return driver_offsets(cr, fage, slope), pullback
+end
+ReverseDiff.@grad_from_chainrules driver_offsets(cr::CareerRows, fage::ReverseDiff.TrackedArray, slope::ReverseDiff.TrackedArray)
 
 "Centred per-driver career slopes (% per decade) from scale `τ_slope` and standardised `u_slope`."
 career_slopes(τ_slope, u_slope) = τ_slope .* (u_slope .- mean(u_slope))
@@ -702,7 +802,13 @@ slopes with `x = xc`). One pass with a hand-written rule: through ReverseDiff
 the indexing, products and division allocated a tracked vector per step, and the
 garbage collection that followed doubled the sampler's cost per step (#92).
 """
-function car_row_offsets(cx, mach::Vector{Int}, x::AbstractMatrix, κs, season::Vector{Int})
+car_row_offsets(cx, mach::Vector{Int}, x::AbstractMatrix, κs, season::Vector{Int}) =
+    _car_row_offsets(cx, (; mach, x, season), κs)
+# The constant row data travel in a NamedTuple: ReverseDiff copies every plain
+# array argument of a recorded instruction on each gradient call, ~9% of a
+# gradient for the circuit-slope rows (#102).
+function _car_row_offsets(cx, rows::NamedTuple, κs)
+    (; mach, x, season) = rows
     nm = length(cx) ÷ size(x, 2)
     T = promote_type(eltype(cx), eltype(κs), eltype(x))
     out = zeros(T, length(mach))
@@ -712,9 +818,9 @@ function car_row_offsets(cx, mach::Vector{Int}, x::AbstractMatrix, κs, season::
     for i in eachindex(out); out[i] /= κs[season[i]]; end
     return out
 end
-function ChainRulesCore.rrule(::typeof(car_row_offsets), cx, mach::Vector{Int}, x::AbstractMatrix, κs,
-                              season::Vector{Int})
-    out = car_row_offsets(cx, mach, x, κs, season)
+function ChainRulesCore.rrule(::typeof(_car_row_offsets), cx, rows::NamedTuple, κs)
+    (; mach, x, season) = rows
+    out = _car_row_offsets(cx, rows, κs)
     function pullback(ȳ)
         ȳ = ChainRulesCore.unthunk(ȳ)
         nm = length(cx) ÷ size(x, 2)
@@ -724,12 +830,11 @@ function ChainRulesCore.rrule(::typeof(car_row_offsets), cx, mach::Vector{Int}, 
             for k in axes(x, 2); ∂cx[(k - 1) * nm + mach[i]] += w * x[i, k]; end
             ∂κ[season[i]] -= w * out[i]
         end
-        return NoTangent(), ∂cx, NoTangent(), NoTangent(), ∂κ, NoTangent()
+        return NoTangent(), ∂cx, NoTangent(), ∂κ
     end
     return out, pullback
 end
-ReverseDiff.@grad_from_chainrules car_row_offsets(cx::ReverseDiff.TrackedArray, mach::Vector{Int}, x::AbstractMatrix,
-                                                  κs::ReverseDiff.TrackedArray, season::Vector{Int})
+ReverseDiff.@grad_from_chainrules _car_row_offsets(cx::ReverseDiff.TrackedArray, rows::NamedTuple, κs::ReverseDiff.TrackedArray)
 
 "Names of the pace-scale parameters (#15), in sampling order (after the loss parameters)."
 pace_param_names(pace_scale::Bool, ncres::Bool = false, kc::Bool = false, kst::Bool = false) =
@@ -868,20 +973,20 @@ effects are then comparable across eras.
         end
         z_comp = a_comp ./ σ_comp       # the fused rules form σ_comp·(z - z̄) = a - ā
     else
-        z_comp ~ filldist(driver_ν === nothing ? Normal() : TDist(driver_ν), length(g.competitors))
+        z_comp ~ driver_ν === nothing ? StdNormalVec(length(g.competitors)) : StdTVec(driver_ν, length(g.competitors))
     end
     if !pace_scale
-        z_mach ~ filldist(Normal(), length(g.machines))
+        z_mach ~ StdNormalVec(length(g.machines))
     end
     if race_hier            # (#32) hierarchical race intercepts: the common level is learned
         μ_γ ~ Normal(ps.m, 4ps.s)
         τ_γ ~ truncated(Normal(0, 4ps.s); lower = 0)
-        γ ~ filldist(Normal(μ_γ, τ_γ), length(g.races))
+        γ ~ IsoNormalVec(μ_γ, τ_γ, length(g.races))
     elseif race_mean        # (#32) learned common level only, spread fixed as in the default prior
         μ_γ ~ Normal(ps.m, 4ps.s)
-        γ ~ filldist(Normal(μ_γ, 4ps.s), length(g.races))
+        γ ~ IsoNormalVec(μ_γ, 4ps.s, length(g.races))
     else
-        γ ~ filldist(Normal(ps.m, 4ps.s), length(g.races))
+        γ ~ IsoNormalVec(ps.m, 4ps.s, length(g.races))
     end
     a_π ~ Normal(-1.5, 1)
     a_λ ~ Normal(log(2ps.s), 1)
@@ -895,20 +1000,20 @@ effects are then comparable across eras.
         k = era === :decade ? cov.n_decades : cov.n_regimes
         τ_π_era ~ truncated(Normal(0, 0.5); lower = 0)
         τ_λ_era ~ truncated(Normal(0, 0.5); lower = 0)
-        z_π_era ~ filldist(Normal(), k)
-        z_λ_era ~ filldist(Normal(), k)
+        z_π_era ~ StdNormalVec(k)
+        z_λ_era ~ StdNormalVec(k)
         θ = (; θ..., τ_π_era, τ_λ_era, z_π_era, z_λ_era)
     elseif era === :rw
         τ_π_rw ~ truncated(Normal(0, 0.25); lower = 0)
         τ_λ_rw ~ truncated(Normal(0, 0.25); lower = 0)
-        e_π_rw ~ filldist(TDist(3), cov.n_seasons - 1)
-        e_λ_rw ~ filldist(TDist(3), cov.n_seasons - 1)
+        e_π_rw ~ StdTVec(3, cov.n_seasons - 1)
+        e_λ_rw ~ StdTVec(3, cov.n_seasons - 1)
         θ = (; θ..., τ_π_rw, τ_λ_rw, e_π_rw, e_λ_rw)
     end
     if track                # tight, mixed and wet on incidents (#81)
         nx = size(cov.circuits.track, 2)
-        β_track_π ~ filldist(Normal(), nx)
-        β_track_λ ~ filldist(Normal(), nx)
+        β_track_π ~ StdNormalVec(nx)
+        β_track_λ ~ StdNormalVec(nx)
         θ = (; θ..., β_track_π, β_track_λ)
     end
     πr, λr = race_loss(θ, cov, loss_duration, era)
@@ -926,11 +1031,11 @@ effects are then comparable across eras.
             s_κ ~ filldist(LocationScale(0.0, τ_κ, TDist(3)), cov.n_seasons - 1)
             κs = season_pace_scale((; τ_κ, s_κ))
         else
-            e_κ ~ filldist(TDist(3), cov.n_seasons - 1)
+            e_κ ~ StdTVec(3, cov.n_seasons - 1)
             κs = season_pace_scale((; τ_κ, e_κ))
         end
         if ext.ncres            # non-centred: small, weakly identified residuals funnel with σ_mach (#102)
-            z_res ~ filldist(Normal(), length(g.machines))
+            z_res ~ StdNormalVec(length(g.machines))
             b_mach = σ_mach .* κs[cov.mach_season] .* z_res
         else
             b_mach ~ IndepNormal(σ_mach .* κs[cov.mach_season])   # centred car effects (vectorised, #102)
@@ -938,7 +1043,7 @@ effects are then comparable across eras.
         fage = nothing
         if age_basis !== nothing
             τ_age ~ truncated(Normal(0, 0.2ps.s); lower = 0)
-            e_age ~ filldist(Normal(), length(g.age_years) - 1)
+            e_age ~ StdNormalVec(length(g.age_years) - 1)
             fage = age_curve(τ_age, e_age, age_basis)
         end
         if big_loss       # two-component incident loss (#16)
@@ -948,14 +1053,14 @@ effects are then comparable across eras.
         slope = nothing
         if career_rows !== nothing && career_rows.slopes     # per-driver career slopes (#15 stage 2b)
             τ_slope ~ truncated(Normal(0, 0.5ps.s); lower = 0)
-            u_slope ~ filldist(Normal(), length(g.competitors))
+            u_slope ~ StdNormalVec(length(g.competitors))
             slope = career_slopes(τ_slope, u_slope)
         end
         hdrv = career_rows === nothing ? nothing : driver_offsets(career_rows.rows, fage, slope)
         row_season = cov.season[vcat(g.t_race, g.c_race)]
         if dev_rows !== nothing     # in-season car development (#14)
             τ_dev ~ truncated(Normal(0, ps.s); lower = 0)
-            u_dev ~ filldist(Normal(), length(g.machines))
+            u_dev ~ StdNormalVec(length(g.machines))
             # the car part is not scaled by κ, but hdrv is: pass the car offset as offset/κ
             hcar = car_row_offsets(dev_trends(τ_dev, u_dev, g, season_counts), dev_rows.mach,
                                    reshape(dev_rows.posc, :, 1), κs, row_season)
@@ -964,7 +1069,7 @@ effects are then comparable across eras.
         if circ_rows !== nothing    # car-season circuit slopes (#81), a car part like dev: offset/κ
             nk = size(circ_rows.xc, 2)
             τ_cx ~ filldist(truncated(Normal(0, 0.5ps.s); lower = 0), nk)
-            u_cx ~ filldist(Normal(), length(g.machines) * nk)
+            u_cx ~ StdNormalVec(length(g.machines) * nk)
             hcx = car_row_offsets(circuit_slopes(τ_cx, u_cx, g, season_counts), circ_rows.mach, circ_rows.xc, κs,
                                   row_season)
             hdrv = hdrv === nothing ? hcx : hdrv .+ hcx
@@ -976,20 +1081,20 @@ effects are then comparable across eras.
             if ext.wst || ext.wstc || ext.wstl  # states sampled directly (#102); prior below
                 xs_ch ~ FlatVec(length(cw.chassis.prev))
             elseif ext.wlev || ext.wlevn    # level parametrisation (#102): see walk_level_path
-                zl_ch ~ filldist(Normal(), length(cw.chassis.prev))
+                zl_ch ~ StdNormalVec(length(cw.chassis.prev))
             else
-                z_ch ~ filldist(Normal(), length(cw.chassis.prev))
+                z_ch ~ StdNormalVec(length(cw.chassis.prev))
             end
             τ_en ~ truncated(Normal(0, ps.s); lower = 0)
             σ0_en ~ truncated(Normal(0, 2ps.s); lower = 0)
             if ext.wst
                 xs_en ~ FlatVec(length(cw.engine.prev))
             elseif ext.wlev || ext.wstl
-                zl_en ~ filldist(Normal(), length(cw.engine.prev))
+                zl_en ~ StdNormalVec(length(cw.engine.prev))
             elseif ext.wlevn        # engine levels non-centred: σ0_en·z
-                zn_en ~ filldist(Normal(), length(cw.engine.prev))
+                zn_en ~ StdNormalVec(length(cw.engine.prev))
             else
-                z_en ~ filldist(Normal(), length(cw.engine.prev))
+                z_en ~ StdNormalVec(length(cw.engine.prev))
             end
             δ_own ~ truncated(Normal(0, 1); lower = 0)            # larger steps: ownership, regulations
             θw = ext.wst ? (; τ_ch, σ0_ch, xs_ch, τ_en, σ0_en, xs_en, δ_own) :
@@ -1024,7 +1129,7 @@ effects are then comparable across eras.
         πd = nothing
         if ext.dinc                 # per-driver incident proneness on logit π (#101), centred across drivers
             τ_dinc ~ truncated(Normal(0, 0.5); lower = 0)
-            u_dinc ~ filldist(Normal(), length(g.competitors))
+            u_dinc ~ StdNormalVec(length(g.competitors))
             πd = τ_dinc .* (u_dinc .- mean(u_dinc))
         end
         # each call matches a ReverseDiff binding of the fused rule (see paceloss_loglik_cc)
