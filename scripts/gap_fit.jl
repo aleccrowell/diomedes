@@ -42,7 +42,7 @@ fit(; kw...) = spec.family === :t4 ? fit_gaps(g; sampler, kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                  centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
-                 race_hier = spec.race_hier, race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl, sampler, kw...)
+                 race_hier = spec.race_hier, race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl, wlevn = spec.wlevn, sampler, kw...)
 
 include("gap_data.jl")
 res, g = gap_data(mode)
