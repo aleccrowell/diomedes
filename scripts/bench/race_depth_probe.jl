@@ -23,7 +23,7 @@ t = @elapsed chain = fit_paceloss(g; loss_duration = spec.loss_duration, era = s
                                   centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
                                   race_hier = spec.race_hier, race_mean = spec.race_mean, circ = spec.circ,
                                   track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works,
-                                  dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, sampler, n_samples = nd, rng = Xoshiro(k),
+                                  dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl, sampler, n_samples = nd, rng = Xoshiro(k),
                                   progress = false, progress_log = stdout, log_every = 25)
 serialize("output/probe_$(mode)_$(model_name)_chain$(k).jls", chain)
 td, ns, ss = vec(chain[:tree_depth]), vec(chain[:n_steps]), vec(chain[:step_size])

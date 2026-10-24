@@ -256,7 +256,13 @@ end
 function car_walk_raw(θ, cw::CarWalks)
     # one regulation multiplier (`_walk1`, #97) or one per family (`_walk`, the #95 fit)
     δc, δe = haskey(θ, :δ_reg) ? (θ.δ_reg, θ.δ_reg) : (θ.δ_reg_ch, θ.δ_reg_en)
-    haskey(θ, :xs_ch) && return θ.xs_ch, θ.xs_en               # states sampled directly (`_wst`)
+    haskey(θ, :xs_en) && return θ.xs_ch, θ.xs_en               # states sampled directly (`_wst`)
+    if haskey(θ, :xs_ch) && haskey(θ, :zl_en)   # chassis states directly, engine levels (`_wstl`)
+        return θ.xs_ch, walk_level_path(walk_level_inputs(θ.τ_en, zero(θ.δ_own), δe, θ.zl_en, cw.engine), cw.engine.prev)
+    end
+    if haskey(θ, :xs_ch)        # chassis states sampled directly, engine steps (`_wstc`)
+        return θ.xs_ch, walk_path(walk_steps(θ.τ_en, θ.σ0_en, zero(θ.δ_own), δe, θ.z_en, cw.engine), cw.engine.prev)
+    end
     if haskey(θ, :zl_ch)
         return walk_level_path(walk_level_inputs(θ.τ_ch, θ.δ_own, δc, θ.zl_ch, cw.chassis), cw.chassis.prev),
                walk_level_path(walk_level_inputs(θ.τ_en, zero(θ.δ_own), δe, θ.zl_en, cw.engine), cw.engine.prev)
@@ -282,7 +288,9 @@ variables is linear with unit Jacobian).
 """
 function walk_level_prior(θ, xc, xe, cw::CarWalks)
     lp = zero(θ.σ0_ch)
-    for (x, z, σ0, ws) in ((xc, θ.zl_ch, θ.σ0_ch, cw.chassis), (xe, θ.zl_en, θ.σ0_en, cw.engine))
+    fams = haskey(θ, :zl_ch) ? ((xc, θ.zl_ch, θ.σ0_ch, cw.chassis), (xe, θ.zl_en, θ.σ0_en, cw.engine)) :
+                               ((xe, θ.zl_en, θ.σ0_en, cw.engine),)     # engine levels only (`_wstl`)
+    for (x, z, σ0, ws) in fams
         fi = findall(ws.first)
         lp += sum(normlogpdf.(x[fi] ./ σ0)) - length(fi) * log(σ0) - sum(normlogpdf.(z[fi]))
     end
