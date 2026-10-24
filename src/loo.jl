@@ -132,7 +132,7 @@ function model_spec(name::AbstractString)
                             big_loss = false, slopes = false, dev = false, centred_drivers = false,
                             driver_ν = nothing, race_hier = false, race_mean = false, circ = false, track = false, walk = false,
                             walk1 = false, works = false, dinc = false, ncres = false, wlev = false,
-                            kc = false, kst = false, wst = false, wstc = false, wstl = false)
+                            kc = false, kst = false, wst = false, wstc = false, wstl = false, wlevn = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
     dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
@@ -143,6 +143,7 @@ function model_spec(name::AbstractString)
     works, dinc = "works" in parts, "dinc" in parts     # works term (#100), driver incidents (#101)
     ncres = "ncres" in parts        # non-centred car effects (#102)
     wlev = "wlev" in parts          # walk levels as coordinates (#102)
+    wlevn = "wlevn" in parts        # walk levels, the engine's non-centred (#102)
     kc = "kc" in parts              # centred pace-scale steps (#102)
     kst = "kst" in parts            # pace-scale log path sampled directly (#102)
     wst = "wst" in parts            # walk states sampled directly (#102)
@@ -154,11 +155,11 @@ function model_spec(name::AbstractString)
     fgam = "fgam" in parts          # fixed race-intercept prior; the learned common level is the default (#36)
     count(in(parts), ("hgam", "mgam", "fgam")) <= 1 || throw(ArgumentError("_hgam, _mgam and _fgam are alternatives: $name"))
     eras = [Symbol(p) for p in parts[2:end]
-            if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "circ", "track", "walk", "walk1", "works", "dinc", "ncres", "wlev", "kc", "kst", "wst", "wstc", "wstl", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
+            if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "circ", "track", "walk", "walk1", "works", "dinc", "ncres", "wlev", "wlevn", "kc", "kst", "wst", "wstc", "wstl", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
             pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
-            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl)
+            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn)
 end
 
 """
@@ -191,7 +192,7 @@ function model_param_names(spec)
             pace_param_names(spec.pace_scale, get(spec, :ncres, false), get(spec, :kc, false), get(spec, :kst, false))..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
             slope_param_names(spec.slopes)..., dev_param_names(spec.dev)..., circ_param_names(spec.circ)...,
             walk_param_names(spec.walk, get(spec, :walk1, false), get(spec, :wlev, false), get(spec, :wst, false), get(spec, :wstc, false),
-                             get(spec, :wstl, false))..., works_param_names(get(spec, :works, false))...,
+                             get(spec, :wstl, false), get(spec, :wlevn, false))..., works_param_names(get(spec, :works, false))...,
             dinc_param_names(get(spec, :dinc, false))...)
 end
 

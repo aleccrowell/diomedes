@@ -677,14 +677,18 @@ end
         @test_throws ArgumentError paceloss_effects(g; era = :century)
         @test_throws ArgumentError paceloss_effects(prepare_gaps(res); era = :rw)   # one season
         @test_throws ArgumentError fit_paceloss(g; sampler = Diomedes.default_sampler(), n_samples = 10)
-        @test model_spec("pl_dur_rw") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
+        @test let s = model_spec("pl_dur_rw"), e = (; family = :pl, loss_duration = true, era = :rw, pace_scale = false, age = false,
                                           big_loss = false, slopes = false, dev = false,
                                           centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true,
                                           circ = false, track = false, walk = false, walk1 = false, works = false, dinc = false)
-        @test model_spec("pl_dur_rw_kappa") == (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
+            s[keys(e)] == e && !any(s[k] for k in setdiff(keys(s), keys(e)))
+        end
+        @test let s = model_spec("pl_dur_rw_kappa"), e = (; family = :pl, loss_duration = true, era = :rw, pace_scale = true, age = false,
                                                 big_loss = false, slopes = false, dev = false,
                                           centred_drivers = false, driver_ν = nothing, race_hier = false, race_mean = true,
                                           circ = false, track = false, walk = false, walk1 = false, works = false, dinc = false)
+            s[keys(e)] == e && !any(s[k] for k in setdiff(keys(s), keys(e)))
+        end
         @test model_spec("pl_dur_rw_kappa_age_big_slope").slopes
         @test model_spec("pl_dur_rw_kappa_age_big_slope_dev").dev
         let s = model_spec("pl_dur_rw_kappa_age_big_slope_dev_circ_track")
@@ -945,6 +949,18 @@ end
             @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
             @test length(RD.GradientTape(z -> LDP.logdensity(LDF(ml), z), x).tape) < 1000
         end
+        # non-centred engine levels (#102): z_first → level/σ0_en has unit Jacobian
+        let m3 = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars),
+            mn = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, wlevn = true, cars)
+            θl = Diomedes.walk_to_levels(θ3, cw; nc_en = true)
+            @test logjoint(mn, θl) ≈ logjoint(m3, θ3) - count(cw.chassis.first) * log(θ3.σ0_ch)
+            @test all(car_walk_states(θl, cw) .≈ car_walk_states(θ3, cw))
+            @test haskey(θl, :zl_ch) && haskey(θl, :zn_en) && !haskey(θl, :zl_en)
+            @test model_spec("pl_dur_rw_kappa_walk_wlevn").wlevn && !model_spec("pl_dur_rw_kappa_walk_wlevn").wlev
+            rd = LDF(mn; adtype = Diomedes.gap_sampler().adtype); fd = LDF(mn; adtype = AutoForwardDiff())
+            x = reduce(vcat, [v isa AbstractVector ? v : [v] for v in values(θl)])
+            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+        end
         # centred pace-scale steps (#102): same posterior; Jacobian of e_κ → s_κ = τ_κ·e_κ
         let m3 = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars),
             mk = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, kc = true, cars)
@@ -1033,10 +1049,10 @@ end
         @test all(abs(sum(cx[((k - 1) * nm + 1):(k * nm)][g.mach_season .== s])) < 1e-10 for k in 1:3, s in 1:maximum(g.mach_season))
         @test circuit_offsets(cx, cr) ≈ [sum(cx[(k - 1) * nm + cr.mach[i]] * cr.xc[i, k] for k in 1:3) for i in eachindex(cr.mach)]
         @test_throws ArgumentError RaceCircuits(g, ctab[2:end, :])
-        # the reference tables: one row per race 1950–2025, with walls, surface and conditions
+        # the reference tables: one row per race 1950–2026 (17 of 2026 run), with walls, surface and conditions
         ct = circuit_table()
-        @test nrow(ct) == 1149 && Set(ct.condition) == Set(["dry", "mixed", "wet"])
-        @test count(==("wet"), ct.condition) == 63 && count(==("mixed"), ct.condition) == 105
+        @test nrow(ct) == 1166 && Set(ct.condition) == Set(["dry", "mixed", "wet"])
+        @test count(==("wet"), ct.condition) == 63 && count(==("mixed"), ct.condition) == 107
         @test all(in(0:2), ct.W) && all(in(0:2), ct.S)
     end
 

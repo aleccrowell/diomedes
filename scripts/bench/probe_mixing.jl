@@ -5,7 +5,7 @@
 # Reads output/<prefix>_<data>_<model>_chain<k>.jls (scripts/bench/race_depth_probe.jl)
 # and prints, per chain, tree depth and step size, then per-chain means and ESS and
 # the combined R-hat and ESS of the quantities that mixed worst in the
-# directly-sampled-states fit: σ0_en, τ_en, Ferrari's 1966 engine and 1968 chassis
+# directly-sampled-states fit: σ0_en, τ_en, σ0_ch, τ_ch, Ferrari's 1966 engine and 1968 chassis
 # states, β_works.
 
 using Diomedes, Serialization, Statistics, Printf, MCMCDiagnosticTools
@@ -25,7 +25,7 @@ for (k, c) in enumerate(chs)
             mean(c[:n_steps]), mean(c[:step_size]), count(identity, coalesce.(c[:numerical_error], false)))
 end
 ie = findfirst(==("ferrari 1966"), cw.engine.names); ic = findfirst(==("ferrari 1968"), cw.chassis.names)
-qs = [("σ0_en", θ -> θ.σ0_en), ("τ_en", θ -> θ.τ_en), ("engine ferrari 1966", θ -> car_walk_states(θ, cw)[2][ie]),
+qs = [("σ0_en", θ -> θ.σ0_en), ("τ_en", θ -> θ.τ_en), ("σ0_ch", θ -> θ.σ0_ch), ("τ_ch", θ -> θ.τ_ch), ("engine ferrari 1966", θ -> car_walk_states(θ, cw)[2][ie]),
       ("chassis ferrari 1968", θ -> car_walk_states(θ, cw)[1][ic])]
 haskey(Diomedes.draw(chs[1], names, 1, 1), :β_works) && push!(qs, ("β_works", θ -> θ.β_works))
 ni = size(chs[1][:σ_comp], 1)

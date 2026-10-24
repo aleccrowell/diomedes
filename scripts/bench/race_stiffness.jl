@@ -1,6 +1,6 @@
 # Which posterior direction limits NUTS's step size (#102)?
 #
-#   julia --project scripts/bench/race_stiffness.jl <model> [data=<mode>] [draws=200] [iters=60] [as=wlev|kc|kst|wlev+kst…]
+#   julia --project scripts/bench/race_stiffness.jl <model> [data=<mode>] [draws=200] [iters=60] [as=wlev|wlevn|kc|kst|wlev+kst…]
 #
 # From a model's saved chains (output/gap_<data>_<model>_chain<k>.jls): at the
 # posterior mean, in the sampler's unconstrained coordinates scaled by each
@@ -24,22 +24,22 @@ opt(k, d) = (i = findfirst(a -> startswith(a, "$k="), args); i === nothing ? d :
 model_name = first(filter(a -> !occursin("=", a), args))
 asi = findfirst(a -> startswith(a, "as="), args)
 as = asi === nothing ? String[] : split(split(args[asi], "=")[2], "+")
-aswlev, askc, askst, aswst, aswstc, aswstl = "wlev" in as, "kc" in as, "kst" in as, "wst" in as, "wstc" in as, "wstl" in as
+aswlev, askc, askst, aswst, aswstc, aswstl, aswlevn = "wlev" in as, "kc" in as, "kst" in as, "wst" in as, "wstc" in as, "wstl" in as, "wlevn" in as
 ndraws, iters = opt("draws", 200), opt("iters", 60)
 spec = model_spec(model_name)
 _, g = gap_data(mode; io = devnull)
 chain = gap_chains(mode, model_name)
 names = Diomedes.model_param_names(spec)
-spec = merge(spec, (; wlev = spec.wlev || aswlev, kc = spec.kc || askc, kst = spec.kst || askst, wst = spec.wst || aswst, wstc = spec.wstc || aswstc, wstl = spec.wstl || aswstl))
+spec = merge(spec, (; wlev = spec.wlev || aswlev, kc = spec.kc || askc, kst = spec.kst || askst, wst = spec.wst || aswst, wstc = spec.wstc || aswstc, wstl = spec.wstl || aswstl, wlevn = spec.wlevn || aswlevn))
 m = paceloss_effects(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                      age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                      centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν, race_hier = spec.race_hier,
                      race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk,
-                     walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl)
+                     walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl, wlevn = spec.wlevn)
 
 # unconstrained coordinates of a draw: the model's linked VarInfo
 ni, nc = size(chain[:σ_comp])
-cwm = aswlev || aswst || aswstc || aswstl ? LossCovariates(g, spec).cars : nothing
+cwm = aswlev || aswlevn || aswst || aswstc || aswstl ? LossCovariates(g, spec).cars : nothing
 function towstl(θ)
     xc = Diomedes.car_walk_raw(θ, cwm)[1]
     zl = Diomedes.walk_to_levels(θ, cwm).zl_en
@@ -53,7 +53,7 @@ end
 tokc(θ) = NamedTuple(k === :e_κ ? (:s_κ => θ.τ_κ .* v) : (k => v) for (k, v) in pairs(θ))
 # the log path (mean zero) plus a mean level drawn from its prior N(0, 0.05), the mean's posterior
 tokst(θ) = NamedTuple(k === :e_κ ? (:l_κ => Diomedes.rw_path(θ.τ_κ .* v) .+ 0.05 * randn(rng)) : (k => v) for (k, v) in pairs(θ))
-pt(θ) = (θ = aswstl ? towstl(θ) : aswstc ? towstc(θ) : aswst ? towst(θ) : aswlev ? Diomedes.walk_to_levels(θ, cwm) : θ; askst ? tokst(θ) : askc ? tokc(θ) : θ)   # the draw in the model's coordinates
+pt(θ) = (θ = aswstl ? towstl(θ) : aswstc ? towstc(θ) : aswst ? towst(θ) : aswlev ? Diomedes.walk_to_levels(θ, cwm) : aswlevn ? Diomedes.walk_to_levels(θ, cwm; nc_en = true) : θ; askst ? tokst(θ) : askc ? tokc(θ) : θ)   # the draw in the model's coordinates
 unc(θ) = (vi = DPPL.VarInfo(m, DPPL.InitFromParams(pt(θ)), DPPL.LinkAll()); collect(Float64, vi[:]))
 rng = Xoshiro(1)
 picks = [(rand(rng, 1:ni), rand(rng, 1:nc)) for _ in 1:ndraws]

@@ -263,6 +263,10 @@ function car_walk_raw(θ, cw::CarWalks)
     if haskey(θ, :xs_ch)        # chassis states sampled directly, engine steps (`_wstc`)
         return θ.xs_ch, walk_path(walk_steps(θ.τ_en, θ.σ0_en, zero(θ.δ_own), δe, θ.z_en, cw.engine), cw.engine.prev)
     end
+    if haskey(θ, :zn_en)        # levels, the engine's non-centred (`_wlevn`)
+        return walk_level_path(walk_level_inputs(θ.τ_ch, θ.δ_own, δc, θ.zl_ch, cw.chassis), cw.chassis.prev),
+               walk_level_path(walk_level_inputs(θ.τ_en, zero(θ.δ_own), δe, θ.zn_en, cw.engine, θ.σ0_en), cw.engine.prev)
+    end
     if haskey(θ, :zl_ch)
         return walk_level_path(walk_level_inputs(θ.τ_ch, θ.δ_own, δc, θ.zl_ch, cw.chassis), cw.chassis.prev),
                walk_level_path(walk_level_inputs(θ.τ_en, zero(θ.δ_own), δe, θ.zl_en, cw.engine), cw.engine.prev)
@@ -272,10 +276,11 @@ function car_walk_raw(θ, cw::CarWalks)
 end
 
 # Inputs of `walk_level_path` from standardised coordinates: a first slot is the
-# level as sampled; a step is τ·√gap·exp(δ_own·own + δ_reg·reg)·z.
-function walk_level_inputs(τ, δ_own, δ_reg, z, ws::WalkStates)
+# level as sampled, times s0 (σ0 for non-centred levels, `_wlevn`); a step is
+# τ·√gap·exp(δ_own·own + δ_reg·reg)·z.
+function walk_level_inputs(τ, δ_own, δ_reg, z, ws::WalkStates, s0 = 1)
     f = Float64.(ws.first)
-    return z .* (f .+ (1 .- f) .* τ .* ws.rootgap .* exp.(δ_own .* ws.own .+ δ_reg .* ws.reg))
+    return z .* (f .* s0 .+ (1 .- f) .* τ .* ws.rootgap .* exp.(δ_own .* ws.own .+ δ_reg .* ws.reg))
 end
 
 """
@@ -284,15 +289,17 @@ end
 Prior correction of the level parametrisation (#102): the model gives every slot
 of zl_ch, zl_en a N(0, 1) prior; the first state of each walk should instead be
 N(0, σ0). Adding this keeps the prior of the step form exactly (the change of
-variables is linear with unit Jacobian).
+variables is linear with unit Jacobian). Non-centred engine levels (zn_en,
+`_wlevn`) are σ0_en·z, whose Jacobian cancels the 1/σ0 of the N(0, σ0) density.
 """
 function walk_level_prior(θ, xc, xe, cw::CarWalks)
     lp = zero(θ.σ0_ch)
-    fams = haskey(θ, :zl_ch) ? ((xc, θ.zl_ch, θ.σ0_ch, cw.chassis), (xe, θ.zl_en, θ.σ0_en, cw.engine)) :
-                               ((xe, θ.zl_en, θ.σ0_en, cw.engine),)     # engine levels only (`_wstl`)
-    for (x, z, σ0, ws) in fams
+    fams = haskey(θ, :zn_en) ? ((xc, θ.zl_ch, θ.σ0_ch, cw.chassis, true), (xe, θ.zn_en, θ.σ0_en, cw.engine, false)) :
+           haskey(θ, :zl_ch) ? ((xc, θ.zl_ch, θ.σ0_ch, cw.chassis, true), (xe, θ.zl_en, θ.σ0_en, cw.engine, true)) :
+                               ((xe, θ.zl_en, θ.σ0_en, cw.engine, true),)     # engine levels only (`_wstl`)
+    for (x, z, σ0, ws, centred) in fams
         fi = findall(ws.first)
-        lp += sum(normlogpdf.(x[fi] ./ σ0)) - length(fi) * log(σ0) - sum(normlogpdf.(z[fi]))
+        lp += sum(normlogpdf.(x[fi] ./ σ0)) - centred * length(fi) * log(σ0) - sum(normlogpdf.(z[fi]))
     end
     return lp
 end
@@ -302,9 +309,10 @@ end
 
 The same draw in the level parametrisation (`_wlev`): z_ch and z_en become zl_ch
 and zl_en, whose first slots hold each walk's level (the mean of its states
-before centring within season); the steps are unchanged.
+before centring within season); the steps are unchanged. With `nc_en`, the
+engine's become zn_en, its levels divided by σ0_en (`_wlevn`).
 """
-function walk_to_levels(θ, cw::CarWalks)
+function walk_to_levels(θ, cw::CarWalks; nc_en::Bool = false)
     xc, xe = car_walk_raw(θ, cw)
     function lev(z, x, ws)
         zl = collect(float.(z))
@@ -317,7 +325,13 @@ function walk_to_levels(θ, cw::CarWalks)
         end
         return zl
     end
-    return NamedTuple(k === :z_ch ? (:zl_ch => lev(v, xc, cw.chassis)) : k === :z_en ? (:zl_en => lev(v, xe, cw.engine)) :
+    function levn(z, x, ws)
+        zl = lev(z, x, ws)
+        zl[ws.first] ./= θ.σ0_en
+        return zl
+    end
+    return NamedTuple(k === :z_ch ? (:zl_ch => lev(v, xc, cw.chassis)) :
+                      k === :z_en ? (nc_en ? (:zn_en => levn(v, xe, cw.engine)) : (:zl_en => lev(v, xe, cw.engine))) :
                       (k => v) for (k, v) in pairs(θ))
 end
 
