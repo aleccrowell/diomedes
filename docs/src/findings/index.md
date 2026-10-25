@@ -55,6 +55,8 @@ prior (`_fgam`), which gave the same out-of-sample fit.
   in the data over a race distance, all else equal.
 - **Drivers** are in average-season units: the pace scale κ stretches or
   shrinks every gap in a season, and driver effects are expressed at κ = 1.
+  Rankings use **race pace**: open-track pace (the driver effect) plus the time
+  a driver's incident proneness adds or saves in a reference race.
 - **Car-season effects** are relative to the other cars in the same season
   only. Comparing cars across seasons needs the drivers that link them, and
   isn't what these numbers measure.
