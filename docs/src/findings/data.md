@@ -25,9 +25,9 @@ differ between modes.
 <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: driver effect, % of race time in average-season units (κ = 1), relative to the average driver;
 <code>slope_mean</code>, <code>slope_sd</code>: career slope, % per decade of age, relative to the average driver's trajectory;
 <code>incident_mean</code>, <code>incident_q05</code>, <code>incident_q95</code>: incident proneness, offset on the log-odds of an incident, relative to the average driver;
-<code>pace_part_mean</code>: κ × driver effect, averaged over the driver's races; <code>incident_part_mean</code>, <code>incident_part_q05</code>, <code>incident_part_q95</code>:
-race time the driver's incident proneness adds (negative = saves), averaged over their races; <code>overall_mean</code>, <code>overall_q05</code>, <code>overall_q95</code>:
-the two together; all three % of race time (see <a href="../drivers/#Speed-and-incident-proneness">Speed and incident proneness</a>)</td></tr>
+<code>pace_part_mean</code>: the driver effect; <code>incident_part_mean</code>, <code>incident_part_q05</code>, <code>incident_part_q95</code>:
+race time the driver's incident proneness adds (negative = saves) in a reference race with the average incident rate and loss size; <code>overall_mean</code>, <code>overall_q05</code>, <code>overall_q95</code>:
+the two together; all three % of race time in average-season units (see <a href="../drivers/#Speed-and-incident-proneness">Speed and incident proneness</a>)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/cars.csv">cars.csv</a></td><td>car-season</td>
 <td><code>id</code> (constructor_season), <code>constructor</code>, <code>season</code>, <code>rows</code>;
 <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: car effect, % of race time relative to the other cars in the same season;

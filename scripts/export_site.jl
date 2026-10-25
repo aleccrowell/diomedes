@@ -20,9 +20,9 @@
 #   drivers.csv   driver effects (% of race time, average-season units; negative =
 #                 faster), with career slopes and incident proneness (#101, logit
 #                 offsets on the incident probability) if the model has them; with
-#                 the latter also each driver's pace part (κ × effect), incident part
-#                 (expected time their proneness adds) and overall, % of race time
-#                 averaged over the races they drove
+#                 the latter also each driver's pace part (the effect), incident part
+#                 (the time their proneness adds in a reference race of average
+#                 incident rate and loss size) and overall, average-season units
 #   cars.csv      car-season effects (% of race time within season), with in-season
 #                 development trends and circuit slopes (speed, rough, temp; #81) if the
 #                 model has them. With chassis and engine walks (#95) the effect is the
@@ -59,7 +59,7 @@
 using Diomedes, CSV, DataFrames, Dates, JSON3, Serialization, Statistics, Turing
 using Diomedes: draw, model_param_names, rw_path, season_counts, sum_to_zero, sum_to_zero_by, CareerRows, driver_offsets,
                  walk_offsets
-using LogExpFunctions: logistic
+using LogExpFunctions: logistic, logit
 
 
 const OUT = joinpath(@__DIR__, "..", "docs", "src", "assets", "data")
@@ -234,14 +234,15 @@ function export_race(model, source)
     WK = works ? zeros(ndraw, nm) : nothing
     dinc = get(spec, :dinc, false)                   # per-driver incident proneness (#101), logit offsets
     DI = dinc ? zeros(ndraw, length(g.competitors)) : nothing
-    # speed against incident proneness (#101): per driver, over the races they drove, the
-    # driver part κ·a and the expected time their proneness adds, (π_row - π_race) times the
-    # expected loss of an incident, (1 - ρ)·λ_race + ρ·λ2 (% of race time)
+    # speed against incident proneness (#101), both in average-season units so they compare
+    # with the driver effects and ranks: the driver effect a, and the time the driver's
+    # proneness adds in the same reference race, a race with the average log-odds of an
+    # incident and average log loss size over all races: (π_d - π̄)·((1 - ρ)·λ̄ + ρ·λ2).
+    # (Averaged over each driver's own races instead, both would mostly measure how
+    # spread out and how incident-prone their era was: κ and λ differ several-fold.)
     nd = length(g.competitors)
     PP = dinc ? zeros(ndraw, nd) : nothing
     IP = dinc ? zeros(ndraw, nd) : nothing
-    rowcomp = vcat(g.t_comp, g.c_comp)
-    nrows_d = [count(==(d), rowcomp) for d in 1:nd]
     function carpart(x, rowstate, κr)
         v = zeros(nm)
         for (r, m) in enumerate(machs); v[m] += κr[rowrace[r]] * x[rowstate[r]]; end
@@ -272,14 +273,9 @@ function export_race(model, source)
                 DI[k, :] = o
                 πr, λr = Diomedes.race_loss(θ, cov, spec.loss_duration, spec.era)
                 ρ, λ2 = logistic(θ.a_ρ), exp(θ.a_λ + θ.δ_λ2)
-                κr = race_pace_scale(θ, cov)
-                a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
-                for (r, d) in enumerate(rowcomp)
-                    rr = rowrace[r]
-                    PP[k, d] += κr[rr] * a[d]
-                    IP[k, d] += (Diomedes.row_π(πr, rr, o, d) - πr[rr]) * ((1 - ρ) * λr[rr] + ρ * λ2)
-                end
-                PP[k, :] ./= nrows_d; IP[k, :] ./= nrows_d
+                Lbar, λbar = mean(logit.(πr)), exp(mean(log.(λr)))
+                PP[k, :] = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
+                IP[k, :] = (logistic.(Lbar .+ o) .- logistic(Lbar)) .* ((1 - ρ) * λbar + ρ * λ2)
             end
         end
     end
