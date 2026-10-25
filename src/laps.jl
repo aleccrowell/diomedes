@@ -408,6 +408,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     nm = length(d.machines)
     gσ, gρ, gλ2, val = 0.0, 0.0, 0.0, 0.0
     big = !iszero(ρ)
+    lρ = big ? (log1p(-ρ), log(ρ)) : (0.0, 0.0)
     gπr, gλr, gπd = zeros(length(πr)), zeros(length(λr)), zeros(length(πd))
     # per race: logit π and the log mixture weights, so a lap without a driver offset
     # costs no extra exp or log
@@ -428,7 +429,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
             rc_last = (r, c)
         end
         if big
-            v, pμ, pσ, pπ, pλ, pρ, pλ2 = pacebig_row_vg(y, 0.0, 0.0, false, μ, σ, q, λr[r], ρ, λ2)
+            v, pμ, pσ, pπ, pλ, pρ, pλ2 = pacebig_row_vg(y, 0.0, 0.0, false, μ, σ, q, λr[r], ρ, λ2, lq, lρ)
             gρ += pρ; gλ2 += pλ2
         else
             v, pμ, pσ, pπ, pλ = paceloss_row_vg(y, μ, σ, q, λr[r], lq)

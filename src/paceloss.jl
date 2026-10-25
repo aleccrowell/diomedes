@@ -227,7 +227,16 @@ end
 # for a lapped one (#102). Only the three components (pace noise, the two EMGs)
 # carry duals, over (μ, σ, loss mean); the mixture over π and ρ is differentiated
 # in closed form. With all six arguments as duals this was ~2/3 of a gradient.
-@inline function pacebig_row_vg(y, lo, hi, interval::Bool, μ, σ, π, λ, ρ, λ2)
+# log(e^l1 + e^l2) and the two terms' weights, with one exp and one log1p (#108)
+@inline function mix2(l1, l2)
+    l1 == -Inf && l2 == -Inf && return -Inf, NaN, NaN
+    t = exp(-abs(l1 - l2))
+    w = t / (1 + t)                              # the smaller term's weight, kept exact (not 1 - w)
+    return max(l1, l2) + log1p(t), (l1 >= l2 ? (1 - w, w) : (w, 1 - w))...
+end
+
+@inline function pacebig_row_vg(y, lo, hi, interval::Bool, μ, σ, π, λ, ρ, λ2,
+                                lq = (log1p(-π), log(π)), lρ = (log1p(-ρ), log(ρ)))
     if interval
         D = FD.Dual{Nothing}
         μd, σd, λd, λ2d = D(μ, 1.0, 0.0, 0.0), D(σ, 0.0, 1.0, 0.0), D(λ, 0.0, 0.0, 1.0), D(λ2, 0.0, 0.0, 1.0)
@@ -245,21 +254,20 @@ end
         e1, p1 = K1 - log(λ), (-K1x, K1σ, K1λ - 1 / λ)
         e2, p2 = K2 - log(λ2), (-K2x, K2σ, K2λ - 1 / λ2)
     end
-    # loss part B = log((1-ρ)·e^E1 + ρ·e^E2), weights w1 + w2 = 1
-    B = logaddexp(log1p(-ρ) + e1, log(ρ) + e2)
-    w1, w2 = exp(log1p(-ρ) + e1 - B), exp(log(ρ) + e2 - B)
+    # loss part B = log((1-ρ)·e^E1 + ρ·e^E2), weights w1 + w2 = 1; lρ = (log(1-ρ), log ρ)
+    B, w1, w2 = mix2(lρ[1] + e1, lρ[2] + e2)
     wp(w, q) = w == 0 ? 0.0 : w * q          # a zero-weight component's partials may be non-finite
     finite_B = B > -Inf
     dBμ = finite_B ? wp(w1, p1[1]) + wp(w2, p2[1]) : 0.0
     dBσ = finite_B ? wp(w1, p1[2]) + wp(w2, p2[2]) : 0.0
     dBλ, dBλ2 = finite_B ? (wp(w1, p1[3]), wp(w2, p2[3])) : (0.0, 0.0)
-    dBρ = finite_B ? exp(e2 - B) - exp(e1 - B) : 0.0
-    # row: ℓ = log((1-π)·e^A + π·e^B)
-    ℓ = logaddexp(log1p(-π) + a, log(π) + B)
-    u1, u2 = exp(log1p(-π) + a - ℓ), exp(log(π) + B - ℓ)
+    dBρ = finite_B ? w2 / ρ - w1 / (1 - ρ) : 0.0      # e^(E2-B) - e^(E1-B)
+    # row: ℓ = log((1-π)·e^A + π·e^B); lq = (log(1-π), log π)
+    ℓ, u1, u2 = mix2(lq[1] + a, lq[2] + B)
+    finite_B || ((u1, u2) = (1.0, 0.0))
     dμ = wp(u1, pA[1]) + u2 * dBμ
     dσ = wp(u1, pA[2]) + u2 * dBσ
-    dπ = exp(B - ℓ) - exp(a - ℓ)
+    dπ = u2 / π - u1 / (1 - π)                         # e^(B-ℓ) - e^(A-ℓ)
     return ℓ, dμ, dσ, dπ, u2 * dBλ, u2 * dBρ, u2 * dBλ2
 end
 
