@@ -33,6 +33,13 @@
   the works and engine-builder tables involve judgement calls (takeovers,
   rebadged engines), marked uncertain in the
   [reference tables](https://github.com/aleccrowell/diomedes/tree/master/reference/cars) ([#95](https://github.com/aleccrowell/diomedes/issues/95)).
+- **Incident proneness counts classified results only** (and retirements from
+  1996 as partial gaps). It measures how often a driver lost time and still
+  finished. A driver whose incidents usually ended in retirement looks less
+  prone than they were; the [retirement model](../findings/retirements.md)
+  covers those ([#101](https://github.com/aleccrowell/diomedes/issues/101)).
+- **2026 is a partial season,** with the 17 races run so far; its car-season
+  effects and walk states will move as the season finishes ([#99](https://github.com/aleccrowell/diomedes/issues/99)).
 - **Sparse car-seasons stay imprecise.** A 1950s car with a few races is still
   identified mostly by those races: pooling over a works' seasons cut posterior
   sds by only about 10% ([#91](https://github.com/aleccrowell/diomedes/issues/91), [#95](https://github.com/aleccrowell/diomedes/issues/95)).

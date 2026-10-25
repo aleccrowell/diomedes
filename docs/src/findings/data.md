@@ -10,7 +10,7 @@ posterior intervals (`q05`, `q95`). `sd` is the posterior standard deviation.
 ## Race-model files
 
 ```@raw html
-<p>F1 1950–2025 (Jolpica API), best pace + loss model. The manifest also records
+<p>F1 1950–2026 (Jolpica API; 2026 through the 17 races run so far), best pace + loss model. The manifest also records
 the modes the chains settled in, convergence by group, and how far the effects
 differ between modes.
 <a class="diomedes-data" data-path="assets/data/race/manifest.json">manifest.json</a></p>
@@ -23,14 +23,18 @@ differ between modes.
 <tr><td><a class="diomedes-data" data-path="assets/data/race/drivers.csv">drivers.csv</a></td><td>driver</td>
 <td><code>id</code>, <code>name</code>; <code>rows</code>: results used; <code>first_season</code>, <code>last_season</code>;
 <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: driver effect, % of race time in average-season units (κ = 1), relative to the average driver;
-<code>slope_mean</code>, <code>slope_sd</code>: career slope, % per decade of age, relative to the average driver's trajectory</td></tr>
+<code>slope_mean</code>, <code>slope_sd</code>: career slope, % per decade of age, relative to the average driver's trajectory;
+<code>incident_mean</code>, <code>incident_q05</code>, <code>incident_q95</code>: incident proneness, offset on the log-odds of an incident, relative to the average driver;
+<code>pace_part_mean</code>: κ × driver effect, averaged over the driver's races; <code>incident_part_mean</code>, <code>incident_part_q05</code>, <code>incident_part_q95</code>:
+race time the driver's incident proneness adds (negative = saves), averaged over their races; <code>overall_mean</code>, <code>overall_q05</code>, <code>overall_q95</code>:
+the two together; all three % of race time (see <a href="../drivers/#Speed-and-incident-proneness">Speed and incident proneness</a>)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/cars.csv">cars.csv</a></td><td>car-season</td>
 <td><code>id</code> (constructor_season), <code>constructor</code>, <code>season</code>, <code>rows</code>;
 <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: car effect, % of race time relative to the other cars in the same season;
 <code>dev_mean</code>, <code>dev_sd</code>: in-season development trend, % from the season's first round to its last, relative to the field;
 <code>speed_*</code>, <code>rough_*</code>, <code>temp_*</code> (mean, sd): circuit slopes, % of race time per standard deviation of the race's
 average speed, road-surface roughness and air temperature, relative to the car's own races and to its field (positive = relatively slower);
-<code>chassis_mean</code>, <code>engine_mean</code>, <code>residual_mean</code>: the car effect's mean split into its chassis-works walk, engine-builder walk and residual parts, each centred within season (they add up to <code>mean</code>)</td></tr>
+<code>chassis_mean</code>, <code>engine_mean</code>, <code>works_mean</code>, <code>residual_mean</code>: the car effect's mean split into its chassis-works walk, engine-builder walk, works-team term and residual parts, each centred within season (they add up to <code>mean</code>)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/walks.csv">walks.csv</a></td><td>walk × season</td>
 <td><code>family</code> (chassis or engine), <code>walk</code> (the works or engine builder, as in the <a href="https://github.com/aleccrowell/diomedes/tree/master/reference/cars">car reference tables</a>), <code>season</code>;
 <code>mean</code>, <code>q05</code>, <code>q95</code>: the walk's state, % of race time in average-season units, centred within season (negative = faster);

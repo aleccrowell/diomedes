@@ -109,7 +109,7 @@ results are in <a class="diomedes-data" data-path="assets/data/race/ranks.csv"><
 
 ## Every driver
 
-All 550 drivers with a classified finish, by the middle of their career. Point
+All 569 drivers with a classified finish, by the middle of their career. Point
 size is the number of results. Drag to pan, scroll to zoom, and type a name to
 highlight it.
 
@@ -154,6 +154,130 @@ diomedesFigure("fig-driver-scatter", {
 
 The vertical axis is reversed, so faster drivers are higher.
 
+## Speed and incident proneness
+
+Drivers differ in how often they lose time to incidents (a spin, a stop, a
+problem that costs time but still ends in a classified result), as well as in
+pace ([#101](https://github.com/aleccrowell/diomedes/issues/101)). The model gives each driver an offset on the
+log-odds of an incident in a race. The spread is large: one standard deviation
+(1.33 on the log-odds scale) multiplies a driver's odds of an incident by
+about 3.8.
+
+To compare the two on one scale, each driver's result splits into:
+
+- **pace part:** the driver effect at each race's pace scale (κ × effect);
+- **incident part:** the race time their proneness adds or saves, on average.
+  This is the change in the race's incident probability from their offset,
+  times the expected cost of an incident in that race.
+
+Both are % of race time, averaged over the races the driver drove, so they add
+up to an **overall** figure. Negative is faster.
+
+```@raw html
+<div id="fig-driver-incidents" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-driver-incidents", {
+  data: { url: "assets/data/race/drivers.csv",
+          format: { type: "csv", parse: { rows: "number", first_season: "number", last_season: "number",
+                                          pace_part_mean: "number", incident_part_mean: "number",
+                                          incident_part_q05: "number", incident_part_q95: "number",
+                                          overall_mean: "number", overall_q05: "number", overall_q95: "number",
+                                          incident_mean: "number" } } },
+  params: [
+    { name: "minrows", value: 40, bind: { input: "range", min: 10, max: 150, step: 10, name: "Minimum results " } },
+    { name: "search", value: "", bind: { input: "text", placeholder: "e.g. Prost", name: "Highlight driver " } }
+  ],
+  transform: [
+    { filter: "datum.rows >= minrows" },
+    { calculate: "(datum.first_season + datum.last_season) / 2", as: "mid" },
+    { calculate: "search != '' && indexof(lower(datum.name), lower(search)) >= 0", as: "match" }
+  ],
+  width: "container",
+  height: 420,
+  layer: [
+    { mark: { type: "rule", strokeDash: [4, 4], opacity: 0.4 }, encoding: { x: { datum: 0 } } },
+    { mark: { type: "rule", strokeDash: [4, 4], opacity: 0.4 }, encoding: { y: { datum: 0 } } },
+    { mark: { type: "circle" },
+      params: [{ name: "zoom", select: "interval", bind: "scales" }],
+      encoding: {
+        x: { field: "pace_part_mean", type: "quantitative", title: "Pace part, % of race time (negative = faster)" },
+        y: { field: "incident_part_mean", type: "quantitative",
+             title: "Incident part, % of race time (negative = fewer incidents)" },
+        size: { field: "rows", type: "quantitative", title: "Results", scale: { range: [15, 300] } },
+        color: { condition: { test: "datum.match", value: "#e45756" },
+                 field: "mid", type: "quantitative", title: "Middle of career", scale: { scheme: "viridis" },
+                 legend: { format: "d" } },
+        opacity: { condition: { test: "search == '' || datum.match", value: 0.8 }, value: 0.15 },
+        tooltip: [
+          { field: "name", title: "Driver" },
+          { field: "first_season", title: "First season" }, { field: "last_season", title: "Last season" },
+          { field: "rows", title: "Results" },
+          { field: "pace_part_mean", title: "Pace part (%)", format: ".2f" },
+          { field: "incident_part_mean", title: "Incident part (%)", format: ".2f" },
+          { field: "overall_mean", title: "Overall (%)", format: ".2f" },
+          { field: "overall_q05", title: "Overall 5%", format: ".2f" }, { field: "overall_q95", title: "Overall 95%", format: ".2f" },
+          { field: "incident_mean", title: "Incident log-odds offset", format: ".2f" }
+        ] } }
+  ]
+});
+</script>
+```
+
+Drivers in the lower left were fast and rarely lost time; those in the upper
+right were slower and lost more. What stands out:
+
+- **Fast drivers also lost less time to incidents.** Among drivers with at least
+  40 results, the two parts correlate strongly (r = 0.71), and they spread about
+  as much as each other (sd 0.48% each). Avoiding incidents is a large share of
+  what separated drivers.
+- **The incident part is largest in the 1950s and 60s,** when incidents were
+  frequent and costly (see [Eras](eras.md)). Fangio's pace part (−2.8%) is
+  matched by his incident part (−2.6%), and Clark, Stewart, Graham Hill and
+  Bruce McLaren gain 1.5–2.2% from incidents alone. For drivers who started in
+  2000 or later it ranges from −0.4% to +0.35%, because incidents now cost less.
+- **The most incident-prone,** among drivers with at least 40 results, are
+  Bonnier, Karthikeyan, Glock, Sato and Latifi: incidents cost each of them
+  0.26–0.38% of race time on average.
+
+The overall figure is the race time a driver would take relative to an
+average driver in the same races, pace and incidents together. Only classified
+results count (and retirements from 1996 as partial gaps), so this is
+proneness to losing time and still finishing, not to retiring: see
+[Retirements](retirements.md) for that.
+
+```@raw html
+<div id="fig-driver-overall" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-driver-overall", {
+  data: { url: "assets/data/race/drivers.csv",
+          format: { type: "csv", parse: { rows: "number", pace_part_mean: "number", incident_part_mean: "number",
+                                          overall_mean: "number", overall_q05: "number", overall_q95: "number" } } },
+  params: [{ name: "minrows", value: 40, bind: { input: "range", min: 10, max: 150, step: 10, name: "Minimum results " } }],
+  transform: [
+    { filter: "datum.rows >= minrows" },
+    { window: [{ op: "row_number", as: "rank" }], sort: [{ field: "overall_mean", order: "ascending" }] },
+    { filter: "datum.rank <= 25" },
+    { fold: ["pace_part_mean", "incident_part_mean"], as: ["part", "value"] },
+    { calculate: "datum.part == 'pace_part_mean' ? 'pace' : 'incidents'", as: "part" }
+  ],
+  width: "container",
+  height: { step: 16 },
+  mark: { type: "bar" },
+  encoding: {
+    y: { field: "name", type: "nominal", title: null, sort: { field: "overall_mean", order: "ascending" } },
+    x: { field: "value", type: "quantitative", stack: "zero", title: "% of race time (negative = faster)" },
+    color: { field: "part", type: "nominal", title: "Part", scale: { domain: ["pace", "incidents"], range: ["#4c78a8", "#f58518"] } },
+    tooltip: [{ field: "name", title: "Driver" }, { field: "part", title: "Part" },
+              { field: "value", title: "% of race time", format: ".2f" },
+              { field: "overall_mean", title: "Overall (%)", format: ".2f" },
+              { field: "overall_q05", title: "Overall 5%", format: ".2f" }, { field: "overall_q95", title: "Overall 95%", format: ".2f" }]
+  }
+});
+</script>
+```
+
+The 25 fastest overall, each bar split into its pace and incident parts.
+
 ## Download the data
 
 ```@raw html
@@ -166,4 +290,5 @@ The vertical axis is reversed, so faster drivers are higher.
 It has one row per
 driver with the posterior mean, sd and 90% interval of the effect, the number
 of results, the first and last season, and the career slope (% per decade of
-age, relative to the average driver's trajectory).
+age, relative to the average driver's trajectory), the incident log-odds
+offset, and the pace, incident and overall parts above.

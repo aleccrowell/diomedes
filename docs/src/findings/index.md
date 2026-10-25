@@ -1,7 +1,8 @@
 # Findings
 
 Results of the best race-time model so far, fitted to every classified F1
-finish from 1950 to 2025, from the Jolpica API. Lapped cars enter as intervals,
+finish from 1950 to 2026 (2026 through the 17 races run so far), from the
+Jolpica API. Lapped cars enter as intervals,
 or at their exact gap where their own time is recorded (2023 on), and
 retirements from 1996 as partial gaps.
 
@@ -40,7 +41,9 @@ fetch(documenterBaseURL + "/assets/data/race/manifest.json").then(r => r.json())
 
 The model is the pace + loss model with race-duration and random-walk era terms
 for incidents, a pace scale by season, a population age curve, per-driver
-career slopes, big incident losses and in-season car development (see
+career slopes, big incident losses, in-season car development, car-season
+circuit slopes, walls and rain on incidents, chassis and engine walks over
+seasons with a works-team term, and per-driver incident proneness (see
 [Which pace model to use](@ref)). The common race level is learned (the default
 since [#36](https://github.com/aleccrowell/diomedes/issues/36)). Earlier exports of the 1950–2019 data used the fixed race-intercept
 prior (`_fgam`), which gave the same out-of-sample fit.
@@ -59,8 +62,8 @@ prior (`_fgam`), which gave the same out-of-sample fit.
 
 ## Pages
 
-- [Drivers](drivers.md): rankings with uncertainty, and every driver in one
-  explorable chart.
+- [Drivers](drivers.md): rankings with uncertainty, every driver in one
+  explorable chart, and speed against incident proneness.
 - [Driver vs car](explorer.md): every driver-season split into the driver's
   part and the car's part.
 - [Cars](cars.md): each season's field, dominant cars, and in-season

@@ -59,8 +59,8 @@ diomedesFigure("fig-explorer", {
 ## Reading it
 
 - **Driver and car parts are measured on the same scale within a season**, so
-  they compare directly: in Senna's Lotus seasons the driver part is about
-  twice the car part; at McLaren the car part is the larger.
+  they compare directly: in Senna's Lotus seasons the driver part is about one
+  and a half times the car part; at McLaren the car part is the larger.
 - **Across seasons**, the total isn't a measure of absolute speed. It's relative
   to that season's field, and cars are only compared within their season (see
   [The question and what is identifiable](@ref)).

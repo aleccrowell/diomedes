@@ -114,7 +114,11 @@ the scripts (see [`model_spec`](@ref)):
   separate only where they cross (customer engines, engine changes, 1960s
   chassis with several engines); elsewhere the split rests on the walks'
   priors. Car-season effects reported for a walk model are totals: residual +
-  chassis + engine.
+  chassis + engine (+ the works-team term, `_works`, for cars whose engine
+  builder owns the chassis works).
+- **Driver incident proneness** (`_dinc`) shifts each driver's log-odds of an
+  incident, centred across drivers so the race-level incident terms keep their
+  meaning. It needs the big-loss component (`_big`).
 - **Track terms** are measured against a dry race at an open circuit, so `a_π`
   and `a_λ` refer to that race. The circuit data come from the hand-checked
   [reference tables](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits)
