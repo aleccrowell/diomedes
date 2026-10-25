@@ -163,15 +163,20 @@ log-odds of an incident in a race. The spread is large: one standard deviation
 (1.33 on the log-odds scale) multiplies a driver's odds of an incident by
 about 3.8.
 
-To compare the two on one scale, each driver's result splits into:
+To compare the two on one scale, each driver gets:
 
-- **pace part:** the driver effect at each race's pace scale (κ × effect);
-- **incident part:** the race time their proneness adds or saves, on average.
-  This is the change in the race's incident probability from their offset,
-  times the expected cost of an incident in that race.
+- **pace part:** the driver effect, as in the rankings above (average-season
+  units);
+- **incident part:** the time their proneness would add or save in the same
+  reference race, one with the average incident rate and loss size over
+  1950–2026. This is the change in that race's incident probability from their
+  offset, times the expected cost of an incident.
 
-Both are % of race time, averaged over the races the driver drove, so they add
-up to an **overall** figure. Negative is faster.
+Both are % of race time in average-season units, so they add up to an
+**overall** figure. Negative is faster. Using one reference race for everyone
+keeps the comparison about the drivers. Measured in each driver's own races,
+both parts would mostly reflect their era: 1950s fields were several times more
+spread out, and incidents cost more.
 
 ```@raw html
 <div id="fig-driver-incidents" class="diomedes-figure"></div>
@@ -226,21 +231,20 @@ diomedesFigure("fig-driver-incidents", {
 Drivers in the lower left were fast and rarely lost time; those in the upper
 right were slower and lost more. What stands out:
 
-- **Fast drivers also lost less time to incidents.** Among drivers with at least
-  40 results, the two parts correlate strongly (r = 0.71), and they spread about
-  as much as each other (sd 0.48% each). Avoiding incidents is a large share of
-  what separated drivers.
-- **The incident part is largest in the 1950s and 60s,** when incidents were
-  frequent and costly (see [Eras](eras.md)). Fangio's pace part (−2.8%) is
-  matched by his incident part (−2.6%), and Clark, Stewart, Graham Hill and
-  Bruce McLaren gain 1.5–2.2% from incidents alone. For drivers who started in
-  2000 or later it ranges from −0.4% to +0.35%, because incidents now cost less.
+- **The two are related, but loosely.** Among drivers with at least 40 results,
+  the incident part spreads nearly as much as pace (sd 0.31% against 0.36%), and
+  the two correlate weakly (r = 0.38).
+- **Verstappen is the fastest on pace by a wide margin (−1.50%), but average for
+  incidents among the top drivers,** so his incident part is small (−0.23%).
+  Fangio, Piquet, Bruce McLaren, Lauda, Prost and Stewart gain 0.8–1.0% from
+  rarely losing time.
+- **Overall, the top five are close:** Fangio (−1.98%), Hunt, Stewart, Senna and
+  Verstappen (−1.73%), with heavily overlapping intervals.
 - **The most incident-prone,** among drivers with at least 40 results, are
-  Bonnier, Karthikeyan, Glock, Sato and Latifi: incidents cost each of them
-  0.26–0.38% of race time on average.
+  Karthikeyan, Sato, Glock, Latifi and Alliot: their proneness costs 0.23–0.31%.
 
 The overall figure is the race time a driver would take relative to an
-average driver in the same races, pace and incidents together. Only classified
+average driver in the same reference race, pace and incidents together. Only classified
 results count (and retirements from 1996 as partial gaps), so this is
 proneness to losing time and still finishing, not to retiring: see
 [Retirements](retirements.md) for that.

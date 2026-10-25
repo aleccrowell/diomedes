@@ -23,7 +23,7 @@ diomedesFigure("fig-explorer", {
                     driver_mean: "number", driver_q05: "number", driver_q95: "number",
                     car_mean: "number", car_q05: "number", car_q95: "number",
                     total_mean: "number", total_q05: "number", total_q95: "number" } } },
-  params: [{ name: "who", value: "Senna", bind: { input: "text", placeholder: "driver name", name: "Driver " } }],
+  params: [{ name: "who", value: "Ayrton Senna", bind: { input: "text", placeholder: "driver name", name: "Driver " } }],
   transform: [
     { filter: "who != '' && indexof(lower(datum.name), lower(who)) >= 0" },
     // the "constructor" field can't be referenced in Vega expressions (it collides
