@@ -1648,6 +1648,93 @@ end
                 @test o == LDP.dimension(rdm)
             end
         end
+        # track terms and driver incident proneness (#108)
+        @test size(d8.race_track) == (nr, 0)
+        @test_throws ArgumentError lap_effects(d8; track = true)
+        circt = transform(circ, :event_id => ByRow(e -> 1) => :W)
+        circt.W = [r % 3 for r in eachindex(d7.races)]
+        circt.condition = [r == 1 ? "wet" : r == 2 ? "mixed" : "dry" for r in eachindex(d7.races)]
+        d9 = prepare_laps(lt5, rows7; pits = :inferred, circuits = circt)
+        @test d9.race_track_names == [:tight, :mixed, :wet] && d9.race_track[:, 1] == circt.W ./ 2 &&
+              d9.race_track[1, 3] == 1 && d9.race_track[2, 2] == 1 && sum(d9.race_track[:, 2:3]) == 2
+        let m9 = lap_effects(d9; track = true, dinc = true), nc = length(d9.competitors)
+            θ9 = merge(θ, (; β_track_π = [0.3, 0.8, 1.5], β_track_λ = [0.1, 0.2, 0.3], τ_dinc = 0.7, u_dinc = randn(rng, nc)))
+            πr = Diomedes.logistic.(θ.a_π .+ d9.race_track * θ9.β_track_π)
+            λr = exp.(θ.a_λ .+ d9.race_track * θ9.β_track_λ)
+            o = 0.7 .* (θ9.u_dinc .- mean(θ9.u_dinc))
+            b9 = Diomedes.sum_to_zero_by(θ.b_mach, d9.mach_season, Diomedes.lap_mach_counts(d9))
+            h9 = [a[d9.comp[j]] + b9[d9.mach[j]] + θ.β[1] * d9.stint[j] / 10 + θ.β[2] * (d9.stint[j] / 10)^2 for j in eachindex(d9.y)]
+            h9bar = [mean(h9[d9.race .== r]) for r in 1:nr]
+            f9bar = [mean(d9.frac[d9.race .== r]) for r in 1:nr]
+            ll9 = sum(Diomedes.paceloss_logpdf(d9.y[j] - (θ.γ[d9.race[j]] + θ.δ[d9.race[j]] * (d9.frac[j] - f9bar[d9.race[j]]) +
+                                                           h9[j] - h9bar[d9.race[j]]), θ.σ,
+                                               Diomedes.logistic(Diomedes.logit(πr[d9.race[j]]) + o[d9.comp[j]]),
+                                               λr[d9.race[j]]) for j in eachindex(d9.y))
+            @test Turing.DynamicPPL.loglikelihood(m9, θ9) ≈ ll9
+            # without the terms the likelihood is unchanged from the scalar-π form
+            @test Turing.DynamicPPL.loglikelihood(lap_effects(d9), θ) ≈ Turing.DynamicPPL.loglikelihood(lap_effects(d7), θ)
+        end
+        for flags in ((; track = true), (; dinc = true), (; track = true, dinc = true, slopes = true, starts = true,
+                                                          age = true, circuits = true))
+            m = lap_effects(d9; flags...)
+            rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            x9 = 0.5 .* randn(rng, LDP.dimension(rdm))
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_sd, :τ_sc, :σ1, :τ_age, :τ_cx, :τ_dinc)
+                haskey(rg, k) && (x9[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
+            end
+            @test LDP.logdensity_and_gradient(rdm, x9)[2] ≈ LDP.logdensity_and_gradient(fdm, x9)[2]
+            @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), x9).tape) < 1000
+            let o = 0
+                for (name, (n, _)) in Diomedes.lap_layout(d9; flags...)
+                    @test rg[name].range == (o + 1):(o + n)
+                    o += n
+                end
+                @test o == LDP.dimension(rdm)
+            end
+        end
+        # chassis and engine walks with the works term (#108): car tables for the fixture's
+        # machines, two engine builders, one works pairing
+        let seas = [d9.seasons[s] for s in d9.mach_season]
+            mids = [replace(m, Regex("_$(y)\$") => "") for (m, y) in zip(d9.machines, seas)]
+            ucon = unique(mids)
+            eng(c) = isodd(findfirst(==(c), ucon)) ? "e1" : "e2"
+            fc = (; entries = DataFrame(season = seas, round = fill(1, length(seas)), driver_id = fill("x", length(seas)),
+                                        machine_id = mids, f1db_constructor = mids, f1db_engine = eng.(mids)),
+                  works = DataFrame(f1db_constructor = ucon, first_year = 1900, last_year = 2100, works_id = ucon),
+                  engines = DataFrame(f1db_engine = ["e1", "e2"], first_year = 1900, last_year = 2100, builder_id = ["e1", "e2"]),
+                  ownership = DataFrame(works_id = String[], season = Int[]),
+                  regulations = DataFrame(season = Int[], chassis = Int[], engine = Int[]),
+                  works_engines = DataFrame(builder_id = ["e1"], works_id = [ucon[1]], first_year = 1900, last_year = 2100))
+            cwl = CarWalks(d9, fc)
+            @test length(cwl.row_ch) == length(d9.machines) && sum(cwl.row_works) == count(==(ucon[1]), mids)
+            mw = lap_effects(d9; walk = true, works = true, cars = fc)
+            θw = merge(θ, (; τ_ch = 0.3, σ0_ch = 1.0, z_ch = zeros(length(cwl.chassis.prev)), τ_en = 0.2, σ0_en = 0.5,
+                           z_en = zeros(length(cwl.engine.prev)), δ_own = 0.2, δ_reg = 0.2, β_works = 0.0))
+            # zero walks and works term: the base model's likelihood
+            @test Turing.DynamicPPL.loglikelihood(mw, θw) ≈ Turing.DynamicPPL.loglikelihood(lap_effects(d9), θ)
+            θw2 = merge(θw, (; β_works = 0.4))
+            @test !(Turing.DynamicPPL.loglikelihood(mw, θw2) ≈ Turing.DynamicPPL.loglikelihood(mw, θw))
+            @test_throws ArgumentError lap_effects(d9; works = true, cars = fc)
+            for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true))
+                m = lap_effects(d9; flags..., cars = fc)
+                rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+                rg = NamedTuple(getfield(rdm, :_varname_ranges))
+                xw = 0.5 .* randn(rng, LDP.dimension(rdm))
+                for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_sd, :τ_sc, :σ1, :τ_dinc, :τ_ch, :σ0_ch, :τ_en, :σ0_en, :δ_own, :δ_reg)
+                    haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
+                end
+                @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]
+                @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), xw).tape) < 1000
+                let o = 0
+                    for (name, (n, _)) in Diomedes.lap_layout(d9; flags..., cw = cwl)
+                        @test rg[name].range == (o + 1):(o + n)
+                        o += n
+                    end
+                    @test o == LDP.dimension(rdm)
+                end
+            end
+        end
         # warm start from a fit without them: the new blocks get the defaults
         ws8 = lap_warm_start(fake, d_old, d8; starts_new = true, age_new = true, circuits_new = true)
         r8 = NamedTuple(getfield(LDF(model8), :_varname_ranges))

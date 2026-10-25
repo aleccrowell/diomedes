@@ -228,19 +228,23 @@ end
 # carry duals, over (μ, σ, loss mean); the mixture over π and ρ is differentiated
 # in closed form. With all six arguments as duals this was ~2/3 of a gradient.
 @inline function pacebig_row_vg(y, lo, hi, interval::Bool, μ, σ, π, λ, ρ, λ2)
-    D = FD.Dual{Nothing}
-    μd, σd, λd, λ2d = D(μ, 1.0, 0.0, 0.0), D(σ, 0.0, 1.0, 0.0), D(λ, 0.0, 0.0, 1.0), D(λ2, 0.0, 0.0, 1.0)
     if interval
+        D = FD.Dual{Nothing}
+        μd, σd, λd, λ2d = D(μ, 1.0, 0.0, 0.0), D(σ, 0.0, 1.0, 0.0), D(λ, 0.0, 0.0, 1.0), D(λ2, 0.0, 0.0, 1.0)
         l, h = lo - μd, hi - μd
         A = logdiffΦ(l / σd, h / σd)
         E1, E2 = log_pemg(l, h, σd, λd, A), log_pemg(l, h, σd, λ2d, A)
-    else
-        x = y - μd
-        A = normlogpdf(x / σd) - log(σd)
-        E1, E2 = log_emg_pdf(x, σd, λd), log_emg_pdf(x, σd, λ2d)
+        a, e1, e2 = FD.value(A), FD.value(E1), FD.value(E2)
+        pA, p1, p2 = FD.partials(A), FD.partials(E1), FD.partials(E2)
+    else                    # timed rows in closed form, as `paceloss_row_vg` (#108)
+        x = y - μ
+        z = x / σ
+        a, pA = normlogpdf(z) - log(σ), (z / σ, (z^2 - 1) / σ, 0.0)
+        K1, K1x, K1σ, K1λ = emg_logkernel_grad(x, σ, λ)
+        K2, K2x, K2σ, K2λ = emg_logkernel_grad(x, σ, λ2)
+        e1, p1 = K1 - log(λ), (-K1x, K1σ, K1λ - 1 / λ)
+        e2, p2 = K2 - log(λ2), (-K2x, K2σ, K2λ - 1 / λ2)
     end
-    a, e1, e2 = FD.value(A), FD.value(E1), FD.value(E2)
-    pA, p1, p2 = FD.partials(A), FD.partials(E1), FD.partials(E2)
     # loss part B = log((1-ρ)·e^E1 + ρ·e^E2), weights w1 + w2 = 1
     B = logaddexp(log1p(-ρ) + e1, log(ρ) + e2)
     w1, w2 = exp(log1p(-ρ) + e1 - B), exp(log(ρ) + e2 - B)
