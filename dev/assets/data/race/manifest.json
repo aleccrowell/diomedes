@@ -200,6 +200,6 @@
         }
     },
     "exported_by": "scripts/export_site.jl race",
-    "export_commit": "48a34bb",
+    "export_commit": "8d335d2",
     "date": "2026-10-25"
 }
