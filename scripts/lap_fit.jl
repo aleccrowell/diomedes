@@ -34,7 +34,8 @@
 # incident probability and loss size (…_track); `dinc` per-driver incident proneness
 # (…_dinc; combine writes <tag>_incidents.csv); `walk` chassis and engine walks over
 # seasons, with `works` the works-team term (…_walk, …_works; cars.csv then holds each
-# car-season's total). The 2026 races so far: seasons 1996-2026.
+# car-season's total). The 2026 races so far: seasons 1996-2026. `probe` saves a short
+# test fit (with draws=<n>) under <tag>_probe, so a later full fit doesn't resume from it.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
@@ -52,6 +53,7 @@ track = "track" ∈ ARGS            # walls, mixed and wet races on the incident
 dinc = "dinc" ∈ ARGS              # per-driver incident proneness (#108)
 walk = "walk" ∈ ARGS              # chassis and engine walks (#108)
 works = "works" ∈ ARGS            # works-team term (with walk, #108)
+probe = "probe" ∈ ARGS            # a short test fit saved under its own tag (…_probe), apart from the full fit
 δarg = findfirst(a -> startswith(a, "delta="), ARGS)
 δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
 tune_step = "notune" ∉ ARGS
@@ -60,7 +62,7 @@ step_kw = steparg === nothing ? (;) : (; fixed_step = parse(Float64, split(ARGS[
 drawsarg = findfirst(a -> startswith(a, "draws="), ARGS)
 n_draws = drawsarg === nothing ? 1000 : parse(Int, split(ARGS[drawsarg], "=")[2])
 args = filter(a -> a ∉ ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
-                         "walk", "works", "notune") &&
+                         "walk", "works", "notune", "probe") &&
                    !startswith(a, "delta=") && !startswith(a, "step=") && !startswith(a, "draws="), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
@@ -71,7 +73,7 @@ flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev
               (f[5] ? "_tyremgmt" : "") * (f[6] ? "_starts" : "") * (f[7] ? "_age" : "") * (f[8] ? "_circ" : "") *
               (f[9] ? "_track" : "") * (f[10] ? "_dinc" : "") * (f[11] ? "_walk" : "") * (f[12] ? "_works" : "")
 flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works)
-tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags)
+tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
 # (laps_from=1996) so the responses are cached; `recorded` pit stops are fetched on
