@@ -14,20 +14,23 @@ using Diomedes, Turing, Statistics, Printf, Random, DataFrames
 const DynamicPPL = Turing.DynamicPPL
 const LogDensityProblems = Turing.LogDensityProblems
 
-terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc", "walk", "works")
+terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc", "walk", "works", "big")
 has = any(in(terms), ARGS) ? Set(filter(in(terms), ARGS)) : Set(["notyres", "slopes", "dev"])
-args = filter(∉(terms), ARGS)
+args = filter(a -> a ∉ terms && a ∉ ("recorded", "keepslow"), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
 reps = parse(Int, get(args, 2, "30"))
 src(f) = f(JolpicaF1(), collect(seasons))
-d = prepare_laps(src(fetch_laps), src(fetch_results); pits = :inferred,
+# `recorded` uses the recorded pit stops (2011 on) and `keepslow` keeps a car's very slow laps (#108)
+recorded = "recorded" ∈ ARGS
+d = prepare_laps(src(fetch_laps), src(fetch_results); pits = recorded ? :recorded : :inferred,
+                 pit_stops = recorded ? src(fetch_pit_stops) : nothing, stoppage = "keepslow" ∉ ARGS,
                  circuits = "circuits" ∈ has || "track" ∈ has ? circuit_table() : nothing)
 println(d)
 model = lap_effects(d; tyres = "notyres" ∉ has, slopes = "slopes" ∈ has, dev = "dev" ∈ has, lead = "lead" ∈ has,
                     tyre_mgmt = "tyremgmt" ∈ has, starts = "starts" ∈ has, age = "age" ∈ has,
                     circuits = "circuits" ∈ has, track = "track" ∈ has, dinc = "dinc" ∈ has, walk = "walk" ∈ has,
-                    works = "works" ∈ has)
+                    works = "works" ∈ has, big = "big" ∈ has)
 println("terms: ", join(sort(collect(has)), " "))
 ldf = DynamicPPL.LogDensityFunction(model, DynamicPPL.getlogjoint_internal, DynamicPPL.LinkAll();
                                     adtype = Diomedes.gap_sampler().adtype)

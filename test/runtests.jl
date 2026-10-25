@@ -1648,6 +1648,10 @@ end
                 @test o == LDP.dimension(rdm)
             end
         end
+        # no per-car size cut (#108): every lap the cut dropped is kept
+        let dk = prepare_laps(lt5, rows7; pits = :inferred, stoppage = false)
+            @test length(dk.y) >= length(d7.y) && dk.excluded[:stoppage] == 0
+        end
         # track terms and driver incident proneness (#108)
         @test size(d8.race_track) == (nr, 0)
         @test_throws ArgumentError lap_effects(d8; track = true)
@@ -1673,14 +1677,22 @@ end
             @test Turing.DynamicPPL.loglikelihood(m9, θ9) ≈ ll9
             # without the terms the likelihood is unchanged from the scalar-π form
             @test Turing.DynamicPPL.loglikelihood(lap_effects(d9), θ) ≈ Turing.DynamicPPL.loglikelihood(lap_effects(d7), θ)
+            # big incident losses (#108): pacebig_logpdf per lap
+            θ9b = merge(θ9, (; a_ρ = -2.0, δ_λ2 = 2.0))
+            ρ9, λ29 = Diomedes.logistic(-2.0), exp(θ.a_λ + 2.0)
+            ll9b = sum(Diomedes.pacebig_logpdf(d9.y[j] - (θ.γ[d9.race[j]] + θ.δ[d9.race[j]] * (d9.frac[j] - f9bar[d9.race[j]]) +
+                                                          h9[j] - h9bar[d9.race[j]]), θ.σ,
+                                               Diomedes.logistic(Diomedes.logit(πr[d9.race[j]]) + o[d9.comp[j]]),
+                                               λr[d9.race[j]], ρ9, λ29) for j in eachindex(d9.y))
+            @test Turing.DynamicPPL.loglikelihood(lap_effects(d9; track = true, dinc = true, big = true), θ9b) ≈ ll9b
         end
-        for flags in ((; track = true), (; dinc = true), (; track = true, dinc = true, slopes = true, starts = true,
-                                                          age = true, circuits = true))
+        for flags in ((; track = true), (; dinc = true), (; big = true), (; track = true, dinc = true, slopes = true, starts = true,
+                                                                            age = true, circuits = true, big = true))
             m = lap_effects(d9; flags...)
             rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
             rg = NamedTuple(getfield(rdm, :_varname_ranges))
             x9 = 0.5 .* randn(rng, LDP.dimension(rdm))
-            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_sd, :τ_sc, :σ1, :τ_age, :τ_cx, :τ_dinc)
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_sd, :τ_sc, :σ1, :τ_age, :τ_cx, :τ_dinc, :τ_dinc1, :δ_λ2)
                 haskey(rg, k) && (x9[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
             end
             @test LDP.logdensity_and_gradient(rdm, x9)[2] ≈ LDP.logdensity_and_gradient(fdm, x9)[2]
@@ -1716,12 +1728,13 @@ end
             θw2 = merge(θw, (; β_works = 0.4))
             @test !(Turing.DynamicPPL.loglikelihood(mw, θw2) ≈ Turing.DynamicPPL.loglikelihood(mw, θw))
             @test_throws ArgumentError lap_effects(d9; works = true, cars = fc)
-            for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true))
+            for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true, big = true))
                 m = lap_effects(d9; flags..., cars = fc)
                 rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                 rg = NamedTuple(getfield(rdm, :_varname_ranges))
                 xw = 0.5 .* randn(rng, LDP.dimension(rdm))
-                for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_sd, :τ_sc, :σ1, :τ_dinc, :τ_ch, :σ0_ch, :τ_en, :σ0_en, :δ_own, :δ_reg)
+                for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_sd, :τ_sc, :σ1, :τ_dinc, :τ_dinc1, :τ_ch, :σ0_ch, :τ_en, :σ0_en, :δ_own,
+                          :δ_reg, :δ_λ2)
                     haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
                 end
                 @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]

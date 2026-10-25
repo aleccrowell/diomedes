@@ -36,6 +36,10 @@
 # seasons, with `works` the works-team term (…_walk, …_works; cars.csv then holds each
 # car-season's total). The 2026 races so far: seasons 1996-2026. `probe` saves a short
 # test fit (with draws=<n>) under <tag>_probe, so a later full fit doesn't resume from it.
+# `big` adds big incident losses (…_big) and `keepslow` keeps a car's laps over
+# STOPPAGE × its median (…_keepslow): with `recorded` pit stops, no lap is dropped for
+# its size (#108). `warmpits=<recorded|inferred>` warm-starts from a fit with the
+# other pit mode.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
@@ -53,6 +57,8 @@ track = "track" ∈ ARGS            # walls, mixed and wet races on the incident
 dinc = "dinc" ∈ ARGS              # per-driver incident proneness (#108)
 walk = "walk" ∈ ARGS              # chassis and engine walks (#108)
 works = "works" ∈ ARGS            # works-team term (with walk, #108)
+big = "big" ∈ ARGS                # big incident losses (#108, as the race model's #16)
+keepslow = "keepslow" ∈ ARGS      # keep a car's laps over STOPPAGE × its median lap (no per-car size cut, #108)
 probe = "probe" ∈ ARGS            # a short test fit saved under its own tag (…_probe), apart from the full fit
 δarg = findfirst(a -> startswith(a, "delta="), ARGS)
 δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
@@ -62,18 +68,19 @@ step_kw = steparg === nothing ? (;) : (; fixed_step = parse(Float64, split(ARGS[
 drawsarg = findfirst(a -> startswith(a, "draws="), ARGS)
 n_draws = drawsarg === nothing ? 1000 : parse(Int, split(ARGS[drawsarg], "=")[2])
 args = filter(a -> a ∉ ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
-                         "walk", "works", "notune", "probe") &&
+                         "walk", "works", "big", "keepslow", "notune", "probe") &&
                    !startswith(a, "delta=") && !startswith(a, "step=") && !startswith(a, "draws="), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
 pits = Symbol(args[2])
 action = get(args, 3, "combine")
-# tag suffix of a set of terms: (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works)
+# tag suffix of a set of terms: (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big)
 flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev" : "") * (f[4] ? "_lead" : "") *
               (f[5] ? "_tyremgmt" : "") * (f[6] ? "_starts" : "") * (f[7] ? "_age" : "") * (f[8] ? "_circ" : "") *
-              (f[9] ? "_track" : "") * (f[10] ? "_dinc" : "") * (f[11] ? "_walk" : "") * (f[12] ? "_works" : "")
-flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works)
-tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (probe ? "_probe" : "")
+              (f[9] ? "_track" : "") * (f[10] ? "_dinc" : "") * (f[11] ? "_walk" : "") * (f[12] ? "_works" : "") *
+              (f[13] ? "_big" : "")
+flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big)
+tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (keepslow ? "_keepslow" : "") * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
 # (laps_from=1996) so the responses are cached; `recorded` pit stops are fetched on
@@ -84,7 +91,7 @@ src_data(ss) = (res = fetch_results(jolpica, collect(ss)), laps = fetch_laps(jol
 sd = src_data(seasons)
 res = sd.res
 circ = circuits || track ? circuit_table() : nothing
-d = prepare_laps(sd.laps, res; pits, pit_stops = sd.pits, circuits = circ)
+d = prepare_laps(sd.laps, res; pits, pit_stops = sd.pits, circuits = circ, stoppage = !keepslow)
 println(d); flush(stdout)
 mkpath("output")
 
@@ -102,8 +109,10 @@ if action == "chain"
         # A fit with the same terms has adapted every block, so it is the best start.
         chains_of(t) = sort(unique(parse(Int, m[1]) for f in readdir("output")
                                    for m in (match(Regex("^$(t)_chain(\\d+)_(block|warmstate)"), f),) if m !== nothing))
-        stem = "laps_$(warm[1])-$(warm[2])_$(pits)"
-        F4 = (false, false, false, false)       # without the #108 terms
+        wpa = findfirst(a -> startswith(a, "warmpits="), ARGS)
+        wpits = wpa === nothing ? pits : Symbol(split(ARGS[wpa], "=")[2])  # the old fit's pit mode, if different
+        stem = "laps_$(warm[1])-$(warm[2])_$(wpits)"
+        F4 = (false, false, false, false, false) # without the #108 terms
         cf = [flags, (flags[1:8]..., F4...), (flags[1:6]..., false, false, F4...), (flags[1:5]..., false, false, false, F4...),
               (flags[1:3]..., false, false, false, false, false, F4...),
               (true, false, false, false, false, false, false, false, F4...)]
@@ -125,8 +134,10 @@ if action == "chain"
             last_block = argmax(f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]), blocks)
             st = (b = Diomedes.read_block(joinpath("output", last_block)); (; Minv = b.Minv, ϵ = b.ϵ))
         end
-        od = src_data(old_seasons)
-        d_old = prepare_laps(od.laps, od.res; pits, pit_stops = od.pits, circuits = old_flags[8] || old_flags[9] ? circ : nothing)
+        od = (res = fetch_results(jolpica, collect(old_seasons)), laps = fetch_laps(jolpica, collect(old_seasons)),
+              pits = wpits === :recorded ? fetch_pit_stops(jolpica, collect(old_seasons)) : nothing)
+        d_old = prepare_laps(od.laps, od.res; pits = wpits, pit_stops = od.pits,
+                             circuits = old_flags[8] || old_flags[9] ? circuit_table() : nothing)
         ws, n_adapts = lap_warm_start(st, d_old, d; tyres_old = old_flags[1], slopes_old = old_flags[2], dev_old = old_flags[3],
                                       lead_old = old_flags[4], tyre_mgmt_old = old_flags[5], starts_old = old_flags[6],
                                       age_old = old_flags[7], circuits_old = old_flags[8],
@@ -134,12 +145,13 @@ if action == "chain"
                                       tyres_new = tyres, slopes_new = slopes, dev_new = dev, lead_new = lead,
                                       tyre_mgmt_new = tyre_mgmt, track_old = old_flags[9], dinc_old = old_flags[10],
                                       walk_old = old_flags[11], works_old = old_flags[12], track_new = track,
-                                      dinc_new = dinc, walk_new = walk, works_new = works), 300
+                                      dinc_new = dinc, walk_new = walk, works_new = works, big_old = old_flags[13],
+                                      big_new = big), 300
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
     end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k, n_samples = n_draws,
                                   progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, lead, tyre_mgmt, starts,
-                                  age, circuits, track, dinc, walk, works, δ, tune_step, step_kw...)
+                                  age, circuits, track, dinc, walk, works, big, δ, tune_step, step_kw...)
     # adapted metric and step size, for warm starts of later fits (see above)
     try
         serialize("output/$(tag)_chain$(k)_warmstate.jls", Diomedes.checkpoint_adapted("output/$(tag)_chain$(k)"))
@@ -184,6 +196,7 @@ function car_total(i, c)            # residual + chassis + engine (+ works), cen
 end
 car = collect3(car_total)
 dincv = dinc ? collect3((i, c) -> career_slopes(chain[:τ_dinc][i, c], chain[:u_dinc][i, c])) : nothing   # τ·(u - mean u)
+dinc1v = dinc && starts ? collect3((i, c) -> career_slopes(chain[:τ_dinc1][i, c], chain[:u_dinc1][i, c])) : nothing
 scal_names = (:σ_comp, :σ_mach, :σ, :μ_γ, :μ_δ, :τ_δ, :a_π, :a_λ)
 scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], tyres ? chain[:β][i, c] : Float64[],
                                 slopes ? [chain[:τ_slope][i, c]] : Float64[], dev ? [chain[:τ_dev][i, c]] : Float64[],
@@ -193,9 +206,10 @@ scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], tyres ? cha
                                               [chain[:σ1][i, c], chain[:a_π1][i, c], chain[:a_λ1][i, c]]) : Float64[],
                                 age ? [chain[:τ_age][i, c]] : Float64[], circuits ? chain[:τ_cx][i, c] : Float64[],
                                 track ? vcat(chain[:β_track_π][i, c], chain[:β_track_λ][i, c]) : Float64[],
-                                dinc ? [chain[:τ_dinc][i, c]] : Float64[],
+                                dinc ? [chain[:τ_dinc][i, c]] : Float64[], dinc && starts ? [chain[:τ_dinc1][i, c]] : Float64[],
                                 walk ? [chain[s][i, c] for s in (:τ_ch, :σ0_ch, :τ_en, :σ0_en, :δ_own, :δ_reg)] : Float64[],
-                                works ? [chain[:β_works][i, c]] : Float64[]))
+                                works ? [chain[:β_works][i, c]] : Float64[],
+                                big ? [chain[:a_ρ][i, c], chain[:δ_λ2][i, c]] : Float64[]))
 sdv = starts ? collect3((i, c) -> career_slopes(chain[:τ_sd][i, c], chain[:u_sd][i, c])) : nothing
 scv = starts ? collect3((i, c) -> chain[:τ_sc][i, c] .* sum_to_zero_by(chain[:u_sc][i, c], d.mach_season, mc)) : nothing
 tdv = tyre_mgmt ? collect3((i, c) -> career_slopes(chain[:τ_td][i, c], chain[:u_td][i, c])) : nothing
@@ -214,7 +228,7 @@ for (name, A) in (("drivers", drv), ("cars", car), ("scalars", scal), (slopes ? 
                   (tyre_mgmt ? (("tyre (drv)", tdv), ("tyre (car)", tmv)) : ())...,
                   (starts ? (("start (drv)", sdv), ("start (car)", scv)) : ())...,
                   (age ? (("age curve", agev),) : ())..., (circuits ? (("circuits", cxv),) : ())...,
-                  (dinc ? (("incidents", dincv),) : ())...)
+                  (dinc ? (("incidents", dincv),) : ())..., (dinc && starts ? (("incid. lap1", dinc1v),) : ())...)
     println(rpad(name, 10), round(maximum(MCMCDiagnosticTools.rhat(A)); digits = 3), "  ",
             round(Int, minimum(MCMCDiagnosticTools.ess(A))))
 end
@@ -226,8 +240,8 @@ for (j, nm) in enumerate((string.(scal_names)..., (tyres ? Tuple(n for e in d.er
                           (starts ? ("τ_sd", "τ_sc", "g_grid", "g_grid²", "σ1", "a_π1", "a_λ1") : ())...,
                           (age ? ("τ_age",) : ())..., (circuits ? Tuple("τ_cx[$n]" for n in d.race_x_names) : ())...,
                           (track ? Tuple("β_track_$(p)[$n]" for p in ("π", "λ") for n in d.race_track_names) : ())...,
-                          (dinc ? ("τ_dinc",) : ())..., (walk ? ("τ_ch", "σ0_ch", "τ_en", "σ0_en", "δ_own", "δ_reg") : ())...,
-                          (works ? ("β_works",) : ())...))
+                          (dinc ? ("τ_dinc",) : ())..., (dinc && starts ? ("τ_dinc1",) : ())..., (walk ? ("τ_ch", "σ0_ch", "τ_en", "σ0_en", "δ_own", "δ_reg") : ())...,
+                          (works ? ("β_works",) : ())..., (big ? ("a_ρ", "δ_λ2") : ())...))
     v = flat(scal)[:, j]
     println(rpad(nm, 12), round(mean(v); digits = 4), " ± ", round(std(v); digits = 4))
 end
@@ -245,6 +259,11 @@ if dinc                              # incident proneness, logit offsets on π (
     it = DataFrame(driver = d.competitors, name = [names_of[c] for c in d.competitors],
                    laps = [count(==(k), d.comp) for k in eachindex(d.competitors)],
                    mean = vec(mean(I; dims = 1)), sd = vec(std(I; dims = 1)))
+    if starts                        # lap-1 incident proneness, its own offsets
+        I1 = flat(dinc1v)
+        it.starts = [count(==(k), d.s_comp) for k in eachindex(d.competitors)]
+        it.lap1_mean, it.lap1_sd = vec(mean(I1; dims = 1)), vec(std(I1; dims = 1))
+    end
     sort!(it, :mean)
     CSV.write("output/$(tag)_incidents.csv", it)
     println("\nincident proneness (logit offset on π; ≥ 1000 laps):")
