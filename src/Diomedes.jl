@@ -28,7 +28,7 @@ using Dates
 using HTTP
 using JSON3
 using LinearAlgebra
-using LogExpFunctions: log1mexp, logaddexp, logistic, logsumexp
+using LogExpFunctions: log1mexp, logaddexp, logistic, logit, logsumexp
 import MCMCDiagnosticTools
 using Random
 using Unicode

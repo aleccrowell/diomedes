@@ -145,7 +145,7 @@ function export_modes(chs, g, spec, model, outdir)
             sπ, sλ = track_shift(θ, cov)
             P[k, :] = θ.a_π .+ sπ .+ rw_path(θ.τ_π_rw .* θ.e_π_rw)
             Λ[k, :] = θ.a_λ .+ sλ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)
-            Kp[k, :] = rw_path(θ.τ_κ .* θ.e_κ)
+            Kp[k, :] = rw_path(Diomedes.kappa_steps(θ))
         end
         append!(sm, DataFrame(mode = m, kept = m in kept, season = seasons,
                               pi_mean = vec(mean(logistic.(P); dims = 1)), pi_q05 = logistic.(q(P, 0.05)), pi_q95 = logistic.(q(P, 0.95)),
@@ -239,7 +239,7 @@ function export_race(model, source)
             ll[k, :] = θ.a_λ .+ sλ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)
             spec.circ && (CX[k, :] = circuit_slopes(θ.τ_cx, θ.u_cx, g, sc))
             spec.track && (TR[k, :] = vcat(θ.β_track_π, θ.β_track_λ))
-            lk[k, :] = rw_path(θ.τ_κ .* θ.e_κ)
+            lk[k, :] = rw_path(Diomedes.kappa_steps(θ))
             spec.slopes && (SL[k, :] = career_slopes(θ.τ_slope, θ.u_slope))
             spec.dev && (DV[k, :] = dev_trends(θ.τ_dev, θ.u_dev, g, sc))
             spec.age && (AC[k, :] = age_curve(θ.τ_age, θ.e_age, B))
@@ -276,7 +276,8 @@ function export_race(model, source)
     CSV.write(joinpath(outdir, "drivers.csv"), dt)
 
     # car-seasons (per-draw residuals; with walks the effect is residual + chassis + engine)
-    Bm = mapslices(b -> sum_to_zero_by(b, g.mach_season, sc), stack(vec(chain[:b_mach]); dims = 1); dims = 2)
+    Bm = reduce(vcat, [sum_to_zero_by(Diomedes.car_residuals(draw(chain, pnames, i, c), cov), g.mach_season, sc)'
+                       for c in 1:nc for i in 1:ni])                    # loop order: i within c
     TOT = spec.walk ? Bm .+ CH .+ EN : Bm                                     # draws × cars
     ct = DataFrame(id = g.machines, season = [seasons[s] for s in g.mach_season],
                    rows = [count(==(m), machs) for m in eachindex(g.machines)])
@@ -362,7 +363,7 @@ function export_race(model, source)
         k = (c - 1) * ni + i
         θk = draw(chain, pnames, i, c)
         @assert A[k, :] ≈ (hasp(:a_comp) ? sum_to_zero(θk.a_comp) : θk.σ_comp .* sum_to_zero(θk.z_comp))
-        @assert lk[k, :] ≈ rw_path(draw(chain, pnames, i, c).τ_κ .* draw(chain, pnames, i, c).e_κ)
+        @assert lk[k, :] ≈ rw_path(Diomedes.kappa_steps(draw(chain, pnames, i, c)))
     end
 
     # rank probabilities among drivers with ≥ 20 results (ranked in every draw)
@@ -447,8 +448,7 @@ function export_race(model, source)
                                                  ("engine_step", vec(chain[:τ_en])), ("engine_first", vec(chain[:σ0_en])),
                                                  ("residual_sd", vec(chain[:σ_mach])),
                                                  ("ownership_multiplier", exp.(vec(chain[:δ_own]))),
-                                                 ("chassis_rule_multiplier", exp.(vec(chain[:δ_reg_ch]))),
-                                                 ("engine_rule_multiplier", exp.(vec(chain[:δ_reg_en])))))...,
+                                                 ("regulation_multiplier", exp.(vec(chain[:δ_reg])))))...,
                      states = (; chassis = length(cw.chassis.prev), engine = length(cw.engine.prev))) : missing,
                 exported_by = "scripts/export_site.jl race")
     write_manifest(outdir, manifest)

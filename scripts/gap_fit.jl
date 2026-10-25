@@ -42,7 +42,7 @@ fit(; kw...) = spec.family === :t4 ? fit_gaps(g; sampler, kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                  centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
-                 race_hier = spec.race_hier, race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, sampler, kw...)
+                 race_hier = spec.race_hier, race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl, wlevn = spec.wlevn, sampler, kw...)
 
 include("gap_data.jl")
 res, g = gap_data(mode)
@@ -72,10 +72,11 @@ if spec.family === :pl
     println("baseline incident probability logistic(a_π) ≈ $(round(mean(1 ./ (1 .+ exp.(-vec(chain[:a_π])))); digits = 3)), ",
             "baseline mean loss exp(a_λ) ≈ $(round(mean(exp.(vec(chain[:a_λ]))); digits = 2))%")
     for k in (Diomedes.loss_param_names(spec.loss_duration, spec.era, spec.track)[3:end]...,
-              Diomedes.pace_param_names(spec.pace_scale)..., Diomedes.age_param_names(spec.age)...,
+              Diomedes.pace_param_names(spec.pace_scale, spec.ncres, spec.kc, spec.kst)..., Diomedes.age_param_names(spec.age)...,
               Diomedes.big_param_names(spec.big_loss)..., Diomedes.slope_param_names(spec.slopes)..., Diomedes.dev_param_names(spec.dev)...,
-              Diomedes.circ_param_names(spec.circ)..., Diomedes.walk_param_names(spec.walk)...)
-        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :b_mach, :e_age, :u_slope, :u_dev, :u_cx, :z_ch, :z_en) && continue
+              Diomedes.circ_param_names(spec.circ)..., Diomedes.walk_param_names(spec.walk, spec.walk1, spec.wlev, spec.wst, spec.wstc, spec.wstl)...,
+              Diomedes.works_param_names(spec.works)..., Diomedes.dinc_param_names(spec.dinc)...)
+        k in (:z_π_era, :z_λ_era, :e_π_rw, :e_λ_rw, :e_κ, :s_κ, :l_κ, :b_mach, :z_res, :e_age, :u_slope, :u_dev, :u_cx, :z_ch, :z_en, :zl_ch, :zl_en, :xs_ch, :xs_en, :u_dinc) && continue
         if k in (:τ_cx, :β_track_π, :β_track_λ)     # one per circuit covariate (#81)
             labels = k === :τ_cx ? ("speed", "rough", "temp") : ("tight", "mixed", "wet")
             v = stack(vec(chain[k]))

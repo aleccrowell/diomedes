@@ -21,11 +21,12 @@ _, g = gap_data(mode; io = devnull)
 m = paceloss_effects(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                      age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                      centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν, race_hier = spec.race_hier,
-                     race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk)
+                     race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl, wlevn = spec.wlevn)
 LDF = Turing.DynamicPPL.LogDensityFunction
 LDP = Turing.DynamicPPL.LogDensityProblems
-f = LDF(m; adtype = Diomedes.gap_sampler().adtype)
-x = 0.05 .+ 0.1 .* rand(Xoshiro(1), LDP.dimension(f))     # constrained space: all positive is valid (σ, τ, δ_λ2)
+# the sampler's coordinates: linked (unconstrained); constrained ones can hide slow transforms (#102)
+f = LDF(m, Turing.DynamicPPL.getlogjoint_internal, Turing.DynamicPPL.LinkAll(); adtype = Diomedes.gap_sampler().adtype)
+x = 0.1 .* randn(Xoshiro(1), LDP.dimension(f))            # unconstrained: any vector is valid
 for _ in 1:3; LDP.logdensity_and_gradient(f, x); end
 tl = mean([@elapsed(LDP.logdensity(f, x)) for _ in 1:n])
 tg = mean([@elapsed(LDP.logdensity_and_gradient(f, x)) for _ in 1:n])

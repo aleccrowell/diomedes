@@ -1,0 +1,34 @@
+builder_id,works_id,first_year,last_year,uncertain,notes,sources
+ferrari,ferrari,1950,2026,,Scuderia Ferrari: Ferrari chassis with Ferrari engines throughout. Private Ferraris of the 1950s share the works and engine and count as works under this rule.,https://en.wikipedia.org/wiki/Scuderia_Ferrari
+alfa-romeo,alfa-romeo-1950,1950,1951,,Alfa Corse: Alfa Romeo's own team and engines.,https://en.wikipedia.org/wiki/Alfa_Romeo_in_Formula_One
+alfa-romeo,alfa-romeo-1979,1979,1985,,Alfa Romeo works chassis with Alfa Romeo engines (Autodelta 1979-82; Euroracing 1983-85).,https://en.wikipedia.org/wiki/Alfa_Romeo_in_Formula_One
+talbot-lago,talbot-lago,1950,1951,,Talbot-Lago chassis and engines.,https://en.wikipedia.org/wiki/Talbot-Lago
+maserati,maserati,1950,1960,,Officine Alfieri Maserati: Maserati chassis and engines. Private Maseratis share the works and engine and count as works under this rule.,https://en.wikipedia.org/wiki/Maserati_in_motorsport
+era,era,1950,1952,,English Racing Automobiles: own chassis and engines.,https://en.wikipedia.org/wiki/English_Racing_Automobiles
+alta,alta,1950,1952,,Alta: own chassis and engines (Geoffrey Taylor).,https://en.wikipedia.org/wiki/Alta_Car_and_Engineering_Company
+gordini,simca-gordini,1950,1953,,Amédée Gordini's team (Simca-Gordini): own chassis and engines.,https://en.wikipedia.org/wiki/Gordini
+gordini,gordini,1952,1956,,Gordini: own chassis and engines.,https://en.wikipedia.org/wiki/Gordini
+osca,osca,1951,1953,,OSCA (Maserati brothers): own chassis and engines.,https://en.wikipedia.org/wiki/OSCA
+brm,brm,1951,1977,,British Racing Motors: own chassis and engines.,https://en.wikipedia.org/wiki/British_Racing_Motors
+veritas,veritas,1952,1953,,Veritas: own chassis and engines.,https://en.wikipedia.org/wiki/Veritas_(automobile)
+emw,emw,1953,1953,,EMW (Eisenacher Motorenwerk): own chassis and engine.,https://en.wikipedia.org/wiki/Eisenacher_Motorenwerk
+mercedes-1954,mercedes-1954,1954,1955,,Daimler-Benz's works team with its own straight-8.,https://en.wikipedia.org/wiki/Mercedes-Benz_in_Formula_One
+lancia,lancia,1954,1955,,Lancia: own chassis (D50) and engines.,https://en.wikipedia.org/wiki/Lancia_D50
+vanwall,vanwall,1954,1960,,Vanwall: own chassis and engines (Tony Vandervell).,https://en.wikipedia.org/wiki/Vanwall
+bugatti,bugatti,1956,1956,,Bugatti Type 251: own chassis and engine.,https://en.wikipedia.org/wiki/Bugatti_Type_251
+porsche,porsche,1957,1964,,Porsche: own chassis and engines.,https://en.wikipedia.org/wiki/Porsche_in_Formula_One
+ats,ats,1963,1963,,ATS (Automobili Turismo e Sport): own chassis and engine.,https://en.wikipedia.org/wiki/Automobili_Turismo_e_Sport
+honda,honda-1964,1964,1968,,Honda's 1960s works team with its own engines.,https://en.wikipedia.org/wiki/Honda_in_Formula_One
+matra,matra,1968,1972,,Matra Sports: own chassis with the Matra V12 (1968 and 1970-72; 1969 Matra-Ford ran under Tyrrell).,https://en.wikipedia.org/wiki/Matra_in_Formula_One
+tecno,tecno,1972,1973,,Tecno: own chassis and flat-12.,https://en.wikipedia.org/wiki/Tecno_(motorsport)
+renault,renault-viry,1977,1985,,Renault Sport works team with Renault engines.,https://en.wikipedia.org/wiki/Renault_in_Formula_One
+zakspeed,zakspeed,1985,1988,,Zakspeed: own chassis and turbo engines (Yamaha engines in 1989).,https://en.wikipedia.org/wiki/Zakspeed
+renault,enstone,2000,2009,uncertain,Renault owned the Enstone team from March 2000 (Benetton-Playlife 2000 and Benetton-Renault 2001 count as works) until Genii's majority purchase for 2010. 2010-15 (Genii; Lotus F1) is a customer under this rule though Renault stayed the engine partner.,https://en.wikipedia.org/wiki/Renault_in_Formula_One
+renault,enstone,2016,2025,,Renault bought the team back for 2016 (Renault 2016-20; Alpine 2021-25).,https://en.wikipedia.org/wiki/Renault_in_Formula_One https://en.wikipedia.org/wiki/Alpine_F1_Team
+toyota,toyota,2002,2009,,Toyota Racing: own chassis and engines.,https://en.wikipedia.org/wiki/Toyota_Racing
+honda,brackley,2006,2008,,Honda Racing F1 (Brackley) after Honda's full purchase of BAR. BAR-Honda before 2006 (Honda 45% from late 2004) is a customer under this rule.,https://en.wikipedia.org/wiki/Honda_Racing_F1
+bmw,hinwil,2006,2009,,BMW Sauber: BMW owned the Hinwil team.,https://en.wikipedia.org/wiki/BMW_Sauber
+mercedes,brackley,2010,2026,,Mercedes-AMG Petronas: Mercedes owned the Brackley team (Brixworth engines). McLaren-Mercedes (Mercedes held 40% of the McLaren Group 2000-09) is a customer under this rule.,https://en.wikipedia.org/wiki/Mercedes-Benz_in_Formula_One
+audi,hinwil,2026,2026,,Audi's own team (the Hinwil works) with Audi power units from Neuburg.,https://en.wikipedia.org/wiki/Audi_in_Formula_One
+red-bull-powertrains,milton-keynes,2026,2026,,Red Bull Racing with Red Bull Powertrains' own power unit (Ford as partner); Red Bull owns both.,https://en.wikipedia.org/wiki/Red_Bull_Powertrains
+red-bull-powertrains,faenza,2026,2026,,Racing Bulls (Red Bull-owned) with Red Bull Powertrains' power unit.,https://en.wikipedia.org/wiki/Red_Bull_Powertrains

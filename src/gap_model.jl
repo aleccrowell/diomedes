@@ -334,8 +334,18 @@ function gap_effects_table(chain, g::GapData)
     comp = centred_drivers ? mapslices(sum_to_zero, draws(:a_comp); dims = 2) :
         mapslices(sum_to_zero, draws(:z_comp); dims = 2) .* vec(chain[:σ_comp])
     counts = season_counts(g)
-    centred = any(vn -> string(vn) == "b_mach", Turing.FlexiChains.parameters(chain))   # #15 models
-    mach = centred ? mapslices(b -> sum_to_zero_by(b, g.mach_season, counts), draws(:b_mach); dims = 2) :
+    pnames = string.(Turing.FlexiChains.parameters(chain))
+    centred = "b_mach" in pnames || "z_res" in pnames   # #15 models (z_res: non-centred, #102)
+    if "z_res" in pnames
+        ms = LossCovariates(g).mach_season
+        steps = "l_κ" in pnames ? [diff(l) for l in vec(chain[:l_κ])] :
+                "s_κ" in pnames ? vec(chain[:s_κ]) : [t .* e for (t, e) in zip(vec(chain[:τ_κ]), vec(chain[:e_κ]))]
+        K = reduce(vcat, [exp.(rw_path(st))[ms]' for st in steps])
+        bdraws = vec(chain[:σ_mach]) .* K .* draws(:z_res)
+    else
+        bdraws = centred ? draws(:b_mach) : nothing
+    end
+    mach = centred ? mapslices(b -> sum_to_zero_by(b, g.mach_season, counts), bdraws; dims = 2) :
         mapslices(z -> sum_to_zero_by(z, g.mach_season, counts), draws(:z_mach); dims = 2) .* vec(chain[:σ_mach])
     names = Dict(zip(g.rows.competitor_id, g.rows.competitor_name))
     all_comp = vcat(g.t_comp, g.c_comp)

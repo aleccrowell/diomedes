@@ -35,7 +35,7 @@ function paths(chain, names, cov, pace_scale)
         k += 1
         lp[k, :] = θ.a_π .+ rw_path(θ.τ_π_rw .* θ.e_π_rw)
         ll[k, :] = θ.a_λ .+ rw_path(θ.τ_λ_rw .* θ.e_λ_rw)
-        pace_scale && (lk[k, :] = rw_path(θ.τ_κ .* θ.e_κ))
+        pace_scale && (lk[k, :] = rw_path(Diomedes.kappa_steps(θ)))
     end
     return lp, ll, lk
 end
