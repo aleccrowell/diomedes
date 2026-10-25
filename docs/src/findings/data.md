@@ -41,8 +41,9 @@ average speed, road-surface roughness and air temperature, relative to the car's
 <code>own_change</code>, <code>reg_change</code>: the step into this season crosses a change of ownership or a major regulation change</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/ranks.csv">ranks.csv</a></td><td>driver with ≥ 20 results</td>
 <td><code>id</code>, <code>name</code>, <code>rows</code>; <code>p_top1</code>, <code>p_top3</code>, <code>p_top10</code>: share of the
-posterior draws in which the driver ranks fastest, in the top 3, in the top 10 among these drivers;
-<code>rank_median</code>, <code>rank_q05</code>, <code>rank_q95</code></td></tr>
+posterior draws in which the driver ranks fastest, in the top 3, in the top 10 among these drivers, on race pace
+(driver effect + incident part, see <code>drivers.csv</code>); <code>rank_median</code>, <code>rank_q05</code>, <code>rank_q95</code>;
+<code>p_top1_pace</code>, <code>p_top3_pace</code>, <code>p_top10_pace</code>, <code>rank_median_pace</code>: the same on open-track pace (the driver effect alone)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/driver_seasons.csv">driver_seasons.csv</a></td><td>driver × car-season raced</td>
 <td><code>driver</code>, <code>name</code>, <code>season</code>, <code>car</code>, <code>constructor</code>, <code>rows</code>;
 <code>driver_*</code>: driver part, κ_season × (driver effect + career terms averaged over that season's results);

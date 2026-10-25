@@ -12,6 +12,13 @@ was fitted and how to read the units). Negative is faster.
 
 ## Fastest drivers
 
+Drivers are ranked on **race pace**: their pace on open track plus the time
+their incident proneness adds or saves, both in the same reference race of
+average incident rate and loss size (see
+[Speed and incident proneness](@ref)). Avoiding time lost to spins, stops
+and other incidents is part of being fast in a race. **Open-track pace**, the
+driver effect alone, is one click away.
+
 Posterior means (points) and 90% intervals (lines). Use the sliders to change
 how many drivers are shown and the minimum number of results a driver needs.
 Drivers with few results get wide intervals and are shrunk towards the average.
@@ -22,38 +29,46 @@ Drivers with few results get wide intervals and are shrunk towards the average.
 diomedesFigure("fig-driver-ranking", {
   data: { url: "assets/data/race/drivers.csv",
           format: { type: "csv", parse: { rows: "number", first_season: "number", last_season: "number",
-                                          mean: "number", sd: "number", q05: "number", q95: "number" } } },
+                                          mean: "number", sd: "number", q05: "number", q95: "number",
+                                          overall_mean: "number", overall_q05: "number", overall_q95: "number",
+                                          incident_part_mean: "number" } } },
   params: [
     { name: "top", value: 30, bind: { input: "range", min: 10, max: 80, step: 5, name: "Drivers shown " } },
-    { name: "minrows", value: 20, bind: { input: "range", min: 1, max: 100, step: 1, name: "Minimum results " } }
+    { name: "minrows", value: 20, bind: { input: "range", min: 1, max: 100, step: 1, name: "Minimum results " } },
+    { name: "measure", value: "race pace",
+      bind: { input: "radio", options: ["race pace", "open-track pace"], name: "Measure " } }
   ],
   transform: [
     { filter: "datum.rows >= minrows" },
-    { window: [{ op: "row_number", as: "rank" }], sort: [{ field: "mean", order: "ascending" }] },
+    { calculate: "measure == 'race pace' ? datum.overall_mean : datum.mean", as: "m" },
+    { calculate: "measure == 'race pace' ? datum.overall_q05 : datum.q05", as: "lo" },
+    { calculate: "measure == 'race pace' ? datum.overall_q95 : datum.q95", as: "hi" },
+    { window: [{ op: "row_number", as: "rank" }], sort: [{ field: "m", order: "ascending" }] },
     { filter: "datum.rank <= top" },
     { calculate: "datum.name + ' (' + datum.first_season + '–' + datum.last_season + ')'", as: "label" }
   ],
   height: { step: 16 },
   width: "container",
   encoding: {
-    y: { field: "label", type: "nominal", sort: { field: "mean", order: "ascending" }, title: null,
+    y: { field: "label", type: "nominal", sort: { field: "m", order: "ascending" }, title: null,
          axis: { labelLimit: 260 } },
     tooltip: [
       { field: "name", title: "Driver" },
       { field: "first_season", title: "First season" },
       { field: "last_season", title: "Last season" },
       { field: "rows", title: "Results" },
-      { field: "mean", title: "Effect (%)", format: ".2f" },
-      { field: "q05", title: "5%", format: ".2f" },
-      { field: "q95", title: "95%", format: ".2f" }
+      { field: "overall_mean", title: "Race pace (%)", format: ".2f" },
+      { field: "overall_q05", title: "Race pace 5%", format: ".2f" }, { field: "overall_q95", title: "Race pace 95%", format: ".2f" },
+      { field: "mean", title: "Open-track pace (%)", format: ".2f" },
+      { field: "incident_part_mean", title: "Incident part (%)", format: ".2f" }
     ]
   },
   layer: [
     { mark: { type: "rule", opacity: 0.6 },
-      encoding: { x: { field: "q05", type: "quantitative", title: "Driver effect, % of race time (negative = faster)" },
-                  x2: { field: "q95" } } },
+      encoding: { x: { field: "lo", type: "quantitative", title: "% of race time, average-season units (negative = faster)" },
+                  x2: { field: "hi" } } },
     { mark: { type: "point", filled: true, size: 45 },
-      encoding: { x: { field: "mean", type: "quantitative" } } }
+      encoding: { x: { field: "m", type: "quantitative" } } }
   ]
 });
 </script>
@@ -64,10 +79,15 @@ diomedesFigure("fig-driver-ranking", {
 ```@raw html
 <p>Intervals on effects don't directly answer "who is the fastest?". Ranking the
 drivers with at least 20 results in each of the 4,000 posterior draws does: the
-bars show how often each driver ranks first, in the top 3 and in the top 10.
-Even the most likely fastest driver is first in only
+bars show how often each driver ranks first, in the top 3 and in the top 10, on
+race pace (or on open-track pace with the toggle). On race pace even the most
+likely fastest driver is first in only
 <span class="diomedes-stat" data-path="assets/data/race/ranks.csv" data-stat="max" data-x="p_top1" data-format="pct">…</span>
-of the draws.</p>
+of the draws. The two measures disagree at the top: on open-track pace
+Verstappen is first in 64% of the draws, the clearest leader in the data; on
+race pace Fangio leads (37%), ahead of Hunt, Stewart and Senna, and Verstappen
+is first in 8%. The difference is incidents: Fangio, Stewart and Senna rarely
+lost time to them, while Verstappen is about average among the top drivers.</p>
 ```
 
 ```@raw html
@@ -76,12 +96,20 @@ of the draws.</p>
 diomedesFigure("fig-driver-ranks", {
   data: { url: "assets/data/race/ranks.csv",
           format: { type: "csv", parse: { rows: "number", p_top1: "number", p_top3: "number", p_top10: "number",
-                                          rank_median: "number", rank_q05: "number", rank_q95: "number" } } },
+                                          rank_median: "number", rank_q05: "number", rank_q95: "number",
+                                          p_top1_pace: "number", p_top3_pace: "number", p_top10_pace: "number",
+                                          rank_median_pace: "number" } } },
+  params: [{ name: "measure", value: "race pace",
+      bind: { input: "radio", options: ["race pace", "open-track pace"], name: "Measure " } }],
   transform: [
-    { window: [{ op: "row_number", as: "order" }], sort: [{ field: "p_top10", order: "descending" }] },
+    { calculate: "measure == 'race pace' ? datum.p_top1 : datum.p_top1_pace", as: "t1" },
+    { calculate: "measure == 'race pace' ? datum.p_top3 : datum.p_top3_pace", as: "t3" },
+    { calculate: "measure == 'race pace' ? datum.p_top10 : datum.p_top10_pace", as: "t10" },
+    { calculate: "measure == 'race pace' ? datum.rank_median : datum.rank_median_pace", as: "rmed" },
+    { window: [{ op: "row_number", as: "order" }], sort: [{ field: "t10", order: "descending" }, { field: "t1", order: "descending" }] },
     { filter: "datum.order <= 25" },
-    { fold: ["p_top10", "p_top3", "p_top1"], as: ["level", "p"] },
-    { calculate: "{p_top1: 'fastest', p_top3: 'top 3', p_top10: 'top 10'}[datum.level]", as: "which" }
+    { fold: ["t10", "t3", "t1"], as: ["level", "p"] },
+    { calculate: "{t1: 'fastest', t3: 'top 3', t10: 'top 10'}[datum.level]", as: "which" }
   ],
   width: "container", height: { step: 16 },
   mark: { type: "bar", height: { band: 0.8 } },
@@ -95,8 +123,7 @@ diomedesFigure("fig-driver-ranks", {
     order: { field: "p", sort: "descending" },
     tooltip: [{ field: "name", title: "Driver" }, { field: "rows", title: "Results" },
               { field: "which", title: "Rank" }, { field: "p", title: "Probability", format: ".1%" },
-              { field: "rank_median", title: "Median rank" }, { field: "rank_q05", title: "Rank 5%" },
-              { field: "rank_q95", title: "Rank 95%" }]
+              { field: "rmed", title: "Median rank" }]
   }
 });
 </script>
@@ -119,13 +146,17 @@ highlight it.
 diomedesFigure("fig-driver-scatter", {
   data: { url: "assets/data/race/drivers.csv",
           format: { type: "csv", parse: { rows: "number", first_season: "number", last_season: "number",
-                                          mean: "number", sd: "number", q05: "number", q95: "number" } } },
+                                          mean: "number", sd: "number", q05: "number", q95: "number",
+                                          overall_mean: "number", incident_part_mean: "number" } } },
   params: [
     { name: "search", value: "", bind: { input: "text", placeholder: "e.g. Prost", name: "Highlight driver " } },
-    { name: "zoom", select: "interval", bind: "scales" }
+    { name: "zoom", select: "interval", bind: "scales" },
+    { name: "measure", value: "race pace",
+      bind: { input: "radio", options: ["race pace", "open-track pace"], name: "Measure " } }
   ],
   transform: [
     { calculate: "(datum.first_season + datum.last_season) / 2", as: "mid" },
+    { calculate: "measure == 'race pace' ? datum.overall_mean : datum.mean", as: "m" },
     { calculate: "search != '' && indexof(lower(datum.name), lower(search)) >= 0", as: "match" }
   ],
   width: "container",
@@ -134,7 +165,7 @@ diomedesFigure("fig-driver-scatter", {
   encoding: {
     x: { field: "mid", type: "quantitative", title: "Middle of career (season)", scale: { zero: false },
          axis: { format: "d" } },
-    y: { field: "mean", type: "quantitative", title: "Driver effect, % of race time (negative = faster)",
+    y: { field: "m", type: "quantitative", title: "% of race time, average-season units (negative = faster)",
          scale: { reverse: true } },
     size: { field: "rows", type: "quantitative", title: "Results", scale: { range: [10, 300] } },
     color: { condition: { test: "datum.match", value: "#e45756" }, value: "#4c78a8" },
@@ -144,8 +175,9 @@ diomedesFigure("fig-driver-scatter", {
       { field: "first_season", title: "First season" },
       { field: "last_season", title: "Last season" },
       { field: "rows", title: "Results" },
-      { field: "mean", title: "Effect (%)", format: ".2f" },
-      { field: "sd", title: "sd", format: ".2f" }
+      { field: "overall_mean", title: "Race pace (%)", format: ".2f" },
+      { field: "mean", title: "Open-track pace (%)", format: ".2f" },
+      { field: "incident_part_mean", title: "Incident part (%)", format: ".2f" }
     ]
   }
 });

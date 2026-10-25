@@ -41,7 +41,9 @@
 #                 mean), with 90% intervals, one row per chain and quantity
 #   age_curve.csv the population career curve, if the model has one
 #   ranks.csv     per driver with ≥ 20 results: P(fastest), P(top 3), P(top 10) and the
-#                 rank's median and 90% interval, ranking those drivers in every draw
+#                 rank's median and 90% interval, ranking those drivers in every draw;
+#                 with incident proneness on race pace (effect + incident part), and the
+#                 `_pace` columns on the driver effect alone
 #   driver_seasons.csv  per driver and car-season raced: the driver part
 #                 (κ_season × (driver effect + career terms averaged over that season's
 #                 results)), the car part (car-season effect) and their sum, in that
@@ -405,18 +407,31 @@ function export_race(model, source)
         @assert lk[k, :] ≈ rw_path(Diomedes.kappa_steps(draw(chain, pnames, i, c)))
     end
 
-    # rank probabilities among drivers with ≥ 20 results (ranked in every draw)
+    # rank probabilities among drivers with ≥ 20 results (ranked in every draw). With
+    # incident proneness (#101) drivers are ranked on race pace: the driver effect plus
+    # the time their proneness adds in the reference race (see above), since avoiding
+    # time lost to incidents is part of being fast in a race; the `_pace` columns rank
+    # the driver effect alone (open-track pace)
     nrows = [count(==(d), comps) for d in eachindex(g.competitors)]
     elig = findall(>=(20), nrows)
-    R = zeros(Int, ndraw, length(elig))
-    for k in 1:ndraw
-        R[k, sortperm(A[k, elig])] .= 1:length(elig)
+    function ranks(X)
+        R = zeros(Int, ndraw, length(elig))
+        for k in 1:ndraw
+            R[k, sortperm(X[k, elig])] .= 1:length(elig)
+        end
+        return R
     end
+    R = ranks(dinc ? A .+ IP : A)
     rt = DataFrame(id = g.competitors[elig], name = [dname[c] for c in g.competitors[elig]], rows = nrows[elig],
                    p_top1 = r4(vec(mean(R .== 1; dims = 1))), p_top3 = r4(vec(mean(R .<= 3; dims = 1))),
                    p_top10 = r4(vec(mean(R .<= 10; dims = 1))),
                    rank_median = [median(c) for c in eachcol(R)],
                    rank_q05 = [quantile(c, 0.05) for c in eachcol(R)], rank_q95 = [quantile(c, 0.95) for c in eachcol(R)])
+    if dinc
+        Rp = ranks(A)
+        rt.p_top1_pace, rt.p_top3_pace = r4(vec(mean(Rp .== 1; dims = 1))), r4(vec(mean(Rp .<= 3; dims = 1)))
+        rt.p_top10_pace, rt.rank_median_pace = r4(vec(mean(Rp .<= 10; dims = 1))), [median(c) for c in eachcol(Rp)]
+    end
     sort!(rt, :rank_median)
     CSV.write(joinpath(outdir, "ranks.csv"), rt)
 
