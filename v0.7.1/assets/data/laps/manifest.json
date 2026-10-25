@@ -1,0 +1,87 @@
+{
+    "model": "lap_effects (stint age, career slopes, in-season development, lead laps, tyre management, starts, age curve, circuit slopes)",
+    "fit": "laps_1996-2025_inferred_slopes_dev_lead_tyremgmt_starts_age_circ",
+    "data": "F1 1996–2025 clean laps (Ergast lap times to 2019, Jolpica from 2020, inferred pit stops): 531737 laps, 145 drivers, 320 machine-seasons, 567 races; excluded lap1 11506, no_machine 0, pit 40218, slow_race 32156, stoppage 124",
+    "race_model": "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
+    "convergence": {
+        "max_rhat": 1.014,
+        "min_ess": 219,
+        "divergences": 0,
+        "groups": {
+            "tyre (drv)": {
+                "max_rhat": 1.006,
+                "min_ess": 1136
+            },
+            "start (car)": {
+                "max_rhat": 1.005,
+                "min_ess": 2690
+            },
+            "drivers": {
+                "max_rhat": 1.014,
+                "min_ess": 219
+            },
+            "slopes": {
+                "max_rhat": 1.013,
+                "min_ess": 252
+            },
+            "dev": {
+                "max_rhat": 1.006,
+                "min_ess": 2272
+            },
+            "age curve": {
+                "max_rhat": 1.008,
+                "min_ess": 588
+            },
+            "scalars": {
+                "max_rhat": 1.01,
+                "min_ess": 443
+            },
+            "tyre (car)": {
+                "max_rhat": 1.007,
+                "min_ess": 1061
+            },
+            "cars": {
+                "max_rhat": 1.007,
+                "min_ess": 730
+            },
+            "circuits": {
+                "max_rhat": 1.007,
+                "min_ess": 2530
+            },
+            "start (drv)": {
+                "max_rhat": 1.004,
+                "min_ess": 2065
+            }
+        }
+    },
+    "modes": [
+        {
+            "label": "A",
+            "chains": [
+                1,
+                2,
+                3,
+                4
+            ],
+            "draws": 4000,
+            "kept": true,
+            "mean_logjoint": -852126.4,
+            "scalars": {
+                "tau_delta": 4.5816,
+                "sigma": 0.735,
+                "pi_base": 0.1576,
+                "lambda_base": 3.4911
+            },
+            "convergence": null
+        }
+    ],
+    "kept_modes": [
+        "A"
+    ],
+    "effects_by_mode": [
+    ],
+    "mode_drop_nats": 10,
+    "exported_by": "scripts/export_site.jl laps",
+    "export_commit": "6dd9f6f",
+    "date": "2026-10-25"
+}
