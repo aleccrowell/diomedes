@@ -388,14 +388,15 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     gfage, gcx = zeros(length(fage)), zeros(length(cx))
     nm = length(d.machines)
     gσ, gπ, gλ, val = 0.0, 0.0, 0.0, 0.0
+    lq = (log1p(-π), log(π))
     for j in 1:N
         r, y = d.race[j], d.y[j]
         μ = γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r]
-        v, p = value_grad4((m, s, q, l) -> paceloss_logpdf(y - m, s, q, l), μ, σ, π, λ)
+        v, pμ, pσ, pπ, pλ = paceloss_row_vg(y, μ, σ, π, λ, lq)
         val += v
-        gμ[j] = p[1]
-        gγ[r] += p[1]; gδ[r] += p[1] * d.fracc[j]
-        gσ += p[2]; gπ += p[3]; gλ += p[4]
+        gμ[j] = pμ
+        gγ[r] += pμ; gδ[r] += pμ * d.fracc[j]
+        gσ += pσ; gπ += pπ; gλ += pλ
     end
     # h enters every lap of its race through the race mean: dμ_k/dh_j = [k = j] - 1/n_race
     for j in 1:N
@@ -412,8 +413,12 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
             gcx[(k - 1) * nm + d.mach[j]] += gh * d.race_x[d.race[j], k]
         end
     end
+    # the closure captures the scalar sums through `gs`, bound once: capturing gσ, gπ, gλ
+    # themselves (reassigned in the loop) boxed them, and the loop's updates were
+    # dynamic, ~40% of a gradient (#102)
+    gs = (gσ, gπ, gλ)
     pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* gδ, Δ .* ga, Δ .* gb, Δ .* gβ, Δ .* gsl, Δ .* gdv, Δ .* gη, Δ .* gtd, Δ .* gtm,
-                   Δ .* gfage, Δ .* gcx, Δ * gσ, Δ * gπ, Δ * gλ, NoTangent())
+                   Δ .* gfage, Δ .* gcx, Δ * gs[1], Δ * gs[2], Δ * gs[3], NoTangent())
     return val, pullback
 end
 # β (tyres), sl (career slopes), dv (car development), η (lead laps), td, tm
@@ -480,13 +485,14 @@ function ChainRulesCore.rrule(::typeof(start_loglik), γ1, a, b, sd, sc, g, fage
     gfage, gcx = zeros(length(fage)), zeros(length(cx))
     nm = length(d.machines)
     gσ, gπ, gλ, val = 0.0, 0.0, 0.0, 0.0
+    lq = (log1p(-π), log(π))
     for j in 1:N
         r, y = d.s_race[j], d.s_y[j]
         μ = γ1[r] + h[j] - hbar[r]
-        v, p = value_grad4((m, s, q, l) -> paceloss_logpdf(y - m, s, q, l), μ, σ, π, λ)
+        v, pμ, pσ, pπ, pλ = paceloss_row_vg(y, μ, σ, π, λ, lq)
         val += v
-        gμ[j] = p[1]; gγ[r] += p[1]
-        gσ += p[2]; gπ += p[3]; gλ += p[4]
+        gμ[j] = pμ; gγ[r] += pμ
+        gσ += pσ; gπ += pπ; gλ += pλ
     end
     for j in 1:N
         gh = gμ[j] - gγ[d.s_race[j]] / d.s_race_n[d.s_race[j]]
@@ -499,8 +505,9 @@ function ChainRulesCore.rrule(::typeof(start_loglik), γ1, a, b, sd, sc, g, fage
             gcx[(k - 1) * nm + d.s_mach[j]] += gh * d.race_x[d.s_race[j], k]
         end
     end
+    gs = (gσ, gπ, gλ)          # bound once, so the closure does not box the loop's sums (see lap_loglik)
     pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* ga, Δ .* gb, Δ .* gsd, Δ .* gsc, Δ .* gg, Δ .* gfage, Δ .* gcx,
-                   Δ * gσ, Δ * gπ, Δ * gλ, NoTangent())
+                   Δ * gs[1], Δ * gs[2], Δ * gs[3], NoTangent())
     return val, pullback
 end
 for Tf in _TA_OR_CONST, Tc in _TA_OR_CONST
@@ -593,61 +600,61 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     σ ~ truncated(Normal(0, 1); lower = 0)
     # centred effects (as `_cdrv`, #28): each driver and car has thousands of laps,
     # so the non-centred form a = σ·z would tie σ to every z (a funnel)
-    a_comp ~ filldist(Normal(0, σ_comp), length(d.competitors))
-    b_mach ~ filldist(Normal(0, σ_mach), length(d.machines))
+    a_comp ~ IsoNormalVec(0.0, σ_comp, length(d.competitors))
+    b_mach ~ IsoNormalVec(0.0, σ_mach, length(d.machines))
     μ_γ ~ Normal(0, 2)
-    γ ~ filldist(Normal(μ_γ, 2), length(d.races))
+    γ ~ IsoNormalVec(μ_γ, 2.0, length(d.races))
     μ_δ ~ Normal(0, 2)
     τ_δ ~ truncated(Normal(0, 2); lower = 0)
-    δ ~ filldist(Normal(μ_δ, τ_δ), length(d.races))
+    δ ~ IsoNormalVec(μ_δ, τ_δ, length(d.races))
     if tyres
-        β ~ filldist(Normal(0, 1), 2length(d.eras))
+        β ~ StdNormalVec(2length(d.eras))
     else
         β = zeros(2length(d.eras))
     end
     if slopes
         τ_slope ~ truncated(Normal(0, 0.5); lower = 0)
-        u_slope ~ filldist(Normal(), length(d.competitors))
+        u_slope ~ StdNormalVec(length(d.competitors))
         sl = career_slopes(τ_slope, u_slope)
     else
         sl = zeros(length(d.competitors))
     end
     if dev
         τ_dev ~ truncated(Normal(0, 1); lower = 0)
-        u_dev ~ filldist(Normal(), length(d.machines))
+        u_dev ~ StdNormalVec(length(d.machines))
         dv = τ_dev .* center_by(u_dev, d.mach_season, mach_counts)
     else
         dv = zeros(length(d.machines))
     end
     if lead
-        η ~ filldist(Normal(0, 1), 1)
+        η ~ StdNormalVec(1)
     else
         η = zeros(1)
     end
     if tyre_mgmt
         τ_td ~ truncated(Normal(0, 0.5); lower = 0)
-        u_td ~ filldist(Normal(), length(d.competitors))
+        u_td ~ StdNormalVec(length(d.competitors))
         τ_tm ~ truncated(Normal(0, 0.5); lower = 0)
-        u_tm ~ filldist(Normal(), length(d.machines))
+        u_tm ~ StdNormalVec(length(d.machines))
         td = career_slopes(τ_td, u_td)                         # τ·(u - mean u)
         tm = τ_tm .* center_by(u_tm, d.mach_season, mach_counts)
     else
         td, tm = zeros(length(d.competitors)), zeros(length(d.machines))
     end
     if starts
-        γ1 ~ filldist(Normal(0, 2), length(d.races))
+        γ1 ~ IsoNormalVec(0.0, 2.0, length(d.races))
         τ_sd ~ truncated(Normal(0, 1); lower = 0)
-        u_sd ~ filldist(Normal(), length(d.competitors))
+        u_sd ~ StdNormalVec(length(d.competitors))
         τ_sc ~ truncated(Normal(0, 1); lower = 0)
-        u_sc ~ filldist(Normal(), length(d.machines))
-        g1 ~ filldist(Normal(0, 2), 2)
+        u_sc ~ StdNormalVec(length(d.machines))
+        g1 ~ IsoNormalVec(0.0, 2.0, 2)
         σ1 ~ truncated(Normal(0, 2); lower = 0)
         a_π1 ~ Normal(-1.5, 1)
         a_λ1 ~ Normal(0, 1)
     end
     if age
         τ_age ~ truncated(Normal(0, 0.2); lower = 0)
-        e_age ~ filldist(Normal(), length(d.age_years) - 1)
+        e_age ~ StdNormalVec(length(d.age_years) - 1)
         fage = age_curve(τ_age, e_age, age_basis)
     else
         fage = zeros(length(d.age_years))
@@ -655,7 +662,7 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     nm, nk = length(d.machines), size(d.race_x, 2)
     if circuits
         τ_cx ~ filldist(truncated(Normal(0, 0.5); lower = 0), nk)
-        u_cx ~ filldist(Normal(), nm * nk)
+        u_cx ~ StdNormalVec(nm * nk)
         # centred within season, covariate by covariate, in one call (each covariate's
         # seasons as their own groups); slicing would put every element on the tape
         ns = length(mach_counts)

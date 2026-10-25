@@ -171,6 +171,57 @@ row_π(πr, r, πd, d) = πd === nothing ? πr[r] : logistic(logit(πr[r]) + πd
     end
 end
 
+# R(u) = 1/(√π·erfcx(u)) - u, so that d log erfcx(u)/du = -2R(u). Directly the
+# difference cancels for large u (λ ≪ σ in the EMG); there it comes from erfc's
+# continued fraction, √π·erfcx(u) = 1/(u + (1/2)/(u + 1/(u + (3/2)/(u + …)))), whose
+# tail after the first u is R (#102).
+@inline function erfcx_tail(u, E)
+    u <= 4 && return 1 / (sqrt(π) * E) - u
+    t = u
+    for k in 60:-1:2
+        t = u + (k / 2) / t
+    end
+    return 0.5 / t
+end
+
+# `emg_logkernel(x, σ, λ)` and its (x, σ, λ) derivatives by hand (#102), along the same
+# two branches so the numerics match the dual-number derivatives: for z < 0 through
+# log erfcx (stable as λ → 0), else through log Φ(z).
+@inline function emg_logkernel_grad(x, σ, λ)
+    z = x / σ - σ / λ
+    zx, zσ, zλ = 1 / σ, -x / σ^2 - 1 / λ, σ / λ^2
+    if z < 0
+        u = -z / sqrt(2)
+        E = erfcx(u)
+        m = sqrt(2) * erfcx_tail(u, E)                   # d log erfcx(-z/√2) / dz
+        return -x^2 / (2σ^2) + log(E / 2), -x / σ^2 + m * zx, x^2 / σ^3 + m * zσ, m * zλ
+    else
+        lc = normlogcdf(z)
+        m = exp(normlogpdf(z) - lc)                     # d log Φ(z) / dz
+        return σ^2 / (2λ^2) - x / λ + lc, -1 / λ + m * zx, σ / λ^2 + m * zσ, -σ^2 / λ^3 + x / λ^2 + m * zλ
+    end
+end
+
+# Value and (μ, σ, π, λ) derivatives of `paceloss_logpdf(y - μ, σ, π, λ)` (#102), all in
+# closed form: the pace-noise and EMG components, then the mixture over π, with
+# lq = (log(1 - π), log π) computed once per call site. With four-argument duals the
+# per-row derivatives were most of a lap-model gradient.
+@inline function paceloss_row_vg(y, μ, σ, π, λ, lq = (log1p(-π), log(π)))
+    x = y - μ
+    z = x / σ
+    a = normlogpdf(z) - log(σ)
+    K, Kx, Kσ, Kλ = emg_logkernel_grad(x, σ, λ)
+    e = K - log(λ)
+    # ℓ = log((1-π)·e^a + π·e^e); w the weight of the smaller term
+    l1, l2 = lq[1] + a, lq[2] + e
+    t = exp(-abs(l1 - l2))
+    ℓ = max(l1, l2) + log1p(t)
+    w = t / (1 + t)
+    u1 = l1 >= l2 ? 1 - w : w
+    u2 = 1 - u1
+    return ℓ, u1 * z / σ - u2 * Kx, u1 * (z^2 - 1) / σ + u2 * Kσ, u2 / π - u1 / (1 - π), u2 * (Kλ - 1 / λ)
+end
+
 # Value and (μ, σ, π, λ, ρ, λ2) derivatives of one row of the big-loss model:
 # `pacebig_logpdf(y - μ, …)` for a timed row, `pacebig_loginterval(lo - μ, hi - μ, …)`
 # for a lapped one (#102). Only the three components (pace noise, the two EMGs)
@@ -241,8 +292,8 @@ function paceloss_row_grads(st, σ, πr, λr, g)
     val, dσ = 0.0, 0.0
     for i in eachindex(st.μt)
         r, y = g.t_race[i], g.y[i]
-        v, p = value_grad4((μ, s, q, l) -> paceloss_logpdf(y - μ, s, q, l), st.μt[i], σ, πr[r], λr[r])
-        val += v; dμt[i] = p[1]; dσ += p[2]; dπ[r] += p[3]; dλ[r] += p[4]
+        v, pμ, pσ, pπ, pλ = paceloss_row_vg(y, st.μt[i], σ, πr[r], λr[r])
+        val += v; dμt[i] = pμ; dσ += pσ; dπ[r] += pπ; dλ[r] += pλ
     end
     for i in eachindex(st.μc)
         r, lo, hi = g.c_race[i], g.lo[i], g.hi[i]

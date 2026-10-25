@@ -202,7 +202,8 @@ function ChainRulesCore.rrule(::typeof(retire_loglik), αm, αi, αc, car, drv, 
         gαc[t] += p[3]; gβ += p[3] * drv[c]; grc[r] += p[3]
         gb[1] += p[4]; gb[2] += p[5]; gb[3] += p[6]
     end
-    pullback(Δ) = (NoTangent(), Δ .* gαm, Δ .* gαi, Δ .* gαc, Δ .* gcar, Δ .* gdrv, Δ * gβ,
+    gβs = gβ                   # bound once, so the closure does not box the loop's sum (#102, see lap_loglik)
+    pullback(Δ) = (NoTangent(), Δ .* gαm, Δ .* gαi, Δ .* gαc, Δ .* gcar, Δ .* gdrv, Δ * gβs,
                    Δ .* grm, Δ .* gri, Δ .* grc, Δ .* gb, NoTangent())
     return val, pullback
 end
