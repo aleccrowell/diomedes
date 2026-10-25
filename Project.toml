@@ -1,6 +1,6 @@
 name = "Diomedes"
 uuid = "789b8860-c702-47b3-916c-ed8b34bafc84"
-version = "0.7.1"
+version = "0.7.2"
 authors = ["Alexander Crowell"]
 
 [deps]
