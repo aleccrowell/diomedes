@@ -2,7 +2,7 @@
     "model": "lap_effects (stint age, career slopes, in-season development, lead laps, tyre management, starts, age curve, circuit slopes)",
     "fit": "laps_1996-2025_inferred_slopes_dev_lead_tyremgmt_starts_age_circ",
     "data": "F1 1996–2025 clean laps (Ergast lap times to 2019, Jolpica from 2020, inferred pit stops): 531737 laps, 145 drivers, 320 machine-seasons, 567 races; excluded lap1 11506, no_machine 0, pit 40218, slow_race 32156, stoppage 124",
-    "race_model": "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk",
+    "race_model": "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
     "convergence": {
         "max_rhat": 1.014,
         "min_ess": 219,
@@ -82,6 +82,6 @@
     ],
     "mode_drop_nats": 10,
     "exported_by": "scripts/export_site.jl laps",
-    "export_commit": "bcfca58",
-    "date": "2026-10-23"
+    "export_commit": "6dd9f6f",
+    "date": "2026-10-25"
 }

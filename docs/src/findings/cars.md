@@ -7,8 +7,9 @@ other cars **in the same season**: the model can't compare cars across seasons
 ## One season's field
 
 Choose a season to see its cars with 90% intervals. Each effect is the sum of
-a chassis part, an engine part and a residual (see
-[Chassis and engines](@ref)); the tooltip splits it.
+a chassis part, an engine part, a works-team part and a residual (see
+[Chassis and engines](@ref)); the tooltip splits it. 2026 has the 17 races run
+so far.
 
 ```@raw html
 <div id="fig-car-season" class="diomedes-figure"></div>
@@ -18,9 +19,10 @@ diomedesFigure("fig-car-season", {
           format: { type: "csv", parse: { season: "number", rows: "number", mean: "number", sd: "number",
                                           q05: "number", q95: "number", dev_mean: "number", dev_sd: "number",
                                           speed_mean: "number", rough_mean: "number", temp_mean: "number",
-                                          chassis_mean: "number", engine_mean: "number", residual_mean: "number" } } },
+                                          chassis_mean: "number", engine_mean: "number", residual_mean: "number",
+                                          works_mean: "number" } } },
   params: [{ name: "chosen", value: 1988,
-             bind: { input: "range", min: 1950, max: 2025, step: 1, name: "Season " } }],
+             bind: { input: "range", min: 1950, max: 2026, step: 1, name: "Season " } }],
   // "constructor" can't be a sort field (it collides with Object.prototype.constructor
   // in Vega's parser), so the chart uses a copy named "team"
   transform: [{ filter: "datum.season == chosen" }, { calculate: "datum.constructor", as: "team" }],
@@ -35,6 +37,7 @@ diomedesFigure("fig-car-season", {
       { field: "q05", title: "5%", format: ".2f" }, { field: "q95", title: "95%", format: ".2f" },
       { field: "chassis_mean", title: "Chassis part (%)", format: ".2f" },
       { field: "engine_mean", title: "Engine part (%)", format: ".2f" },
+      { field: "works_mean", title: "Works-team part (%)", format: ".2f" },
       { field: "residual_mean", title: "Residual (%)", format: ".2f" },
       { field: "dev_mean", title: "Development trend (% per season)", format: ".2f" },
       { field: "speed_mean", title: "Speed slope (% per sd)", format: ".2f" },
@@ -196,25 +199,31 @@ diomedesFigure("fig-car-circuits", {
 Intervals are ±1.645 sd (about 90%). Most slopes are small next to their
 uncertainty. The clearest are from 1996 on, when cars ran more races per
 season; earlier slopes shrink towards zero. The slopes typically spread by
-0.15% per sd for speed, 0.11% for roughness and 0.09% for temperature.
+0.14% per sd for speed, 0.11% for roughness and 0.09% for temperature.
 
 ## Chassis and engines
 
-Each car-season's effect combines three parts
-([#95](https://github.com/aleccrowell/diomedes/issues/95)):
+Each car-season's effect combines four parts
+([#95](https://github.com/aleccrowell/diomedes/issues/95), [#100](https://github.com/aleccrowell/diomedes/issues/100)):
 
 - **chassis:** the works that built the car, followed across its seasons as a
   random walk. A rename keeps the works: Toleman → Benetton → Renault → Lotus →
   Alpine is one walk (Enstone), as is Jordan → … → Aston Martin (Silverstone).
 - **engine:** the works that built the engine, also a random walk. Rebadged
   engines go to their builder: TAG Heuer is Renault, Petronas is Ferrari.
-- **residual:** what's left for that car-season, such as a works team against a
-  customer with the same chassis and engine.
+- **works team:** a shift for cars whose engine builder also owns the chassis
+  works (Ferrari, Mercedes from 2010, Renault's own team, and so on), against
+  customers of the same engine.
+- **residual:** what's left for that car-season.
 
-A walk moves a little each season: about 0.35% of race time per year for a
-chassis and 0.17% for an engine, more after a change of ownership (×1.9) or a
-major rule change. The walks carry most of the variation between cars (the
-residual's spread is 0.43%). Choose a walk to see its path, relative to each
+A walk moves a little each season: about 0.33% of race time per year for a
+chassis and 0.17% for an engine, more after a change of ownership (×2.1) or a
+major rule change (×1.2, one multiplier for chassis and engine rules). The
+walks carry most of the variation between cars (the residual's spread is
+0.42%). Works teams come out about 0.33% faster than their engine's customers,
+but the 90% interval (−0.67% to +0.02%) just reaches zero: works teams usually
+also have the stronger chassis, which the walks already credit. Choose a walk
+to see its path, relative to each
 season's field (negative = faster), with 90% intervals:
 
 ```@raw html

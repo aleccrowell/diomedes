@@ -56,6 +56,14 @@ effects are meaningless even when predictions are fine.
   priors. Engine levels mix in their customers' pace: Ferrari's engine walk sits
   slightly slow throughout, likely because its customers were slow teams
   ([#95](https://github.com/aleccrowell/diomedes/issues/95)).
+- **The works-team term** is identified by works teams against customers of the
+  same engine in the same seasons. Where a works team also had the best chassis,
+  the walks and the term share the credit, which is one reason its interval is
+  wide ([#100](https://github.com/aleccrowell/diomedes/issues/100)).
+- **Driver incident proneness** is centred across drivers, so the season and
+  track terms keep describing the average driver. It's identified from which
+  drivers' results fall in the loss tail. A driver with few results shrinks
+  towards the average ([#101](https://github.com/aleccrowell/diomedes/issues/101)).
 
 ## Measuring convergence on what is identified
 

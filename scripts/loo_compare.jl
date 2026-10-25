@@ -16,6 +16,7 @@ const ALL = ("t4", "pl_fgam", "pl_dur_fgam", "pl_decade_fgam", "pl_regime_fgam",
              "pl_dur_rw_kappa_age_slope_fgam", "pl_dur_rw_kappa_age_big_slope_fgam",
              "pl_dur_rw_kappa_age_big_slope_dev_fgam", "pl_dur_rw_kappa_age_big_slope_dev",
              "pl_dur_rw_kappa_age_big_slope_dev_circ_track", "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk",
+             "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
              "pl_dur_rw_kappa_age_big_slope_dev_hgam")
 include("gap_data.jl")
 mode, args = data_arg(ARGS)

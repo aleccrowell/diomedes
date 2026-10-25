@@ -19,13 +19,14 @@ the noise.
 
 ## Which pace model to use
 
-The best race-time model by PSIS-LOO (as of #95) is the pace + loss model with
+The best race-time model by PSIS-LOO (as of #101) is the pace + loss model with
 every term on:
 
 ```julia
 fit_paceloss(g; loss_duration = true, era = :rw, pace_scale = true, age = true,
-             big_loss = true, slopes = true, dev = true, circ = true, track = true, walk = true)
-# "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk"
+             big_loss = true, slopes = true, dev = true, circ = true, track = true, walk = true,
+             walk1 = true, works = true, dinc = true)
+# "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc"
 ```
 
 Each term was added in its own issue and kept because it improved
@@ -43,6 +44,9 @@ comparisons:
 | in-season development (+155.7 ± 16.4 elpd) | `dev` | `_dev` | #14 |
 | car-season circuit slopes, and walls and rain on incidents (+346 ± 28 elpd, together) | `circ`, `track` | `_circ`, `_track` | #81 |
 | chassis and engine walks over seasons (+39 ± 12 elpd on rows with reliable PSIS-LOO) | `walk` | `_walk` | #95 |
+| one step multiplier for chassis and engine rule changes | `walk1` | `_walk1` | #97 |
+| works-team term | `works` | `_works` | #100 |
+| per-driver incident proneness (+79 ± 19 elpd on reliable rows, with the two above) | `dinc` | `_dinc` | #101 |
 
 The scripts and the model-comparison helpers name models by these suffixes
 (see [`model_spec`](@ref)). As the models grow, more rows get Pareto k > 0.7, so

@@ -1,6 +1,6 @@
 # Export posterior summaries of fitted models for the documentation site (#45).
 #
-#   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_circ_track] [data=jolpica1950-2025+partial]
+#   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc] [data=jolpica1950-2026+partial]
 #   julia --project scripts/export_site.jl retire [prefix=retire]
 #   julia --project scripts/export_site.jl laps [tag=laps_2011-2019_recorded]
 #   julia --project scripts/export_site.jl wrc [model=pl_dur_rw_kappa_cdrv_tdrv_fgam]
@@ -18,12 +18,17 @@
 # the dropped mode is reported in modes.csv, seasons_by_mode.csv and the manifest
 # (with how far the effects differ between modes):
 #   drivers.csv   driver effects (% of race time, average-season units; negative =
-#                 faster), with career slopes if the model has them
+#                 faster), with career slopes and incident proneness (#101, logit
+#                 offsets on the incident probability) if the model has them; with
+#                 the latter also each driver's pace part (κ × effect), incident part
+#                 (expected time their proneness adds) and overall, % of race time
+#                 averaged over the races they drove
 #   cars.csv      car-season effects (% of race time within season), with in-season
 #                 development trends and circuit slopes (speed, rough, temp; #81) if the
 #                 model has them. With chassis and engine walks (#95) the effect is the
 #                 total, and chassis_mean + engine_mean + residual_mean split its mean
-#                 (each centred within season, so they add up)
+#                 (each centred within season, so they add up); with the works-team term
+#                 (#100) works_mean is a fourth part
 #   walks.csv     chassis and engine walks (#95): each walk's state per season (% in
 #                 average-season units, centred within season; negative = faster)
 #   track.csv     track terms (#81): incident odds and loss-size multipliers for walls,
@@ -225,6 +230,18 @@ function export_race(model, source)
     WE = spec.walk ? zeros(ndraw, length(cw.engine.prev)) : nothing
     CH = spec.walk ? zeros(ndraw, nm) : nothing
     EN = spec.walk ? zeros(ndraw, nm) : nothing
+    works = get(spec, :works, false)                 # works-team term (#100): its part per car-season
+    WK = works ? zeros(ndraw, nm) : nothing
+    dinc = get(spec, :dinc, false)                   # per-driver incident proneness (#101), logit offsets
+    DI = dinc ? zeros(ndraw, length(g.competitors)) : nothing
+    # speed against incident proneness (#101): per driver, over the races they drove, the
+    # driver part κ·a and the expected time their proneness adds, (π_row - π_race) times the
+    # expected loss of an incident, (1 - ρ)·λ_race + ρ·λ2 (% of race time)
+    nd = length(g.competitors)
+    PP = dinc ? zeros(ndraw, nd) : nothing
+    IP = dinc ? zeros(ndraw, nd) : nothing
+    rowcomp = vcat(g.t_comp, g.c_comp)
+    nrows_d = [count(==(d), rowcomp) for d in 1:nd]
     function carpart(x, rowstate, κr)
         v = zeros(nm)
         for (r, m) in enumerate(machs); v[m] += κr[rowrace[r]] * x[rowstate[r]]; end
@@ -248,6 +265,21 @@ function export_race(model, source)
                 WC[k, :], WE[k, :] = xc, xe
                 κr = race_pace_scale(θ, cov)
                 CH[k, :], EN[k, :] = carpart(xc, cw.row_ch, κr), carpart(xe, cw.row_en, κr)
+                works && (WK[k, :] = carpart([θ.β_works, 0.0], [w > 0 ? 1 : 2 for w in cw.row_works], κr))
+            end
+            if dinc
+                o = Diomedes.driver_incident_offsets(θ)
+                DI[k, :] = o
+                πr, λr = Diomedes.race_loss(θ, cov, spec.loss_duration, spec.era)
+                ρ, λ2 = logistic(θ.a_ρ), exp(θ.a_λ + θ.δ_λ2)
+                κr = race_pace_scale(θ, cov)
+                a = θ.σ_comp .* (θ.z_comp .- mean(θ.z_comp))
+                for (r, d) in enumerate(rowcomp)
+                    rr = rowrace[r]
+                    PP[k, d] += κr[rr] * a[d]
+                    IP[k, d] += (Diomedes.row_π(πr, rr, o, d) - πr[rr]) * ((1 - ρ) * λr[rr] + ρ * λ2)
+                end
+                PP[k, :] ./= nrows_d; IP[k, :] ./= nrows_d
             end
         end
     end
@@ -267,10 +299,19 @@ function export_race(model, source)
     if spec.slopes
         dt.slope_mean, dt.slope_sd = vec(mean(SL; dims = 1)), vec(std(SL; dims = 1))
     end
+    if dinc                                       # incident proneness: logit offset on π (#101)
+        dt.incident_mean, dt.incident_q05, dt.incident_q95 = vec(mean(DI; dims = 1)), q(DI, 0.05), q(DI, 0.95)
+        OV = PP .+ IP                             # overall: driver part + incident part, % of race time
+        dt.pace_part_mean, dt.incident_part_mean = vec(mean(PP; dims = 1)), vec(mean(IP; dims = 1))
+        dt.incident_part_q05, dt.incident_part_q95 = q(IP, 0.05), q(IP, 0.95)
+        dt.overall_mean, dt.overall_q05, dt.overall_q95 = vec(mean(OV; dims = 1)), q(OV, 0.05), q(OV, 0.95)
+    end
     dt = leftjoin(dt, select(eff.competitors, :label => :id, :mean, :sd, :q05, :q95); on = :id, order = :left)
     sort!(dt, :mean)
     select!(dt, :id, :name, :rows, :first_season, :last_season, :mean, :sd, :q05, :q95, Not([:id, :name, :rows, :first_season, :last_season, :mean, :sd, :q05, :q95]))
-    for c in (:mean, :sd, :q05, :q95, (spec.slopes ? (:slope_mean, :slope_sd) : ())...)
+    for c in (:mean, :sd, :q05, :q95, (spec.slopes ? (:slope_mean, :slope_sd) : ())...,
+              (dinc ? (:incident_mean, :incident_q05, :incident_q95, :pace_part_mean, :incident_part_mean, :incident_part_q05,
+                       :incident_part_q95, :overall_mean, :overall_q05, :overall_q95) : ())...)
         dt[!, c] = r4(dt[!, c])
     end
     CSV.write(joinpath(outdir, "drivers.csv"), dt)
@@ -279,6 +320,7 @@ function export_race(model, source)
     Bm = reduce(vcat, [sum_to_zero_by(Diomedes.car_residuals(draw(chain, pnames, i, c), cov), g.mach_season, sc)'
                        for c in 1:nc for i in 1:ni])                    # loop order: i within c
     TOT = spec.walk ? Bm .+ CH .+ EN : Bm                                     # draws × cars
+    works && (TOT = TOT .+ WK)
     ct = DataFrame(id = g.machines, season = [seasons[s] for s in g.mach_season],
                    rows = [count(==(m), machs) for m in eachindex(g.machines)])
     ct.constructor = [replace(m, Regex("_$(s)\$") => "") for (m, s) in zip(ct.id, ct.season)]
@@ -295,12 +337,13 @@ function export_race(model, source)
     if spec.walk                                  # totals from the draws, in g.machines order
         ct.mean, ct.sd, ct.q05, ct.q95 = vec(mean(TOT; dims = 1)), vec(std(TOT; dims = 1)), q(TOT, 0.05), q(TOT, 0.95)
         ct.chassis_mean, ct.engine_mean, ct.residual_mean = vec(mean(CH; dims = 1)), vec(mean(EN; dims = 1)), vec(mean(Bm; dims = 1))
+        works && (ct.works_mean = vec(mean(WK; dims = 1)))
     else
         ct = leftjoin(ct, select(eff.machines, :label => :id, :mean, :sd, :q05, :q95); on = :id, order = :left)
     end
     sort!(ct, [:season, :mean])
     for c in (:mean, :sd, :q05, :q95, (spec.dev ? (:dev_mean, :dev_sd) : ())...,
-              (spec.walk ? (:chassis_mean, :engine_mean, :residual_mean) : ())...,
+              (spec.walk ? (:chassis_mean, :engine_mean, :residual_mean) : ())..., (works ? (:works_mean,) : ())...,
               (spec.circ ? Tuple(Symbol(n, s) for n in cov.circuits.x_names for s in ("_mean", "_sd")) : ())...)
         ct[!, c] = r4(ct[!, c])
     end
@@ -450,6 +493,13 @@ function export_race(model, source)
                                                  ("ownership_multiplier", exp.(vec(chain[:δ_own]))),
                                                  ("regulation_multiplier", exp.(vec(chain[:δ_reg])))))...,
                      states = (; chassis = length(cw.chassis.prev), engine = length(cw.engine.prev))) : missing,
+                works = works ? (; units = "% of race time in average-season units (negative = faster)",
+                                 beta = (; mean = r4(mean(vec(chain[:β_works]))), q05 = r4(quantile(vec(chain[:β_works]), 0.05)),
+                                         q95 = r4(quantile(vec(chain[:β_works]), 0.95))),
+                                 rows = Int(sum(cw.row_works))) : missing,
+                driver_incidents = dinc ? (; units = "logit scale, offsets on the incident probability",
+                                           tau = (; mean = r4(mean(vec(chain[:τ_dinc]))), q05 = r4(quantile(vec(chain[:τ_dinc]), 0.05)),
+                                                  q95 = r4(quantile(vec(chain[:τ_dinc]), 0.95)))) : missing,
                 exported_by = "scripts/export_site.jl race")
     write_manifest(outdir, manifest)
     println("wrote $(outdir): $(nrow(dt)) drivers, $(nrow(ct)) car-seasons, $(nrow(st)) seasons; ",
@@ -616,7 +666,7 @@ end
 
 mode = get(ARGS, 1, "race")
 if mode == "race"
-    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev_circ_track"), get(ARGS, 3, "jolpica1950-2025+partial"))
+    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc"), get(ARGS, 3, "jolpica1950-2026+partial"))
 elseif mode == "retire"
     export_retire(get(ARGS, 2, "retire_jolpica1950-2025"))
 elseif mode == "laps"
