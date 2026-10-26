@@ -122,7 +122,10 @@ if action == "chain"
         cf = [flags, (flags[1:8]..., F4...), (flags[1:6]..., false, false, F4...), (flags[1:5]..., false, false, false, F4...),
               (flags[1:3]..., false, false, false, false, false, F4...),
               (true, false, false, false, false, false, false, false, F4...)]
+        # the race walk replaces the development trends, so a fit with them is also a start (#108)
+        rwalk && insert!(cf, 3, (flags[1:2]..., true, flags[4:8]..., F4...))
         cands = [(f, flag_sfx(f)) for f in cf]
+        any(c -> !isempty(chains_of(stem * c[2])), cands) || error("no fit to warm-start from among $(stem .* last.(cands))")
         old_flags, sfx = cands[something(findfirst(c -> !isempty(chains_of(stem * c[2])), cands), length(cands))]
         base = stem * sfx
         # chain k of the old fit, or (if it has fewer chains) one of them in turn
