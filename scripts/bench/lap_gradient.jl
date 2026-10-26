@@ -14,7 +14,7 @@ using Diomedes, Turing, Statistics, Printf, Random, DataFrames
 const DynamicPPL = Turing.DynamicPPL
 const LogDensityProblems = Turing.LogDensityProblems
 
-terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc", "walk", "works", "big")
+terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc", "walk", "works", "big", "rwalk", "nostartdrv")
 has = any(in(terms), ARGS) ? Set(filter(in(terms), ARGS)) : Set(["notyres", "slopes", "dev"])
 args = filter(a -> a ∉ terms && a ∉ ("recorded", "keepslow"), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
@@ -30,7 +30,7 @@ println(d)
 model = lap_effects(d; tyres = "notyres" ∉ has, slopes = "slopes" ∈ has, dev = "dev" ∈ has, lead = "lead" ∈ has,
                     tyre_mgmt = "tyremgmt" ∈ has, starts = "starts" ∈ has, age = "age" ∈ has,
                     circuits = "circuits" ∈ has, track = "track" ∈ has, dinc = "dinc" ∈ has, walk = "walk" ∈ has,
-                    works = "works" ∈ has, big = "big" ∈ has)
+                    works = "works" ∈ has, big = "big" ∈ has, rwalk = "rwalk" ∈ has, sdrv = "nostartdrv" ∉ has)
 println("terms: ", join(sort(collect(has)), " "))
 ldf = DynamicPPL.LogDensityFunction(model, DynamicPPL.getlogjoint_internal, DynamicPPL.LinkAll();
                                     adtype = Diomedes.gap_sampler().adtype)

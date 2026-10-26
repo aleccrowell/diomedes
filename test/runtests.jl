@@ -1677,13 +1677,12 @@ end
             @test Turing.DynamicPPL.loglikelihood(m9, θ9) ≈ ll9
             # without the terms the likelihood is unchanged from the scalar-π form
             @test Turing.DynamicPPL.loglikelihood(lap_effects(d9), θ) ≈ Turing.DynamicPPL.loglikelihood(lap_effects(d7), θ)
-            # big incident losses (#108): pacebig_logpdf per lap
+            # big incident losses (#108): pacebig_logpdf per lap, the drivers' offsets on the big-loss share
             θ9b = merge(θ9, (; a_ρ = -2.0, δ_λ2 = 2.0))
-            ρ9, λ29 = Diomedes.logistic(-2.0), exp(θ.a_λ + 2.0)
+            λ29 = exp(θ.a_λ + 2.0)
             ll9b = sum(Diomedes.pacebig_logpdf(d9.y[j] - (θ.γ[d9.race[j]] + θ.δ[d9.race[j]] * (d9.frac[j] - f9bar[d9.race[j]]) +
-                                                          h9[j] - h9bar[d9.race[j]]), θ.σ,
-                                               Diomedes.logistic(Diomedes.logit(πr[d9.race[j]]) + o[d9.comp[j]]),
-                                               λr[d9.race[j]], ρ9, λ29) for j in eachindex(d9.y))
+                                                          h9[j] - h9bar[d9.race[j]]), θ.σ, πr[d9.race[j]],
+                                               λr[d9.race[j]], Diomedes.logistic(-2.0 + o[d9.comp[j]]), λ29) for j in eachindex(d9.y))
             @test Turing.DynamicPPL.loglikelihood(lap_effects(d9; track = true, dinc = true, big = true), θ9b) ≈ ll9b
         end
         for flags in ((; track = true), (; dinc = true), (; big = true), (; track = true, dinc = true, slopes = true, starts = true,
@@ -1728,19 +1727,40 @@ end
             θw2 = merge(θw, (; β_works = 0.4))
             @test !(Turing.DynamicPPL.loglikelihood(mw, θw2) ≈ Turing.DynamicPPL.loglikelihood(mw, θw))
             @test_throws ArgumentError lap_effects(d9; works = true, cars = fc)
-            for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true, big = true))
+            # race-level chassis walk (#108): states per works per race, chained in race order
+            rwk = RaceWalk(d9, fc)
+            @test length(rwk.lap) == length(d9.y) && length(rwk.start) == length(d9.s_y) && sum(rwk.counts) == length(rwk.prev)
+            @test all(rwk.prev[k] == 0 || rwk.prev[k] == k - 1 for k in eachindex(rwk.prev))
+            wk(k) = first(rsplit(rwk.names[k], " "; limit = 2))
+            @test all(rwk.prev[k] == 0 || wk(rwk.prev[k]) == wk(k) for k in eachindex(rwk.prev))
+            @test all(rwk.boundary[k] == (rwk.prev[k] > 0 && d9.race_season[rwk.race[k]] != d9.race_season[rwk.race[rwk.prev[k]]])
+                      for k in eachindex(rwk.prev))
+            @test all(rwk.race[rwk.lap[j]] == d9.race[j] for j in eachindex(d9.y))
+            @test_throws ArgumentError lap_effects(d9; rwalk = true, dev = true, cars = fc)
+            # zero walk steps: no car part, as the base model with zero car effects
+            mr = lap_effects(d9; rwalk = true, cars = fc)
+            θr = merge((; (k => v for (k, v) in pairs(θ) if k ∉ (:σ_mach, :b_mach))...),
+                       (; τ_cr = 0.1, τ_co = 0.3, σ0_ch = 1.0, z_cr = zeros(length(rwk.prev)), τ_en = 0.2, σ0_en = 0.5,
+                          z_en = zeros(length(cwl.engine.prev)), δ_own = 0.2, δ_reg = 0.2))
+            @test Turing.DynamicPPL.loglikelihood(mr, θr) ≈
+                  Turing.DynamicPPL.loglikelihood(lap_effects(d9), merge(θ, (; b_mach = zeros(length(d9.machines)))))
+            @test !(Turing.DynamicPPL.loglikelihood(mr, merge(θr, (; z_cr = randn(rng, length(rwk.prev))))) ≈
+                    Turing.DynamicPPL.loglikelihood(mr, θr))
+            for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true, big = true),
+                          (; rwalk = true), (; rwalk = true, track = true, dinc = true, starts = true, big = true, sdrv = false),
+                          (; rwalk = true, dinc = true, starts = true, dinc1 = true))
                 m = lap_effects(d9; flags..., cars = fc)
                 rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                 rg = NamedTuple(getfield(rdm, :_varname_ranges))
                 xw = 0.5 .* randn(rng, LDP.dimension(rdm))
                 for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_sd, :τ_sc, :σ1, :τ_dinc, :τ_dinc1, :τ_ch, :σ0_ch, :τ_en, :σ0_en, :δ_own,
-                          :δ_reg, :δ_λ2)
+                          :δ_reg, :δ_λ2, :τ_cr, :τ_co)
                     haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
                 end
                 @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]
                 @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), xw).tape) < 1000
                 let o = 0
-                    for (name, (n, _)) in Diomedes.lap_layout(d9; flags..., cw = cwl)
+                    for (name, (n, _)) in Diomedes.lap_layout(d9; flags..., cw = cwl, rwk = get(flags, :rwalk, false) ? rwk : nothing)
                         @test rg[name].range == (o + 1):(o + n)
                         o += n
                     end

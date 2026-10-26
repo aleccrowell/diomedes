@@ -71,7 +71,7 @@ export paceloss_effects, fit_paceloss, LossCovariates, pointwise_loglik, identif
        CareerRows, driver_offsets, career_slopes, DevRows, dev_trends, rehash_chain!
 export kfold_folds, subset_gaps, heldout_loglik, elpd_rows
 export LapData, prepare_laps, infer_pit_stops, lap_effects, fit_laps, lap_warm_start, lap_warm_sampler, circuit_table,
-       RaceCircuits, CircuitRows, circuit_slopes, circuit_offsets, car_table, CarWalks, WalkStates, car_walk_states
+       RaceCircuits, CircuitRows, circuit_slopes, circuit_offsets, car_table, CarWalks, WalkStates, car_walk_states, RaceWalk
 export ergast_cumulative_laps, cumulative_laps, partial_gaps, with_partial_rows, partial_mask
 export RETIRE_CAUSES, retirement_cause, RetireData, prepare_retirements, retirement_effects, fit_retirement
 

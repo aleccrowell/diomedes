@@ -123,6 +123,33 @@ struct LapData
     race_track_names::Vector{Symbol}  # :tight (walls score / 2), :mixed, :wet
 end
 
+"""
+    RaceWalk(d::LapData, cars = car_table())
+
+Race-level chassis walk states for the lap model (#108): one state per works per
+race it ran, in race order, so a car's form can move from race to race (upgrades,
+B-specs, fades) as well as across seasons. `prev` is the works' previous state (0
+for its first); `boundary` marks a step across an off-season, with `own` and `reg`
+for a change of ownership and a major chassis rule change in between; `race` and
+`counts` give each state's race and the states per race (the states are centred
+within race); `lap` and `start` index each lap's and each start's state. A car's
+works is its car-season's F1DB constructor's works (see `CarWalks`). `RaceWalk()`
+is the empty walk (no states), for a model without it.
+"""
+struct RaceWalk
+    prev::Vector{Int}
+    first::Vector{Bool}
+    boundary::Vector{Float64}
+    own::Vector{Float64}
+    reg::Vector{Float64}
+    race::Vector{Int}
+    counts::Vector{Int}
+    names::Vector{String}
+    lap::Vector{Int}
+    start::Vector{Int}
+end
+RaceWalk() = RaceWalk(Int[], Bool[], Float64[], Float64[], Float64[], Int[], Int[], String[], Int[], Int[])
+
 function Base.show(io::IO, d::LapData)
     print(io, "LapData($(length(d.y)) laps, $(length(d.competitors)) drivers, $(length(d.machines)) ",
           "machine-seasons, $(length(d.races)) races; excluded ",
@@ -355,14 +382,17 @@ per race the uncentred form had near-degenerate directions that kept NUTS at
 its maximum tree depth. Has a fused reverse rule: per-lap derivatives from
 ForwardDiff duals, scattered into the parameter vectors.
 """
-function lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, σ, πr, λr, πd, ρ, λ2, d::LapData)
-    h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, d)
+function lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, rwk::RaceWalk, d::LapData)
+    h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, rwk, d)
     s = 0.0
     for j in eachindex(d.y)
         r = d.race[j]
         μ = γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r]
-        q = row_π(πr, r, πd, d.comp[j])
-        s += iszero(ρ) ? paceloss_logpdf(d.y[j] - μ, σ, q, λr[r]) : pacebig_logpdf(d.y[j] - μ, σ, q, λr[r], ρ, λ2)
+        if iszero(ρ)        # single loss: the driver's offset is on the incident probability
+            s += paceloss_logpdf(d.y[j] - μ, σ, row_π(πr, r, πd, d.comp[j]), λr[r])
+        else                # with big losses it is on the big-loss share (#108)
+            s += pacebig_logpdf(d.y[j] - μ, σ, πr[r], λr[r], logistic(logit(ρ) + πd[d.comp[j]]), λ2)
+        end
     end
     return s
 end
@@ -378,9 +408,10 @@ end
 
 # Per-lap h = driver + career slope + car + car development + lead lap + tyre terms
 # + age curve + circuit slopes, and its mean per race.
-function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, d::LapData)
+function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, rwk::RaceWalk, d::LapData)
     T = promote_type(eltype(a), eltype(b), eltype(β), eltype(sl), eltype(dv), eltype(η), eltype(td), eltype(tm),
-                     eltype(fage), eltype(cx))
+                     eltype(fage), eltype(cx), eltype(xr))
+    rw = !isempty(rwk.lap)
     h = Vector{T}(undef, length(d.y))
     hbar = zeros(T, length(d.races))
     nm = length(d.machines)
@@ -389,16 +420,18 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, d::LapData)
         h[j] = a[d.comp[j]] + sl[d.comp[j]] * d.agec[j] + b[d.mach[j]] + dv[d.mach[j]] * d.posc[j] +
                η[1] * d.lead[j] + β[2d.era[j] - 1] * st + β[2d.era[j]] * st^2 +
                td[d.comp[j]] * d.stint_cd[j] + tm[d.mach[j]] * d.stint_cm[j] +
-               (d.abin[j] > 0 ? fage[d.abin[j]] : zero(T)) + circuit_term(cx, d.race_x, d.mach[j], d.race[j], nm)
+               (d.abin[j] > 0 ? fage[d.abin[j]] : zero(T)) + circuit_term(cx, d.race_x, d.mach[j], d.race[j], nm) +
+               (rw ? xr[rwk.lap[j]] : zero(T))        # the car's works at this race (race-level chassis walk)
         hbar[d.race[j]] += h[j]
     end
     hbar ./= d.race_n
     return h, hbar
 end
 
-function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, σ, πr, λr, πd, ρ, λ2,
-                              d::LapData)
-    h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, d)
+function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ,
+                              λ2, rwk::RaceWalk, d::LapData)
+    h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, rwk, d)
+    gxr, rw = zeros(length(xr)), !isempty(rwk.lap)
     N = length(d.y)
     gμ = zeros(N)
     gγ, gδ, ga, gb, gβ = zeros(length(γ)), zeros(length(δ)), zeros(length(a)), zeros(length(b)), zeros(length(β))
@@ -415,12 +448,15 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     Lr = [log(p / (1 - p)) for p in πr]
     lqr = [(log1p(-p), log(p)) for p in πr]
     noπd = all(iszero, πd)
-    # a driver's laps in a race are consecutive: their π is computed once
+    # with big losses the drivers' offsets are on the big-loss share (#108), once per driver
+    ρd = big && !noπd ? [logistic(logit(ρ) + o) for o in πd] : Float64[]
+    lρd = big && !noπd ? [(log1p(-p), log(p)) for p in ρd] : Tuple{Float64,Float64}[]
+    # without: on π; a driver's laps in a race are consecutive, so their π is computed once
     rc_last, q, lq = (0, 0), 0.0, (0.0, 0.0)
     for j in 1:N
         r, y, c = d.race[j], d.y[j], d.comp[j]
         μ = γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r]
-        if noπd
+        if noπd || big
             q, lq = πr[r], lqr[r]
         elseif (r, c) != rc_last
             x = Lr[r] + πd[c]
@@ -429,17 +465,25 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
             rc_last = (r, c)
         end
         if big
-            v, pμ, pσ, pπ, pλ, pρ, pλ2 = pacebig_row_vg(y, 0.0, 0.0, false, μ, σ, q, λr[r], ρ, λ2, lq, lρ)
-            gρ += pρ; gλ2 += pλ2
+            ρl, lρl = noπd ? (ρ, lρ) : (ρd[c], lρd[c])
+            v, pμ, pσ, pπ, pλ, pρ, pλ2 = pacebig_row_vg(y, 0.0, 0.0, false, μ, σ, q, λr[r], ρl, λ2, lq, lρl)
+            gλ2 += pλ2
+            if noπd
+                gρ += pρ
+            else
+                w = pρ * ρl * (1 - ρl)               # ∂ℓ/∂(logit of the lap's big-loss share)
+                gρ += w / (ρ * (1 - ρ)); gπd[c] += w
+            end
+            gπr[r] += pπ
         else
             v, pμ, pσ, pπ, pλ = paceloss_row_vg(y, μ, σ, q, λr[r], lq)
+            w = pπ * q * (1 - q)                     # ∂ℓ/∂(logit of the lap's π)
+            gπr[r] += w / (πr[r] * (1 - πr[r])); gπd[c] += w
         end
         val += v
         gμ[j] = pμ
         gγ[r] += pμ; gδ[r] += pμ * d.fracc[j]
         gσ += pσ; gλr[r] += pλ
-        w = pπ * q * (1 - q)                     # ∂ℓ/∂(logit of the lap's π)
-        gπr[r] += w / (πr[r] * (1 - πr[r])); gπd[c] += w
     end
     # h enters every lap of its race through the race mean: dμ_k/dh_j = [k = j] - 1/n_race
     for j in 1:N
@@ -455,13 +499,15 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
         for k in axes(d.race_x, 2)
             gcx[(k - 1) * nm + d.mach[j]] += gh * d.race_x[d.race[j], k]
         end
+        rw && (gxr[rwk.lap[j]] += gh)
     end
     # the closure captures the scalar sums through `gs`, bound once: capturing gσ, gρ,
     # gλ2 themselves (reassigned in the loop) boxed them, and the loop's updates were
     # dynamic, ~40% of a gradient (#102)
     gs = (gσ, gρ, gλ2)
     pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* gδ, Δ .* ga, Δ .* gb, Δ .* gβ, Δ .* gsl, Δ .* gdv, Δ .* gη, Δ .* gtd, Δ .* gtm,
-                   Δ .* gfage, Δ .* gcx, Δ * gs[1], Δ .* gπr, Δ .* gλr, Δ .* gπd, Δ * gs[2], Δ * gs[3], NoTangent())
+                   Δ .* gfage, Δ .* gcx, Δ .* gxr, Δ * gs[1], Δ .* gπr, Δ .* gλr, Δ .* gπd, Δ * gs[2], Δ * gs[3],
+                   NoTangent(), NoTangent())
     return val, pullback
 end
 # β (tyres), sl (career slopes), dv (car development), η (lead laps), td, tm
@@ -474,10 +520,11 @@ for Tβ in _TA_OR_CONST, Tsl in _TA_OR_CONST, Tdv in _TA_OR_CONST, Tη in _TA_OR
     @eval ReverseDiff.@grad_from_chainrules lap_loglik(γ::ReverseDiff.TrackedArray, δ::ReverseDiff.TrackedArray,
                                                        a::ReverseDiff.TrackedArray, b::ReverseDiff.TrackedArray,
                                                        β::$Tβ, sl::$Tsl, dv::$Tdv, η::$Tη, td::$Tt, tm::$Tt,
-                                                       fage::$Tf, cx::$Tc, σ::ReverseDiff.TrackedReal,
+                                                       fage::$Tf, cx::$Tc, xr::ReverseDiff.TrackedArray,
+                                                       σ::ReverseDiff.TrackedReal,
                                                        πr::ReverseDiff.TrackedArray, λr::ReverseDiff.TrackedArray,
                                                        πd::$Td, ρ::ReverseDiff.TrackedReal, λ2::ReverseDiff.TrackedReal,
-                                                       d::LapData)
+                                                       rwk::RaceWalk, d::LapData)
 end
 
 """
@@ -496,8 +543,8 @@ as are the age curve `fage` and circuit slopes `cx` (see `lap_loglik`);
 starting further back. Centred within race as `lap_loglik`, with a fused
 reverse rule.
 """
-function start_loglik(γ1, a, b, sd, sc, g, fage, cx, σ, π, λ, πd, d::LapData)
-    h, hbar = start_h(a, b, sd, sc, g, fage, cx, d)
+function start_loglik(γ1, a, b, sd, sc, g, fage, cx, xr, σ, π, λ, πd, rwk::RaceWalk, d::LapData)
+    h, hbar = start_h(a, b, sd, sc, g, fage, cx, xr, rwk, d)
     s = 0.0
     for j in eachindex(d.s_y)
         r = d.s_race[j]
@@ -507,23 +554,27 @@ function start_loglik(γ1, a, b, sd, sc, g, fage, cx, σ, π, λ, πd, d::LapDat
     return s
 end
 
-function start_h(a, b, sd, sc, g, fage, cx, d::LapData)
-    T = promote_type(eltype(a), eltype(b), eltype(sd), eltype(sc), eltype(g), eltype(fage), eltype(cx))
+function start_h(a, b, sd, sc, g, fage, cx, xr, rwk::RaceWalk, d::LapData)
+    T = promote_type(eltype(a), eltype(b), eltype(sd), eltype(sc), eltype(g), eltype(fage), eltype(cx), eltype(xr))
+    rw = !isempty(rwk.start)
     h = Vector{T}(undef, length(d.s_y))
     hbar = zeros(T, length(d.races))
     nm = length(d.machines)
     for j in eachindex(d.s_y)
         gr = d.s_grid[j]
         h[j] = a[d.s_comp[j]] + b[d.s_mach[j]] + sd[d.s_comp[j]] + sc[d.s_mach[j]] + g[1] * gr + g[2] * gr^2 +
-               (d.s_abin[j] > 0 ? fage[d.s_abin[j]] : zero(T)) + circuit_term(cx, d.race_x, d.s_mach[j], d.s_race[j], nm)
+               (d.s_abin[j] > 0 ? fage[d.s_abin[j]] : zero(T)) + circuit_term(cx, d.race_x, d.s_mach[j], d.s_race[j], nm) +
+               (rw ? xr[rwk.start[j]] : zero(T))
         hbar[d.s_race[j]] += h[j]
     end
     for r in eachindex(hbar); d.s_race_n[r] > 0 && (hbar[r] /= d.s_race_n[r]); end
     return h, hbar
 end
 
-function ChainRulesCore.rrule(::typeof(start_loglik), γ1, a, b, sd, sc, g, fage, cx, σ, π, λ, πd, d::LapData)
-    h, hbar = start_h(a, b, sd, sc, g, fage, cx, d)
+function ChainRulesCore.rrule(::typeof(start_loglik), γ1, a, b, sd, sc, g, fage, cx, xr, σ, π, λ, πd, rwk::RaceWalk,
+                              d::LapData)
+    h, hbar = start_h(a, b, sd, sc, g, fage, cx, xr, rwk, d)
+    gxr, rw = zeros(length(xr)), !isempty(rwk.start)
     N = length(d.s_y)
     gμ = zeros(N)
     gγ, ga, gb, gsd, gsc, gg = zeros(length(γ1)), zeros(length(a)), zeros(length(b)), zeros(length(sd)),
@@ -555,19 +606,20 @@ function ChainRulesCore.rrule(::typeof(start_loglik), γ1, a, b, sd, sc, g, fage
         for k in axes(d.race_x, 2)
             gcx[(k - 1) * nm + d.s_mach[j]] += gh * d.race_x[d.s_race[j], k]
         end
+        rw && (gxr[rwk.start[j]] += gh)
     end
     gs = (gσ, gπ, gλ)          # bound once, so the closure does not box the loop's sums (see lap_loglik)
-    pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* ga, Δ .* gb, Δ .* gsd, Δ .* gsc, Δ .* gg, Δ .* gfage, Δ .* gcx,
-                   Δ * gs[1], Δ * gs[2], Δ * gs[3], Δ .* gπd, NoTangent())
+    pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* ga, Δ .* gb, Δ .* gsd, Δ .* gsc, Δ .* gg, Δ .* gfage, Δ .* gcx, Δ .* gxr,
+                   Δ * gs[1], Δ * gs[2], Δ * gs[3], Δ .* gπd, NoTangent(), NoTangent())
     return val, pullback
 end
 for Tf in _TA_OR_CONST, Tc in _TA_OR_CONST, Td in _TA_OR_CONST
     @eval ReverseDiff.@grad_from_chainrules start_loglik(γ1::ReverseDiff.TrackedArray, a::ReverseDiff.TrackedArray,
                                                          b::ReverseDiff.TrackedArray, sd::ReverseDiff.TrackedArray,
                                                          sc::ReverseDiff.TrackedArray, g::ReverseDiff.TrackedArray,
-                                                         fage::$Tf, cx::$Tc,
+                                                         fage::$Tf, cx::$Tc, xr::ReverseDiff.TrackedArray,
                                                          σ::ReverseDiff.TrackedReal, π::ReverseDiff.TrackedReal,
-                                                         λ::ReverseDiff.TrackedReal, πd::$Td, d::LapData)
+                                                         λ::ReverseDiff.TrackedReal, πd::$Td, rwk::RaceWalk, d::LapData)
 end
 
 """
@@ -646,14 +698,15 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
 """
 @model function lap_effects(d::LapData, mach_counts::Vector{Int}, age_basis, tyres::Bool, slopes::Bool, dev::Bool,
                             lead::Bool, tyre_mgmt::Bool, starts::Bool, age::Bool, circuits::Bool, track::Bool = false,
-                            dinc::Bool = false, cw = nothing, works::Bool = false, big::Bool = false)
+                            dinc::Bool = false, cw = nothing, works::Bool = false, big::Bool = false,
+                            rw = nothing, sdrv::Bool = true, dinc1::Bool = false)
     σ_comp ~ truncated(Normal(0, 2); lower = 0)
-    σ_mach ~ truncated(Normal(0, 2); lower = 0)
+    rw === nothing && (σ_mach ~ truncated(Normal(0, 2); lower = 0))   # no car-season residual with the race walk
     σ ~ truncated(Normal(0, 1); lower = 0)
     # centred effects (as `_cdrv`, #28): each driver and car has thousands of laps,
     # so the non-centred form a = σ·z would tie σ to every z (a funnel)
     a_comp ~ IsoNormalVec(0.0, σ_comp, length(d.competitors))
-    b_mach ~ IsoNormalVec(0.0, σ_mach, length(d.machines))
+    rw === nothing && (b_mach ~ IsoNormalVec(0.0, σ_mach, length(d.machines)))
     μ_γ ~ Normal(0, 2)
     γ ~ IsoNormalVec(μ_γ, 2.0, length(d.races))
     μ_δ ~ Normal(0, 2)
@@ -695,8 +748,10 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     end
     if starts
         γ1 ~ IsoNormalVec(0.0, 2.0, length(d.races))
-        τ_sd ~ truncated(Normal(0, 1); lower = 0)
-        u_sd ~ StdNormalVec(length(d.competitors))
+        if sdrv             # per-driver start effects (off in #108: barely identified)
+            τ_sd ~ truncated(Normal(0, 1); lower = 0)
+            u_sd ~ StdNormalVec(length(d.competitors))
+        end
         τ_sc ~ truncated(Normal(0, 1); lower = 0)
         u_sc ~ StdNormalVec(length(d.machines))
         g1 ~ IsoNormalVec(0.0, 2.0, 2)
@@ -736,7 +791,8 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         πr = logistic.(a_π .+ zeros(nr))
         λr = exp.(a_λ .+ zeros(nr))
     end
-    if dinc                 # per-driver incident proneness on logit π (#108, as #101), centred
+    if dinc                 # per-driver incident proneness, centred (#108, as #101): on the big-loss share
+                            # with big losses, else on logit π (see lap_loglik)
         τ_dinc ~ truncated(Normal(0, 0.5); lower = 0)
         u_dinc ~ StdNormalVec(length(d.competitors))
         πd = τ_dinc .* (u_dinc .- mean(u_dinc))
@@ -744,7 +800,26 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         πd = zeros(length(d.competitors))
     end
     a = sum_to_zero(a_comp)
-    b = center_by(b_mach, d.mach_season, mach_counts)
+    if rw === nothing
+        b = center_by(b_mach, d.mach_season, mach_counts)
+        xr = 0 .* a_π .+ zeros(1)            # no race walk: a tracked placeholder, unused
+        rwk = RaceWalk()
+    else                    # race-level chassis walk and season-level engine walk (#108)
+        rwk, cwe = rw.rwk, rw.cw
+        τ_cr ~ truncated(Normal(0, 0.5); lower = 0)           # chassis step per race, %
+        τ_co ~ truncated(Normal(0, 1); lower = 0)             # chassis step across an off-season
+        σ0_ch ~ truncated(Normal(0, 2); lower = 0)            # spread of a works' first race
+        z_cr ~ StdNormalVec(length(rwk.prev))
+        τ_en ~ truncated(Normal(0, 1); lower = 0)             # engine step per season
+        σ0_en ~ truncated(Normal(0, 2); lower = 0)
+        z_en ~ StdNormalVec(length(cwe.engine.prev))
+        δ_own ~ truncated(Normal(0, 1); lower = 0)            # larger off-season steps: ownership, regulations
+        δ_reg ~ truncated(Normal(0, 1); lower = 0)
+        xr = center_by(walk_path(z_cr .* race_walk_sd(τ_cr, τ_co, σ0_ch, δ_own, δ_reg, rwk), rwk.prev), rwk.race, rwk.counts)
+        xe = center_by(walk_path(walk_steps(τ_en, σ0_en, zero(δ_own), δ_reg, z_en, cwe.engine), cwe.engine.prev),
+                       cwe.engine.season, cwe.engine.counts)
+        b = xe[cwe.row_en]                                    # each car-season's engine state
+    end
     if cw !== nothing       # chassis and engine walks (#108, as #95): b_mach is then each car-season's residual
         τ_ch ~ truncated(Normal(0, 1); lower = 0)             # step sd per year, %
         σ0_ch ~ truncated(Normal(0, 2); lower = 0)            # spread of a works' first season
@@ -768,18 +843,18 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     else                    # tracked zeros, so the likelihood has one form (ρ = 0: single loss)
         ρ, λ2 = 0 * a_π, 1 + 0 * a_π
     end
-    @addlogprob! lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, σ, πr, λr, πd, ρ, λ2, d)
+    @addlogprob! lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, rwk, d)
     if starts
-        sd = career_slopes(τ_sd, u_sd)                         # τ·(u - mean u)
+        sd = sdrv ? career_slopes(τ_sd, u_sd) : 0 .* a_π .+ zeros(length(d.competitors))   # τ·(u - mean u)
         sc = τ_sc .* center_by(u_sc, d.mach_season, mach_counts)
-        if dinc             # lap-1 incident proneness, separate from the green-flag one (#108)
+        if dinc1            # lap-1 incident proneness, separate from the green-flag one (#108; off: barely identified)
             τ_dinc1 ~ truncated(Normal(0, 0.5); lower = 0)
             u_dinc1 ~ StdNormalVec(length(d.competitors))
             πd1 = τ_dinc1 .* (u_dinc1 .- mean(u_dinc1))
         else
             πd1 = zeros(length(d.competitors))
         end
-        @addlogprob! start_loglik(γ1, a, b, sd, sc, g1, fage, cx, σ1, logistic(a_π1), exp(a_λ1), πd1, d)
+        @addlogprob! start_loglik(γ1, a, b, sd, sc, g1, fage, cx, xr, σ1, logistic(a_π1), exp(a_λ1), πd1, rwk, d)
     end
 end
 
@@ -798,18 +873,61 @@ function CarWalks(d::LapData, cars = car_table())
     return CarWalks(rows, first(d.seasons), last(d.seasons), cars)
 end
 
+
+function RaceWalk(d::LapData, cars = car_table())
+    cw = CarWalks(d, cars)
+    works = [first(rsplit(cw.chassis.names[cw.row_ch[m]], " "; limit = 2)) for m in eachindex(d.machines)]
+    keys = sort(unique(vcat([(works[m], r) for (m, r) in zip(d.mach, d.race)],
+                            [(works[m], r) for (m, r) in zip(d.s_mach, d.s_race)])))
+    idx = Dict(k => i for (i, k) in enumerate(keys))
+    own = Set{Tuple{String,Int}}((String(r.works_id), Int(r.season)) for r in eachrow(cars.ownership))
+    regs = cars.regulations.season[cars.regulations.chassis .== 1]
+    season(r) = d.seasons[d.race_season[r]]
+    n = length(keys)
+    prev, fst, bnd, ow, rg = zeros(Int, n), falses(n), zeros(n), zeros(n), zeros(n)
+    for (i, (w, r)) in enumerate(keys)
+        if i > 1 && keys[i - 1][1] == w
+            prev[i] = i - 1
+            y0, y = season(keys[i - 1][2]), season(r)
+            if y != y0
+                bnd[i] = 1.0
+                ow[i] = (w, y) in own ? 1.0 : 0.0
+                rg[i] = any(x -> y0 < x <= y, regs) ? 1.0 : 0.0
+            end
+        else
+            fst[i] = true
+        end
+    end
+    race = [r for (_, r) in keys]
+    return RaceWalk(prev, fst, bnd, ow, rg, race, [count(==(r), race) for r in eachindex(d.races)],
+                    ["$(w) $(d.races[r])" for (w, r) in keys],
+                    [idx[(works[m], r)] for (m, r) in zip(d.mach, d.race)],
+                    [idx[(works[m], r)] for (m, r) in zip(d.s_mach, d.s_race)])
+end
+
+# Step sd of each race-level chassis state: a works' first race σ0; within a season
+# τ_cr per race; across an off-season τ_co·exp(δ_own·own + δ_reg·reg)
+function race_walk_sd(τ_cr, τ_co, σ0, δ_own, δ_reg, rw::RaceWalk)
+    f = Float64.(rw.first)
+    return f .* σ0 .+ (1 .- f) .* (rw.boundary .* τ_co .* exp.(δ_own .* rw.own .+ δ_reg .* rw.reg) .+ (1 .- rw.boundary) .* τ_cr)
+end
+
 lap_mach_counts(d::LapData) = [count(==(k), d.mach_season) for k in eachindex(d.seasons)]
 function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = false, lead::Bool = false,
                      tyre_mgmt::Bool = false, starts::Bool = false, age::Bool = false, circuits::Bool = false,
                      track::Bool = false, dinc::Bool = false, walk::Bool = false, works::Bool = false,
-                     big::Bool = false, cars = walk ? car_table() : nothing)
+                     big::Bool = false, rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
+                     cars = walk || rwalk ? car_table() : nothing)
     age && length(d.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
     circuits && size(d.race_x, 2) == 0 && throw(ArgumentError("circuits = true needs prepare_laps(…; circuits)"))
     track && size(d.race_track, 2) == 0 && throw(ArgumentError("track = true needs prepare_laps(…; circuits)"))
     works && !walk && throw(ArgumentError("works needs the chassis and engine walks (walk = true)"))
+    rwalk && (walk || dev) && throw(ArgumentError("rwalk replaces the season walks and the development trends (walk, dev)"))
+    dinc1 && !(dinc && starts) && throw(ArgumentError("dinc1 needs dinc and starts"))
     basis = age ? AgeCurveBasis(d.age_years, d.age_rows) : nothing
     return lap_effects(d, lap_mach_counts(d), basis, tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc,
-                       walk ? CarWalks(d, cars) : nothing, works, big)
+                       walk ? CarWalks(d, cars) : nothing, works, big,
+                       rwalk ? (; rwk = RaceWalk(d, cars), cw = CarWalks(d, cars)) : nothing, sdrv, dinc1)
 end
 
 """
@@ -832,13 +950,15 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                   warm_start = nothing, n_adapts::Int = 500, tyres::Bool = true, slopes::Bool = false,
                   dev::Bool = false, lead::Bool = false, tyre_mgmt::Bool = false, starts::Bool = false,
                   age::Bool = false, circuits::Bool = false, track::Bool = false, dinc::Bool = false,
-                  walk::Bool = false, works::Bool = false, big::Bool = false, cars = walk ? car_table() : nothing,
-                  δ::Real = 0.8, kwargs...)
+                  walk::Bool = false, works::Bool = false, big::Bool = false, rwalk::Bool = false, sdrv::Bool = true,
+                  dinc1::Bool = false, cars = walk || rwalk ? car_table() : nothing, δ::Real = 0.8, kwargs...)
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     warm_start === nothing || checkpoint !== nothing ||
         throw(ArgumentError("warm_start is implemented for checkpointed fits"))
-    model = lap_effects(d; tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, cars)
+    model = lap_effects(d; tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk,
+                        sdrv, dinc1, cars)
     cw = model.args.cw
+    rwm = model.args.rw
     # per-race line through the laps, as starting values
     γ0, δ0 = zeros(length(d.races)), zeros(length(d.races))
     for r in eachindex(d.races)
@@ -857,7 +977,7 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
     β0 = tyres ? (X' * X) \ (X' * res0) : Float64[]
     e0 = res0 .- X * β0
     σ0 = 1.4826 * median(abs.(e0 .- median(e0)))
-    init() = InitFromParams(merge((; σ_comp = 0.3 + 0.4 * rand(rng), σ_mach = 0.3 + 0.4 * rand(rng),
+    init_all() = merge((; σ_comp = 0.3 + 0.4 * rand(rng), σ_mach = 0.3 + 0.4 * rand(rng),
                              σ = σ0 * (0.9 + 0.2 * rand(rng)),
                              a_comp = 0.05 .* randn(rng, length(d.competitors)),
                              b_mach = 0.05 .* randn(rng, length(d.machines)),
@@ -890,8 +1010,16 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                                       δ_own = 0.1 + 0.1 * rand(rng), δ_reg = 0.1 + 0.1 * rand(rng)) : (;),
                             works ? (; β_works = 0.1 * randn(rng)) : (;),
                             big ? (; a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)) : (;),
-                            dinc && starts ? (; τ_dinc1 = 0.05 + 0.05 * rand(rng),
-                                                u_dinc1 = 0.1 .* randn(rng, length(d.competitors))) : (;)))
+                            dinc1 ? (; τ_dinc1 = 0.05 + 0.05 * rand(rng),
+                                       u_dinc1 = 0.1 .* randn(rng, length(d.competitors))) : (;),
+                            rwalk ? (; τ_cr = 0.05 + 0.05 * rand(rng), τ_co = 0.2 + 0.2 * rand(rng),
+                                       σ0_ch = 0.3 + 0.4 * rand(rng), z_cr = 0.1 .* randn(rng, length(rwm.rwk.prev)),
+                                       τ_en = 0.05 + 0.05 * rand(rng), σ0_en = 0.1 + 0.2 * rand(rng),
+                                       z_en = 0.1 .* randn(rng, length(rwm.cw.engine.prev)),
+                                       δ_own = 0.1 + 0.1 * rand(rng), δ_reg = 0.1 + 0.1 * rand(rng)) : (;))
+    # leave out what the model doesn't sample (no residual with the race walk, no driver start effects)
+    drop = (rwalk ? (:σ_mach, :b_mach) : ())..., (sdrv ? () : (:τ_sd, :u_sd))...
+    init() = InitFromParams(NamedTuple(k => v for (k, v) in pairs(init_all()) if k ∉ drop))
     external = warm_start === nothing ? nothing : lap_warm_sampler(warm_start.Minv, warm_start.ϵ; δ)
     checkpoint === nothing ||
         return run_nuts_checkpointed(model, init(), checkpoint; n_samples, n_adapts, seed, progress_log, log_every,
@@ -916,14 +1044,18 @@ const WALK_PARAMS = (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :�
 lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = false, lead::Bool = false,
            tyre_mgmt::Bool = false, starts::Bool = false, age::Bool = false, circuits::Bool = false,
            track::Bool = false, dinc::Bool = false, walk::Bool = false, works::Bool = false, big::Bool = false,
-           cw = walk ? CarWalks(d) : nothing) =
+           rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
+           cw = walk || rwalk ? CarWalks(d) : nothing, rwk = rwalk ? RaceWalk(d) : nothing) =
     filter(p -> (tyres || first(p) !== :β) && (slopes || first(p) ∉ (:τ_slope, :u_slope)) &&
                 (dev || first(p) ∉ (:τ_dev, :u_dev)) && (lead || first(p) !== :η) &&
                 (tyre_mgmt || first(p) ∉ (:τ_td, :u_td, :τ_tm, :u_tm)) &&
                 (starts || first(p) ∉ START_PARAMS) && (age || first(p) ∉ AGE_PARAMS) &&
                 (circuits || first(p) ∉ CIRCUIT_PARAMS) && (track || first(p) ∉ TRACK_PARAMS) &&
-                (dinc || first(p) ∉ DINC_PARAMS) && (walk || first(p) ∉ WALK_PARAMS) && (works || first(p) !== :β_works) &&
-                (dinc && starts || first(p) ∉ (:τ_dinc1, :u_dinc1)) && (big || first(p) ∉ (:a_ρ, :δ_λ2)),
+                (dinc || first(p) ∉ DINC_PARAMS) && (works || first(p) !== :β_works) &&
+                (walk || first(p) ∉ (:τ_ch, :z_ch)) && (rwalk || first(p) ∉ (:τ_cr, :τ_co, :z_cr)) &&
+                (walk || rwalk || first(p) ∉ WALK_PARAMS) && (!rwalk || first(p) ∉ (:σ_mach, :b_mach)) &&
+                (sdrv || first(p) ∉ (:τ_sd, :u_sd)) &&
+                (dinc1 || first(p) ∉ (:τ_dinc1, :u_dinc1)) && (big || first(p) ∉ (:a_ρ, :δ_λ2)),
                          [:σ_comp => (1, nothing), :σ_mach => (1, nothing), :σ => (1, nothing),
                           :a_comp => (length(d.competitors), d.competitors), :b_mach => (length(d.machines), d.machines),
                           :μ_γ => (1, nothing), :γ => (length(d.races), d.races), :μ_δ => (1, nothing),
@@ -949,7 +1081,9 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :β_track_λ => (size(d.race_track, 2), string.(d.race_track_names)),
                           :τ_dinc => (1, nothing), :u_dinc => (length(d.competitors), d.competitors),
                           # walk states are labelled "works season", so warm starts map them across fits
+                          :τ_cr => (1, nothing), :τ_co => (1, nothing),
                           :τ_ch => (1, nothing), :σ0_ch => (1, nothing),
+                          :z_cr => rwk === nothing ? (0, nothing) : (length(rwk.prev), rwk.names),
                           :z_ch => cw === nothing ? (0, nothing) : (length(cw.chassis.prev), cw.chassis.names),
                           :τ_en => (1, nothing), :σ0_en => (1, nothing),
                           :z_en => cw === nothing ? (0, nothing) : (length(cw.engine.prev), cw.engine.names),
@@ -970,7 +1104,8 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                               :τ_cx => 0.01, :u_cx => 0.01, :β_track_π => 0.01, :β_track_λ => 0.01,
                               :τ_dinc => 0.01, :u_dinc => 0.01, :τ_ch => 0.01, :σ0_ch => 0.01, :z_ch => 0.01,
                               :τ_en => 0.01, :σ0_en => 0.01, :z_en => 0.01, :δ_own => 0.01, :δ_reg => 0.01,
-                              :β_works => 1e-3, :τ_dinc1 => 0.01, :u_dinc1 => 0.01, :a_ρ => 0.01, :δ_λ2 => 0.01)
+                              :β_works => 1e-3, :τ_dinc1 => 0.01, :u_dinc1 => 0.01, :a_ρ => 0.01, :δ_λ2 => 0.01,
+                              :τ_cr => 0.01, :τ_co => 0.01, :z_cr => 0.01)
 
 """
     lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old = true, tyres_new = tyres_old,
@@ -979,7 +1114,9 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                    starts_old = false, starts_new = starts_old, age_old = false, age_new = age_old,
                    circuits_old = false, circuits_new = circuits_old, track_old = false, track_new = track_old,
                    dinc_old = false, dinc_new = dinc_old, walk_old = false, walk_new = walk_old,
-                   works_old = false, works_new = works_old, big_old = false, big_new = big_old) -> (; Minv, ϵ)
+                   works_old = false, works_new = works_old, big_old = false, big_new = big_old, rwalk_old = false,
+                   rwalk_new = rwalk_old, sdrv_old = true, sdrv_new = sdrv_old, dinc1_old = false,
+                   dinc1_new = dinc1_old) -> (; Minv, ϵ)
 
 Diagonal inverse metric and step size for a fit to `d_new`, from the adapted
 NUTS `state` of a fit to `d_old` (`only(Turing.loadstate(chain))`, or its
@@ -1000,15 +1137,17 @@ function lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old::Bool =
                         track_old::Bool = false, track_new::Bool = track_old, dinc_old::Bool = false,
                         dinc_new::Bool = dinc_old, walk_old::Bool = false, walk_new::Bool = walk_old,
                         works_old::Bool = false, works_new::Bool = works_old, big_old::Bool = false,
-                        big_new::Bool = big_old)
+                        big_new::Bool = big_old, rwalk_old::Bool = false, rwalk_new::Bool = rwalk_old,
+                        sdrv_old::Bool = true, sdrv_new::Bool = sdrv_old, dinc1_old::Bool = false,
+                        dinc1_new::Bool = dinc1_old)
     ad = lap_adapted(state)
     Mo = ad.Minv
     lo = lap_layout(d_old; tyres = tyres_old, slopes = slopes_old, dev = dev_old, lead = lead_old, tyre_mgmt = tyre_mgmt_old,
                     starts = starts_old, age = age_old, circuits = circuits_old, track = track_old, dinc = dinc_old,
-                    walk = walk_old, works = works_old, big = big_old)
+                    walk = walk_old, works = works_old, big = big_old, rwalk = rwalk_old, sdrv = sdrv_old, dinc1 = dinc1_old)
     ln = lap_layout(d_new; tyres = tyres_new, slopes = slopes_new, dev = dev_new, lead = lead_new, tyre_mgmt = tyre_mgmt_new,
                     starts = starts_new, age = age_new, circuits = circuits_new, track = track_new, dinc = dinc_new,
-                    walk = walk_new, works = works_new, big = big_new)
+                    walk = walk_new, works = works_new, big = big_new, rwalk = rwalk_new, sdrv = sdrv_new, dinc1 = dinc1_new)
     sum(first(last(p)) for p in lo) == length(Mo) || throw(DimensionMismatch("state does not match d_old"))
     scale = length(d_old.y) / length(d_new.y)
     old = Dict{Symbol,Tuple{UnitRange{Int},Any}}()
