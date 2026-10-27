@@ -823,6 +823,10 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
                                            walk_state_prior(τ_en, σ0_en, zero(δ_own), δ_reg, xs_en, cwe.engine))
         xr = center_by(xs_cr, rwk.race, rwk.counts)
         xe = center_by(xs_en, cwe.engine.season, cwe.engine.counts)
+        # Each race's mean state is absorbed by its intercept, so only the walk prior sets it:
+        # a 326-race random walk, too ill-conditioned for a diagonal metric (probe 108d, depth 10).
+        # Pinned softly near zero (sd RACE_MEAN_PIN per state); the likelihood doesn't see it.
+        Turing.@addlogprob! (; logprior = -sum(abs2, xs_cr .- xr) / (2 * RACE_MEAN_PIN^2))
         b = xe[cwe.row_en]                                    # each car-season's engine state
     end
     if cw !== nothing       # chassis and engine walks (#108, as #95): b_mach is then each car-season's residual
@@ -912,6 +916,8 @@ end
 
 # Step sd of each race-level chassis state: a works' first race σ0; within a season
 # τ_cr per race; across an off-season τ_co·exp(δ_own·own + δ_reg·reg)
+const RACE_MEAN_PIN = 0.02
+
 # Log density of walk states x whose state k is N(x[prev[k]], sd[k]) (N(0, sd[k]) at a walk's start).
 walk_states_logpdf(x, sd, prev::Vector{Int}) = sum(normlogpdf.(walk_diffs(x, prev) ./ sd)) - sum(log.(sd))
 
