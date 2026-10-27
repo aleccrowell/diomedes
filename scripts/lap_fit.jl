@@ -204,18 +204,12 @@ cwl = walk ? CarWalks(d) : nothing
 rwk = rwalk ? RaceWalk(d) : nothing
 cwr = rwalk ? CarWalks(d) : nothing
 # race-level walk: each state's value, and each car-season's mean over its laps (#108)
-function race_states(i, c)
-    sd = Diomedes.race_walk_sd(chain[:τ_cr][i, c], chain[:τ_co][i, c], chain[:σ0_ch][i, c], chain[:δ_own][i, c],
-                               chain[:δ_reg][i, c], rwk)
-    return Diomedes.center_by(Diomedes.walk_path(chain[:z_cr][i, c] .* sd, rwk.prev), rwk.race, rwk.counts)
-end
+race_states(i, c) = Diomedes.center_by(chain[:xs_cr][i, c], rwk.race, rwk.counts)   # states sampled directly
 lapsof = rwalk ? [findall(==(m), d.mach) for m in eachindex(d.machines)] : nothing
 function car_total(i, c)            # residual + chassis + engine (+ works), centred within season (#108)
     if rwalk                        # race walk: engine state + the car's mean chassis state over its laps
         xr = race_states(i, c)
-        θe = (; τ_en = chain[:τ_en][i, c], σ0_en = chain[:σ0_en][i, c], z_en = chain[:z_en][i, c], δ_reg = chain[:δ_reg][i, c])
-        xe = Diomedes.center_by(Diomedes.walk_path(Diomedes.walk_steps(θe.τ_en, θe.σ0_en, 0.0, θe.δ_reg, θe.z_en, cwr.engine),
-                                                   cwr.engine.prev), cwr.engine.season, cwr.engine.counts)
+        xe = Diomedes.center_by(chain[:xs_en][i, c], cwr.engine.season, cwr.engine.counts)
         tot = [xe[cwr.row_en[m]] + (isempty(lapsof[m]) ? 0.0 : mean(xr[rwk.lap[lapsof[m]]])) for m in eachindex(d.machines)]
         return sum_to_zero_by(tot, d.mach_season, mc)
     end

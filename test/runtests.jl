@@ -1747,12 +1747,17 @@ end
             # zero walk steps: no car part, as the base model with zero car effects
             mr = lap_effects(d9; rwalk = true, cars = fc)
             θr = merge((; (k => v for (k, v) in pairs(θ) if k ∉ (:σ_mach, :b_mach))...),
-                       (; τ_cr = 0.1, τ_co = 0.3, σ0_ch = 1.0, z_cr = zeros(length(rwk.prev)), τ_en = 0.2, σ0_en = 0.5,
-                          z_en = zeros(length(cwl.engine.prev)), δ_own = 0.2, δ_reg = 0.2))
+                       (; τ_cr = 0.1, τ_co = 0.3, σ0_ch = 1.0, xs_cr = zeros(length(rwk.prev)), τ_en = 0.2, σ0_en = 0.5,
+                          xs_en = zeros(length(cwl.engine.prev)), δ_own = 0.2, δ_reg = 0.2))
             @test Turing.DynamicPPL.loglikelihood(mr, θr) ≈
                   Turing.DynamicPPL.loglikelihood(lap_effects(d9), merge(θ, (; b_mach = zeros(length(d9.machines)))))
-            @test !(Turing.DynamicPPL.loglikelihood(mr, merge(θr, (; z_cr = randn(rng, length(rwk.prev))))) ≈
+            @test !(Turing.DynamicPPL.loglikelihood(mr, merge(θr, (; xs_cr = randn(rng, length(rwk.prev))))) ≈
                     Turing.DynamicPPL.loglikelihood(mr, θr))
+            # directly sampled states: the step form's prior, less the log Jacobian Σ log sd of steps → states
+            sdr = Diomedes.race_walk_sd(0.1, 0.3, 1.0, 0.2, 0.2, rwk)
+            zr = randn(rng, length(rwk.prev))
+            @test Diomedes.walk_states_logpdf(Diomedes.walk_path(zr .* sdr, rwk.prev), sdr, rwk.prev) ≈
+                  sum(Diomedes.normlogpdf.(zr)) - sum(log.(sdr))
             for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true, big = true),
                           (; rwalk = true), (; rwalk = true, track = true, dinc = true, starts = true, big = true, sdrv = false),
                           (; rwalk = true, dinc = true, starts = true, dinc1 = true))
