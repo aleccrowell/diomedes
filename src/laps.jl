@@ -804,8 +804,8 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         b = center_by(b_mach, d.mach_season, mach_counts)
         xr = 0 .* a_π .+ zeros(1)            # no race walk: a tracked placeholder, unused
         rwk = RaceWalk()
-    else                    # race-level chassis walk and season-level engine walk (#108)
-        rwk, cwe = rw.rwk, rw.cw
+    else                    # race-level chassis walk (#108)
+        rwk = rw.rwk
         τ_cr ~ truncated(Normal(0, 0.5); lower = 0)           # chassis step per race, %
         τ_co ~ truncated(Normal(0, 1); lower = 0)             # chassis step across an off-season
         σ0_ch ~ truncated(Normal(0, 2); lower = 0)            # spread of a works' first race
@@ -813,24 +813,18 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         # `_wst`, #102): in the step form each race's well-observed state was a sum of all
         # the steps before it, which held probe 108c at maximum tree depth.
         xs_cr ~ FlatVec(length(rwk.prev))
-        τ_en ~ truncated(Normal(0, 1); lower = 0)             # engine step per season
-        σ0_en ~ truncated(Normal(0, 2); lower = 0)
-        xs_en ~ FlatVec(length(cwe.engine.prev))
         δ_own ~ truncated(Normal(0, 1); lower = 0)            # larger off-season steps: ownership, regulations
         δ_reg ~ truncated(Normal(0, 1); lower = 0)
-        # (as prior terms: a plain number would count towards the log likelihood, and so LOO)
-        Turing.@addlogprob! (; logprior = walk_states_logpdf(xs_cr, race_walk_sd(τ_cr, τ_co, σ0_ch, δ_own, δ_reg, rwk), rwk.prev) +
-                                           walk_state_prior(τ_en, σ0_en, zero(δ_own), δ_reg, xs_en, cwe.engine))
+        # (as a prior term: a plain number would count towards the log likelihood, and so LOO)
+        Turing.@addlogprob! (; logprior = walk_states_logpdf(xs_cr, race_walk_sd(τ_cr, τ_co, σ0_ch, δ_own, δ_reg, rwk), rwk.prev))
         xr = center_by(xs_cr, rwk.race, rwk.counts)
-        xe = center_by(xs_en, cwe.engine.season, cwe.engine.counts)
-        # Each race's mean chassis state is absorbed by its intercept, so only the walk prior sets
-        # it: a 326-race random walk, too ill-conditioned for a diagonal metric (probe 108d, depth
-        # 10). Likewise each season's mean engine state, whose spread made a well-observed contrast
-        # of two engines the stiffest direction (curvature at probe 108c's draws: 10,400 against
-        # 3,450 with it pinned; the engine in step form was worse still, 105,000). Both pinned
-        # softly near zero (sd RACE_MEAN_PIN per state); the likelihood doesn't see them.
-        Turing.@addlogprob! (; logprior = -(sum(abs2, xs_cr .- xr) + sum(abs2, xs_en .- xe)) / (2 * RACE_MEAN_PIN^2))
-        b = xe[cwe.row_en]                                    # each car-season's engine state
+        # Each race's mean state is absorbed by its intercept, so only the walk prior sets it: a
+        # 326-race random walk, too ill-conditioned for a diagonal metric (probe 108d, depth 10).
+        # Pinned softly near zero (sd RACE_MEAN_PIN per state); the likelihood doesn't see it.
+        Turing.@addlogprob! (; logprior = -sum(abs2, xs_cr .- xr) / (2 * RACE_MEAN_PIN^2))
+        # No engine walk: beside a works' chassis walk, which takes each season's change, only
+        # customer engines told it apart, and its scales went to zero (probe 108f, all chains).
+        b = 0 .* a_π .+ zeros(length(d.machines))             # no car-season part: a tracked placeholder
     end
     if cw !== nothing       # chassis and engine walks (#108, as #95): b_mach is then each car-season's residual
         τ_ch ~ truncated(Normal(0, 1); lower = 0)             # step sd per year, %
@@ -1031,8 +1025,6 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                                        u_dinc1 = 0.1 .* randn(rng, length(d.competitors))) : (;),
                             rwalk ? (; τ_cr = 0.05 + 0.05 * rand(rng), τ_co = 0.2 + 0.2 * rand(rng),
                                        σ0_ch = 0.3 + 0.4 * rand(rng), xs_cr = 0.1 .* randn(rng, length(rwm.rwk.prev)),
-                                       τ_en = 0.05 + 0.05 * rand(rng), σ0_en = 0.1 + 0.2 * rand(rng),
-                                       xs_en = 0.1 .* randn(rng, length(rwm.cw.engine.prev)),
                                        δ_own = 0.1 + 0.1 * rand(rng), δ_reg = 0.1 + 0.1 * rand(rng)) : (;))
     # leave out what the model doesn't sample (no residual with the race walk, no driver start effects)
     drop = (rwalk ? (:σ_mach, :b_mach) : ())..., (sdrv ? () : (:τ_sd, :u_sd))...
@@ -1069,8 +1061,8 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                 (starts || first(p) ∉ START_PARAMS) && (age || first(p) ∉ AGE_PARAMS) &&
                 (circuits || first(p) ∉ CIRCUIT_PARAMS) && (track || first(p) ∉ TRACK_PARAMS) &&
                 (dinc || first(p) ∉ DINC_PARAMS) && (works || first(p) !== :β_works) &&
-                (walk || first(p) ∉ (:τ_ch, :z_ch)) && (rwalk || first(p) ∉ (:τ_cr, :τ_co, :xs_cr, :xs_en)) &&
-                (walk || rwalk || first(p) ∉ WALK_PARAMS) && (!rwalk || first(p) ∉ (:σ_mach, :b_mach, :z_en)) &&
+                (walk || first(p) ∉ (:τ_ch, :z_ch)) && (rwalk || first(p) ∉ (:τ_cr, :τ_co, :xs_cr)) &&
+                (walk || rwalk || first(p) ∉ WALK_PARAMS) && (!rwalk || first(p) ∉ (:σ_mach, :b_mach, :τ_en, :σ0_en, :z_en)) &&
                 (sdrv || first(p) ∉ (:τ_sd, :u_sd)) &&
                 (dinc1 || first(p) ∉ (:τ_dinc1, :u_dinc1)) && (big || first(p) ∉ (:a_ρ, :δ_λ2)),
                          [:σ_comp => (1, nothing), :σ_mach => (1, nothing), :σ => (1, nothing),
@@ -1104,7 +1096,6 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :z_ch => cw === nothing ? (0, nothing) : (length(cw.chassis.prev), cw.chassis.names),
                           :τ_en => (1, nothing), :σ0_en => (1, nothing),
                           :z_en => cw === nothing ? (0, nothing) : (length(cw.engine.prev), cw.engine.names),
-                          :xs_en => cw === nothing ? (0, nothing) : (length(cw.engine.prev), cw.engine.names),
                           :δ_own => (1, nothing), :δ_reg => (1, nothing), :β_works => (1, nothing),
                           :a_ρ => (1, nothing), :δ_λ2 => (1, nothing),
                           :τ_dinc1 => (1, nothing), :u_dinc1 => (length(d.competitors), d.competitors)])
@@ -1123,7 +1114,7 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                               :τ_dinc => 0.01, :u_dinc => 0.01, :τ_ch => 0.01, :σ0_ch => 0.01, :z_ch => 0.01,
                               :τ_en => 0.01, :σ0_en => 0.01, :z_en => 0.01, :δ_own => 0.01, :δ_reg => 0.01,
                               :β_works => 1e-3, :τ_dinc1 => 0.01, :u_dinc1 => 0.01, :a_ρ => 0.01, :δ_λ2 => 0.01,
-                              :τ_cr => 0.01, :τ_co => 0.01, :xs_cr => 0.01, :xs_en => 0.01)
+                              :τ_cr => 0.01, :τ_co => 0.01, :xs_cr => 0.01)
 
 """
     lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old = true, tyres_new = tyres_old,

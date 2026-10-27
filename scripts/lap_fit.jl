@@ -38,8 +38,8 @@
 # (…_dinc; combine writes <tag>_incidents.csv); `walk` chassis and engine walks over
 # seasons, with `works` the works-team term (…_walk, …_works; cars.csv then holds each
 # car-season's total). The 2026 races so far: seasons 1996-2026. `rwalk`: a race-level chassis
-# walk and season-level engine walk in place of the car-season residual and the development
-# trends (…_rwalk; combine writes <tag>_racewalk.csv); `nostartdrv` drops the per-driver start
+# walk per works in place of the car-season residual, the development trends and the engine walk
+# (#108: beside it the engine walk's scales went to zero) (…_rwalk; combine writes <tag>_racewalk.csv); `nostartdrv` drops the per-driver start
 # effects and `dinc1` adds lap-1 driver incident offsets. `probe` saves a short
 # test fit (with draws=<n>) under <tag>_probe, so a later full fit doesn't resume from it.
 # `big` adds big incident losses (…_big) and `keepslow` keeps a car's laps over
@@ -65,7 +65,7 @@ walk = "walk" ∈ ARGS              # chassis and engine walks (#108)
 works = "works" ∈ ARGS            # works-team term (with walk, #108)
 big = "big" ∈ ARGS                # big incident losses (#108, as the race model's #16)
 keepslow = "keepslow" ∈ ARGS      # keep a car's laps over STOPPAGE × its median lap (no per-car size cut, #108)
-rwalk = "rwalk" ∈ ARGS            # race-level chassis walk + season engine walk, no residual or dev (#108)
+rwalk = "rwalk" ∈ ARGS            # race-level chassis walk, no residual, dev or engine walk (#108)
 sdrv = "nostartdrv" ∉ ARGS        # per-driver start effects (#108: off with nostartdrv)
 dinc1 = "dinc1" ∈ ARGS            # lap-1 driver incident offsets (#108: off unless asked)
 probe = "probe" ∈ ARGS            # a short test fit saved under its own tag (…_probe), apart from the full fit
@@ -202,15 +202,13 @@ end
 drv = collect3((i, c) -> sum_to_zero(chain[:a_comp][i, c]))
 cwl = walk ? CarWalks(d) : nothing
 rwk = rwalk ? RaceWalk(d) : nothing
-cwr = rwalk ? CarWalks(d) : nothing
 # race-level walk: each state's value, and each car-season's mean over its laps (#108)
 race_states(i, c) = Diomedes.center_by(chain[:xs_cr][i, c], rwk.race, rwk.counts)   # states sampled directly
 lapsof = rwalk ? [findall(==(m), d.mach) for m in eachindex(d.machines)] : nothing
 function car_total(i, c)            # residual + chassis + engine (+ works), centred within season (#108)
-    if rwalk                        # race walk: engine state + the car's mean chassis state over its laps
+    if rwalk                        # race walk: the car's mean chassis state over its laps
         xr = race_states(i, c)
-        xe = Diomedes.center_by(chain[:xs_en][i, c], cwr.engine.season, cwr.engine.counts)
-        tot = [xe[cwr.row_en[m]] + (isempty(lapsof[m]) ? 0.0 : mean(xr[rwk.lap[lapsof[m]]])) for m in eachindex(d.machines)]
+        tot = [isempty(lapsof[m]) ? 0.0 : mean(xr[rwk.lap[lapsof[m]]]) for m in eachindex(d.machines)]
         return sum_to_zero_by(tot, d.mach_season, mc)
     end
     b = sum_to_zero_by(chain[:b_mach][i, c], d.mach_season, mc)
@@ -236,7 +234,7 @@ scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], tyres ? cha
                                 track ? vcat(chain[:β_track_π][i, c], chain[:β_track_λ][i, c]) : Float64[],
                                 dinc ? [chain[:τ_dinc][i, c]] : Float64[], dinc1 ? [chain[:τ_dinc1][i, c]] : Float64[],
                                 walk ? [chain[s][i, c] for s in (:τ_ch, :σ0_ch, :τ_en, :σ0_en, :δ_own, :δ_reg)] : Float64[],
-                                rwalk ? [chain[s][i, c] for s in (:τ_cr, :τ_co, :σ0_ch, :τ_en, :σ0_en, :δ_own, :δ_reg)] : Float64[],
+                                rwalk ? [chain[s][i, c] for s in (:τ_cr, :τ_co, :σ0_ch, :δ_own, :δ_reg)] : Float64[],
                                 works ? [chain[:β_works][i, c]] : Float64[],
                                 big ? [chain[:a_ρ][i, c], chain[:δ_λ2][i, c]] : Float64[]))
 sdv = starts && sdrv ? collect3((i, c) -> career_slopes(chain[:τ_sd][i, c], chain[:u_sd][i, c])) : nothing
@@ -271,7 +269,7 @@ for (j, nm) in enumerate((string.(scal_names)..., (tyres ? Tuple(n for e in d.er
                           (age ? ("τ_age",) : ())..., (circuits ? Tuple("τ_cx[$n]" for n in d.race_x_names) : ())...,
                           (track ? Tuple("β_track_$(p)[$n]" for p in ("π", "λ") for n in d.race_track_names) : ())...,
                           (dinc ? ("τ_dinc",) : ())..., (dinc1 ? ("τ_dinc1",) : ())..., (walk ? ("τ_ch", "σ0_ch", "τ_en", "σ0_en", "δ_own", "δ_reg") : ())...,
-                          (rwalk ? ("τ_cr", "τ_co", "σ0_ch", "τ_en", "σ0_en", "δ_own", "δ_reg") : ())...,
+                          (rwalk ? ("τ_cr", "τ_co", "σ0_ch", "δ_own", "δ_reg") : ())...,
                           (works ? ("β_works",) : ())..., (big ? ("a_ρ", "δ_λ2") : ())...))
     v = flat(scal)[:, j]
     println(rpad(nm, 12), round(mean(v); digits = 4), " ± ", round(std(v); digits = 4))

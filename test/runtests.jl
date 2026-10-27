@@ -1747,8 +1747,7 @@ end
             # zero walk steps: no car part, as the base model with zero car effects
             mr = lap_effects(d9; rwalk = true, cars = fc)
             θr = merge((; (k => v for (k, v) in pairs(θ) if k ∉ (:σ_mach, :b_mach))...),
-                       (; τ_cr = 0.1, τ_co = 0.3, σ0_ch = 1.0, xs_cr = zeros(length(rwk.prev)), τ_en = 0.2, σ0_en = 0.5,
-                          xs_en = zeros(length(cwl.engine.prev)), δ_own = 0.2, δ_reg = 0.2))
+                       (; τ_cr = 0.1, τ_co = 0.3, σ0_ch = 1.0, xs_cr = zeros(length(rwk.prev)), δ_own = 0.2, δ_reg = 0.2))
             @test Turing.DynamicPPL.loglikelihood(mr, θr) ≈
                   Turing.DynamicPPL.loglikelihood(lap_effects(d9), merge(θ, (; b_mach = zeros(length(d9.machines)))))
             @test !(Turing.DynamicPPL.loglikelihood(mr, merge(θr, (; xs_cr = randn(rng, length(rwk.prev))))) ≈
