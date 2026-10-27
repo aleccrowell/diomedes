@@ -823,10 +823,13 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
                                            walk_state_prior(τ_en, σ0_en, zero(δ_own), δ_reg, xs_en, cwe.engine))
         xr = center_by(xs_cr, rwk.race, rwk.counts)
         xe = center_by(xs_en, cwe.engine.season, cwe.engine.counts)
-        # Each race's mean state is absorbed by its intercept, so only the walk prior sets it:
-        # a 326-race random walk, too ill-conditioned for a diagonal metric (probe 108d, depth 10).
-        # Pinned softly near zero (sd RACE_MEAN_PIN per state); the likelihood doesn't see it.
-        Turing.@addlogprob! (; logprior = -sum(abs2, xs_cr .- xr) / (2 * RACE_MEAN_PIN^2))
+        # Each race's mean chassis state is absorbed by its intercept, so only the walk prior sets
+        # it: a 326-race random walk, too ill-conditioned for a diagonal metric (probe 108d, depth
+        # 10). Likewise each season's mean engine state, whose spread made a well-observed contrast
+        # of two engines the stiffest direction (curvature at probe 108c's draws: 10,400 against
+        # 3,450 with it pinned; the engine in step form was worse still, 105,000). Both pinned
+        # softly near zero (sd RACE_MEAN_PIN per state); the likelihood doesn't see them.
+        Turing.@addlogprob! (; logprior = -(sum(abs2, xs_cr .- xr) + sum(abs2, xs_en .- xe)) / (2 * RACE_MEAN_PIN^2))
         b = xe[cwe.row_en]                                    # each car-season's engine state
     end
     if cw !== nothing       # chassis and engine walks (#108, as #95): b_mach is then each car-season's residual
