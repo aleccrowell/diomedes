@@ -173,24 +173,27 @@ end
 # logging, warm-up draws are kept (every iteration reaches the callback) and
 # trimmed from the returned chain, which is therefore the same as without
 # logging. Callers passing their own `discard_*` options are left alone.
+# `trace` (an IO) gets one row per iteration, warm-up included (`progress_logger`).
 function run_nuts(model, inits; n_samples, n_chains, ensemble, sampler, rng, progress,
-                  progress_log, log_every, kwargs...)
+                  progress_log, log_every, trace::Union{Nothing,IO} = nothing, trace_block::Int = 1, kwargs...)
     if inits !== nothing
         kwargs = (; kwargs..., initial_params = n_chains == 1 ? only(inits) : inits)
     end
+    logging = progress_log !== nothing || trace !== nothing
     n_warmup = warmup_iterations(sampler, n_samples)
-    trim = progress_log !== nothing && n_warmup > 0 &&
+    trim = logging && n_warmup > 0 &&
            !haskey(kwargs, :discard_initial) && !haskey(kwargs, :discard_adapt)
     N = n_samples
     if trim
         N = n_samples + n_warmup
         kwargs = (; kwargs..., nadapts = n_warmup, discard_adapt = false, discard_initial = 0)
     end
-    if progress_log !== nothing
+    if logging
         kwargs = (; kwargs..., callback = progress_logger(progress_log; every = log_every,
                                                           total = n_samples + n_warmup,
                                                           n_warmup = trim ? n_warmup : 0,
-                                                          n_chains = ensemble isa MCMCSerial ? n_chains : 1))
+                                                          n_chains = ensemble isa MCMCSerial ? n_chains : 1,
+                                                          trace, trace_block))
     end
     chain = n_chains == 1 ?
         sample(rng, model, sampler, N; progress, kwargs...) :
@@ -228,10 +231,11 @@ end
 # `n` draws from `last` (a chain's final draw) with a fixed metric and step size. The
 # sampler's first transition is its starting point, a repeat of `last`'s, so one
 # extra iteration is drawn and the first dropped.
-function draws_from(model, last, Minv, ϵ, n; rng)
+function draws_from(model, last, Minv, ϵ, n; rng, progress_log = nothing, log_every = 100, trace = nothing,
+                    trace_block = 1)
     c = run_nuts(model, [InitFromParams(last, Turing.FlexiChains.niters(last), 1)]; n_samples = n + 1, n_chains = 1,
-                 ensemble = MCMCSerial(), sampler = fixed_nuts(Minv, ϵ), rng, progress = false, progress_log = nothing,
-                 log_every = 100, n_adapts = 0)
+                 ensemble = MCMCSerial(), sampler = fixed_nuts(Minv, ϵ), rng, progress = false, progress_log,
+                 log_every, n_adapts = 0, trace, trace_block)
     return c[iter = 2:(n + 1)]
 end
 
@@ -317,7 +321,10 @@ end
 
 One NUTS chain sampled in blocks, each saved to `"\$(path)_block<j>.jls"`, so a
 run that is killed can be resumed by calling this again: saved blocks are loaded
-and sampling continues from the last one.
+and sampling continues from the last one. Every iteration, warm-up included, is
+also appended to `"\$(path)_trace.tsv"` as it is sampled (sampler statistics and
+scalar parameters, see `progress_logger`), so a run can be checked before its
+first block is saved.
 
 Block 1 holds the `n_adapts` warm-up iterations (discarded) and the first
 `block` draws, sampled with Turing's NUTS or `external` (an AdvancedHMC sampler
@@ -353,26 +360,26 @@ function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int
             progress_log === nothing || (println(progress_log, "block $j: loaded from $file"); flush(progress_log))
         else
             nj = min(block, n_samples - (j - 1) * block)
-            if j == 1
-                ch = if external === nothing
-                    run_nuts(model, [init]; n_samples = nj, n_chains = 1, ensemble = MCMCSerial(),
-                             sampler = NUTS(n_adapts, δ; adtype), rng = Xoshiro(seed + j), progress = false,
-                             progress_log, log_every, save_state = true)
-                else        # warm-up run, then trimmed here (`discard_initial` is not applied to external samplers)
-                    c = run_nuts(model, [init]; n_samples = nj + n_adapts, n_chains = 1, ensemble = MCMCSerial(),
-                                 sampler = external, rng = Xoshiro(seed + j), progress = false, progress_log, log_every,
-                                 save_state = true, n_adapts)
-                    c[iter = (n_adapts + 1):(n_adapts + nj)]
+            ch = open("$(path)_trace.tsv", "a") do trace
+                if j == 1
+                    c = if external === nothing
+                        run_nuts(model, [init]; n_samples = nj, n_chains = 1, ensemble = MCMCSerial(),
+                                 sampler = NUTS(n_adapts, δ; adtype), rng = Xoshiro(seed + j), progress = false,
+                                 progress_log, log_every, save_state = true, trace, trace_block = j)
+                    else    # warm-up run, then trimmed here (`discard_initial` is not applied to external samplers)
+                        c = run_nuts(model, [init]; n_samples = nj + n_adapts, n_chains = 1, ensemble = MCMCSerial(),
+                                     sampler = external, rng = Xoshiro(seed + j), progress = false, progress_log,
+                                     log_every, save_state = true, n_adapts, trace, trace_block = j)
+                        c[iter = (n_adapts + 1):(n_adapts + nj)]
+                    end
+                    ad = lap_adapted(only(Turing.loadstate(c)))
+                    Minv, ϵ = ad.Minv, ad.ϵ
+                    strip_state(c)
+                else
+                    fixed_step === nothing || (ϵ = Float64(fixed_step))
+                    strip_state(draws_from(model, last(chains), Minv, ϵ, nj; rng = Xoshiro(seed + j), progress_log,
+                                           log_every, trace, trace_block = j))
                 end
-                ad = lap_adapted(only(Turing.loadstate(ch)))
-                Minv, ϵ = ad.Minv, ad.ϵ
-                ch = strip_state(ch)
-            else
-                fixed_step === nothing || (ϵ = Float64(fixed_step))
-                ch = draws_from(model, last(chains), Minv, ϵ, nj; rng = Xoshiro(seed + j))
-                ch = strip_state(ch)
-                progress_log === nothing ||
-                    (println(progress_log, "  thread 1: iter $nj/$nj (block $j)"); flush(progress_log))
             end
             serialize(file * ".tmp", (; chain = ch, Minv, ϵ, format = 2))
             mv(file * ".tmp", file; force = true)      # a kill mid-write leaves no partial block
@@ -440,10 +447,20 @@ iterations per chain it adds ETAs.
 - Iterations up to `n_warmup` are marked "(warm-up)". The callback only sees
   warm-up iterations if they are not discarded; `fit_effects` / `fit_gaps`
   arrange that when logging.
+- Each line gives the sampler's behaviour over the last `every` iterations: mean
+  leapfrog steps and tree depth, acceptance, step size and divergences.
+
+With `trace` (an IO), every iteration also writes a tab-separated row there,
+flushed: `trace_block`, the iteration, those sampler statistics, the log density
+and every scalar parameter (a header first if `trace` is at its start). A long
+fit can then be checked (tree depth, mixing of the scales) while it runs,
+warm-up included. `io = nothing` writes only the trace.
 """
-function progress_logger(io::IO = stdout; every::Int = 100, total = nothing, n_warmup::Int = 0,
-                         n_chains::Int = 1)
+function progress_logger(io::Union{Nothing,IO} = stdout; every::Int = 100, total = nothing, n_warmup::Int = 0,
+                         n_chains::Int = 1, trace::Union{Nothing,IO} = nothing, trace_block::Int = 1)
     t0 = time()
+    win = Dict{Int,NTuple{5,Float64}}()   # steps, depth, acceptance, step size, divergences, summed per thread
+    header = Ref(trace !== nothing && position(trace) == 0)
     last = Dict{Int,Float64}()        # time of the last report, per thread
     last_iter = Dict{Int,Int}()       # last iteration seen, per thread
     chain = Dict{Int,Int}()           # current chain number, per thread (serial runs)
@@ -460,6 +477,14 @@ function progress_logger(io::IO = stdout; every::Int = 100, total = nothing, n_w
                 last[tid] = now
             end
             last_iter[tid] = iteration
+            # (the initial point carries no sampler statistics)
+            st = hasproperty(transition, :stats) ? transition.stats : nothing
+            if st !== nothing && hasproperty(st, :n_steps)
+                w = get(win, tid, ntuple(_ -> 0.0, 5))
+                win[tid] = w .+ (st.n_steps, st.tree_depth, st.acceptance_rate, st.step_size, st.numerical_error)
+                trace === nothing || write_trace_row(trace, header, trace_block, iteration, st, transition.params)
+            end
+            io === nothing && return
             iteration % every == 0 || return
             recent = now - get(last, tid, t0)
             last[tid] = now
@@ -475,11 +500,33 @@ function progress_logger(io::IO = stdout; every::Int = 100, total = nothing, n_w
                 end
             end
             phase = iteration <= n_warmup ? " (warm-up)" : ""
+            stats = ""
+            if haskey(win, tid)
+                n = min(every, iteration)
+                s, dp, a, ϵ, dv = win[tid]
+                stats = string("; last $n: steps ", round(s / n; digits = 1), ", depth ", round(dp / n; digits = 2),
+                               ", accept ", round(a / n; digits = 3), ", step ", round(ϵ / n; sigdigits = 3),
+                               ", divergences ", Int(dv))
+                delete!(win, tid)
+            end
             println(io, "  $label: iter $iteration", total === nothing ? "" : "/$total", phase,
-                    ", $(round((now - t0) / 60; digits = 1)) min elapsed", eta)
+                    ", $(round((now - t0) / 60; digits = 1)) min elapsed", eta, stats)
             flush(io)
         end
     end
+end
+
+# One row of a `progress_logger` trace: sampler statistics and the scalar parameters.
+function write_trace_row(io::IO, header::Ref{Bool}, block::Int, iteration::Int, st, params)
+    scal = [(string(k), v) for (k, v) in pairs(params) if v isa Real]
+    if header[]
+        println(io, join(["block", "iter", "n_steps", "tree_depth", "acceptance_rate", "step_size",
+                          "numerical_error", "log_density", first.(scal)...], '\t'))
+        header[] = false
+    end
+    println(io, join(Any[block, iteration, st.n_steps, st.tree_depth, st.acceptance_rate, st.step_size,
+                         Int(st.numerical_error), st.log_density, last.(scal)...], '\t'))
+    flush(io)
 end
 
 """

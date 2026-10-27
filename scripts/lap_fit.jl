@@ -26,6 +26,9 @@
 # `step=<x>` (chain) samples the blocks not yet saved at step size x (e.g. to resume a
 # chain whose tuned step size left it at a deeper tree than the others; #66).
 # `draws=<n>` (chain) samples n draws after warm-up (default 1000), e.g. for a short test fit.
+# `block=<n>` (chain) saves the draws in blocks of n (default 100, 25 for a `probe`). Every
+# iteration, warm-up included, is also written as it is sampled to
+# output/<tag>_chain<k>_trace.tsv (tree depth, steps, step size, divergences, scalars).
 # `age` adds the population age curve (#12; …_age; combine writes <tag>_age_curve.csv) and
 # `circuits` the car-season slopes on circuit speed, street score and race temperature
 # (#14; …_circ; covariates from reference/circuits via `circuit_table`; combine writes
@@ -73,9 +76,12 @@ steparg = findfirst(a -> startswith(a, "step="), ARGS)
 step_kw = steparg === nothing ? (;) : (; fixed_step = parse(Float64, split(ARGS[steparg], "=")[2]))
 drawsarg = findfirst(a -> startswith(a, "draws="), ARGS)
 n_draws = drawsarg === nothing ? 1000 : parse(Int, split(ARGS[drawsarg], "=")[2])
+blockarg = findfirst(a -> startswith(a, "block="), ARGS)
+n_block = blockarg === nothing ? (probe ? 25 : 100) : parse(Int, split(ARGS[blockarg], "=")[2])
 args = filter(a -> a ∉ ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
                          "walk", "works", "big", "keepslow", "rwalk", "nostartdrv", "dinc1", "notune", "probe") &&
-                   !startswith(a, "delta=") && !startswith(a, "step=") && !startswith(a, "draws="), ARGS)
+                   !startswith(a, "delta=") && !startswith(a, "step=") && !startswith(a, "draws=") &&
+                   !startswith(a, "block="), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
 pits = Symbol(args[2])
@@ -160,8 +166,9 @@ if action == "chain"
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
     end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k, n_samples = n_draws,
-                                  progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, lead, tyre_mgmt, starts,
-                                  age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1, δ, tune_step, step_kw...)
+                                  block = n_block, progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, lead,
+                                  tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1, δ, tune_step,
+                                  step_kw...)
     # adapted metric and step size, for warm starts of later fits (see above)
     try
         serialize("output/$(tag)_chain$(k)_warmstate.jls", Diomedes.checkpoint_adapted("output/$(tag)_chain$(k)"))

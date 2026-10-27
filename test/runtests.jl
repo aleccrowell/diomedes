@@ -1254,6 +1254,13 @@ end
         ch = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir, "t");
                                             n_samples = 40, n_adapts = 100, block = 20, tune_step = true)
         @test size(ch[:m]) == (40, 1)
+        # every iteration, warm-up included, traced as it is sampled
+        tr = readlines(joinpath(dir, "t_trace.tsv"))
+        hd = split(tr[1], '\t')
+        @test hd[1:4] == ["block", "iter", "n_steps", "tree_depth"] && "m" in hd && "s" in hd
+        # (warm-up and draws; a block's starting point may add a row)
+        @test count(l -> startswith(l, "1\t"), tr) >= 100 + 20 - 1 && count(l -> startswith(l, "2\t"), tr) >= 20
+        @test parse(Float64, split(tr[end], '\t')[findfirst(==("m"), hd)]) == vec(ch[:m])[end]
         probe = readlines(joinpath(dir, "t_steptune.txt"))
         @test startswith(probe[1], "factor") && startswith(probe[end], "chosen")
         b1, b2 = Diomedes.read_block(joinpath(dir, "t_block1.jls")), Diomedes.read_block(joinpath(dir, "t_block2.jls"))
