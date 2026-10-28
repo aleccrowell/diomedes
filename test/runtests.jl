@@ -1319,6 +1319,40 @@ end
             @test d.y ≈ 100 .* log.(d.rows.time_ms ./ 91_000)      # median clean lap: 5 laps of a at 90 s, 7 of b at 91 s
         end
         @test_throws ArgumentError prepare_laps(lt, rows; pits = :recorded)
+        # traffic and field pace (#113): three cars at 90, 91 and 121 s a lap, every car 3%
+        # slower on lap 4, so c is caught by a and b. Crossings (laps done): …, c 242 (2),
+        # a 270 (3), b 273 (3), a 362.7 (4), c 363 (3), b 366.73 (4), a 452.7 (5),
+        # b 457.73 (5), c 487.63 (4), …, c 608.63 (5)
+        rowst = DataFrame(series = "f1", season = 2019, event_id = "2019-01", competitor_id = ["a", "b", "c"],
+                          machine_id = ["m1", "m1", "m2"])
+        ltt = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
+                        time_ms = Float64[], position = Union{Missing,Int}[])
+        for (c, t) in (("a", 90_000.0), ("b", 91_000.0), ("c", 121_000.0)), l in 1:6
+            push!(ltt, ("f1", 2019, "2019-01", c, l, t * (l == 4 ? 1.03 : 1.0), missing))
+        end
+        dt = prepare_laps(ltt, rowst; pits = :inferred)
+        tr = LapTraffic(dt, ltt)
+        row(c, l) = findfirst(i -> dt.rows.competitor_id[i] == c && dt.rows.lap[i] == l, 1:nrow(dt.rows))
+        let i = row("a", 4)            # start of a's lap 4: its lap-3 crossing at 270
+            @test tr.ahead[i] ≈ 270 - 242 && tr.ahead_laps[i] == -1      # c, a lap down
+            @test tr.behind[i] ≈ 3 && tr.behind_laps[i] == 0             # b
+            @test isinf(tr.front[i]) && tr.back[i] ≈ 3                   # leading
+        end
+        let i = row("b", 6)            # start of b's lap 6: its lap-5 crossing at 457.73
+            @test tr.ahead[i] ≈ 457.73 - 452.7 && tr.ahead_laps[i] == 0     # a, same lap
+            @test tr.behind[i] ≈ 487.63 - 457.73 && tr.behind_laps[i] == -1 # c, a lap down
+            @test tr.front[i] ≈ 457.73 - 452.7 && tr.back[i] ≈ 608.63 - 457.73
+        end
+        let i = row("c", 5)            # start of c's lap 5: its lap-4 crossing at 487.63
+            @test tr.ahead[i] ≈ 487.63 - 457.73 && tr.ahead_laps[i] == 1    # b, a lap up
+            @test tr.behind[i] ≈ 542.7 - 487.63 && tr.behind_laps[i] == 2   # a, two laps up
+            @test tr.front[i] ≈ 487.63 - 366.73 && isinf(tr.back[i])
+        end
+        @test isinf(tr.ahead[row("a", 2)]) && tr.front[row("c", 2)] ≈ 121 - 91
+        fp = field_pace(dt; window = 0, min_cars = 3)
+        @test all(fp[dt.rows.lap .== 4] .> 1) && all(fp[dt.rows.lap .!= 4] .< 1)
+        @test sum(fp) ≈ 0 atol = 1e-9                                   # detrended within the race
+        @test all(iszero, field_pace(dt; window = 0, min_cars = 4))      # no lap has 4 cars
         # log density against a direct sum, and the fused gradient against ForwardDiff
         rng = Xoshiro(12)
         lt2 = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
