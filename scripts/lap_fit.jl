@@ -46,6 +46,12 @@
 # STOPPAGE × its median (…_keepslow): with `recorded` pit stops, no lap is dropped for
 # its size (#108). `warmpits=<recorded|inferred>` warm-starts from a fit with the
 # other pit mode.
+# #113, maximum pace and consistency (tags …_traffic, …_fpace, …_short, after the others):
+# `traffic` shared effects of the traffic bins (gaps on track and in the race, `LapContext`),
+# `fpace` car-season slopes on the field pace, `short` driver and car-season offsets on the
+# shortfall (logit π, log λ), the driver effects then being mean pace; combine writes
+# <tag>_peak.csv (peak pace, shortfall mean/sd/frequency/size per driver). A warm start
+# comes from a fit without these terms.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
@@ -68,6 +74,9 @@ keepslow = "keepslow" ∈ ARGS      # keep a car's laps over STOPPAGE × its med
 rwalk = "rwalk" ∈ ARGS            # race-level chassis walk, no residual, dev or engine walk (#108)
 sdrv = "nostartdrv" ∉ ARGS        # per-driver start effects (#108: off with nostartdrv)
 dinc1 = "dinc1" ∈ ARGS            # lap-1 driver incident offsets (#108: off unless asked)
+traffic = "traffic" ∈ ARGS        # traffic bins (#113)
+fpace = "fpace" ∈ ARGS            # car-season slopes on the field pace (#113)
+short = "short" ∈ ARGS            # driver and car-season shortfall offsets, peak pace below the mean (#113)
 probe = "probe" ∈ ARGS            # a short test fit saved under its own tag (…_probe), apart from the full fit
 δarg = findfirst(a -> startswith(a, "delta="), ARGS)
 δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
@@ -92,7 +101,8 @@ flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev
               (f[9] ? "_track" : "") * (f[10] ? "_dinc" : "") * (f[11] ? "_walk" : "") * (f[12] ? "_works" : "") *
               (f[13] ? "_big" : "") * (f[14] ? "_rwalk" : "") * (f[15] ? "" : "_nostartdrv") * (f[16] ? "_dinc1" : "")
 flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1)
-tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (keepslow ? "_keepslow" : "") * (probe ? "_probe" : "")
+ctx_sfx = (traffic ? "_traffic" : "") * (fpace ? "_fpace" : "") * (short ? "_short" : "")   # #113, after the others
+tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * ctx_sfx * (keepslow ? "_keepslow" : "") * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
 # (laps_from=1996) so the responses are cached; `recorded` pit stops are fetched on
@@ -105,6 +115,7 @@ res = sd.res
 circ = circuits || track ? circuit_table() : nothing
 d = prepare_laps(sd.laps, res; pits, pit_stops = sd.pits, circuits = circ, stoppage = !keepslow)
 println(d); flush(stdout)
+ctx = traffic || fpace || short ? LapContext(d, sd.laps; traffic, fpace, short) : LapContext()
 mkpath("output")
 
 if action == "chain"
@@ -162,12 +173,12 @@ if action == "chain"
                                       walk_old = old_flags[11], works_old = old_flags[12], track_new = track,
                                       dinc_new = dinc, walk_new = walk, works_new = works, big_old = old_flags[13],
                                       big_new = big, rwalk_old = old_flags[14], rwalk_new = rwalk, sdrv_old = old_flags[15],
-                                      sdrv_new = sdrv, dinc1_old = old_flags[16], dinc1_new = dinc1), 300
+                                      sdrv_new = sdrv, dinc1_old = old_flags[16], dinc1_new = dinc1, ctx_new = ctx), 300
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
     end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k, n_samples = n_draws,
                                   block = n_block, progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, lead,
-                                  tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1, δ, tune_step,
+                                  tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1, ctx, δ, tune_step,
                                   step_kw...)
     # adapted metric and step size, for warm starts of later fits (see above)
     try
@@ -236,7 +247,27 @@ scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], tyres ? cha
                                 walk ? [chain[s][i, c] for s in (:τ_ch, :σ0_ch, :τ_en, :σ0_en, :δ_own, :δ_reg)] : Float64[],
                                 rwalk ? [chain[s][i, c] for s in (:τ_cr, :τ_co, :σ0_ch, :δ_own, :δ_reg)] : Float64[],
                                 works ? [chain[:β_works][i, c]] : Float64[],
-                                big ? [chain[:a_ρ][i, c], chain[:δ_λ2][i, c]] : Float64[]))
+                                big ? [chain[:a_ρ][i, c], chain[:δ_λ2][i, c]] : Float64[],
+                                traffic ? chain[:η_tr][i, c] : Float64[],
+                                fpace ? [chain[:β_fp][i, c], chain[:τ_fp][i, c]] : Float64[],
+                                short ? chain[:τ_sh][i, c] : Float64[]))
+# #113: per driver at the base rates (no track terms, a car with zero offset): shortfall
+# frequency q, size λ, mean q·λ and sd λ·√(q(2 - q)), and the peak pace, the mean-pace
+# effect less the shortfall mean against the drivers' average (both in %, lower faster)
+nd = length(d.competitors)
+bsh = Diomedes.short_blocks(nd, length(d.machines))
+# the shortfall offsets (drivers' π, cars' π, drivers' λ, cars' λ), each block centred
+shv(i, c) = chain[:τ_sh][i, c][bsh] .* Diomedes.center_by(chain[:u_sh][i, c], bsh, [nd, length(d.machines), nd, length(d.machines)])
+function short_drv(i, c)
+    o = shv(i, c)
+    q = Diomedes.logistic.(chain[:a_π][i, c] .+ o[bsh .== 1])
+    λ = exp.(chain[:a_λ][i, c] .+ o[bsh .== 3])
+    E = q .* λ
+    return vcat(q, λ, E, λ .* sqrt.(q .* (2 .- q)), sum_to_zero(chain[:a_comp][i, c]) .- (E .- mean(E)))
+end
+shd = short ? collect3(short_drv) : nothing
+shc = short ? collect3((i, c) -> shv(i, c)[(bsh .== 2) .| (bsh .== 4)]) : nothing
+fpv = fpace ? collect3((i, c) -> chain[:τ_fp][i, c] .* sum_to_zero_by(chain[:u_fp][i, c], d.mach_season, mc)) : nothing
 sdv = starts && sdrv ? collect3((i, c) -> career_slopes(chain[:τ_sd][i, c], chain[:u_sd][i, c])) : nothing
 scv = starts ? collect3((i, c) -> chain[:τ_sc][i, c] .* sum_to_zero_by(chain[:u_sc][i, c], d.mach_season, mc)) : nothing
 tdv = tyre_mgmt ? collect3((i, c) -> career_slopes(chain[:τ_td][i, c], chain[:u_td][i, c])) : nothing
@@ -256,7 +287,10 @@ for (name, A) in (("drivers", drv), ("cars", car), ("scalars", scal), (slopes ? 
                   (starts && sdrv ? (("start (drv)", sdv),) : ())..., (starts ? (("start (car)", scv),) : ())...,
                   (age ? (("age curve", agev),) : ())..., (circuits ? (("circuits", cxv),) : ())...,
                   (dinc ? (("incidents", dincv),) : ())..., (dinc1 ? (("incid. lap1", dinc1v),) : ())...,
-                  (rwalk ? (("race walk", collect3(race_states)),) : ())...)
+                  (rwalk ? (("race walk", collect3(race_states)),) : ())...,
+                  (short ? (("short q", shd[:, :, 1:nd]), ("short λ", shd[:, :, (nd + 1):2nd]),
+                            ("peak", shd[:, :, (4nd + 1):5nd]), ("short car", shc)) : ())...,
+                  (fpace ? (("fpace car", fpv),) : ())...)
     println(rpad(name, 10), round(maximum(MCMCDiagnosticTools.rhat(A)); digits = 3), "  ",
             round(Int, minimum(MCMCDiagnosticTools.ess(A))))
 end
@@ -270,7 +304,9 @@ for (j, nm) in enumerate((string.(scal_names)..., (tyres ? Tuple(n for e in d.er
                           (track ? Tuple("β_track_$(p)[$n]" for p in ("π", "λ") for n in d.race_track_names) : ())...,
                           (dinc ? ("τ_dinc",) : ())..., (dinc1 ? ("τ_dinc1",) : ())..., (walk ? ("τ_ch", "σ0_ch", "τ_en", "σ0_en", "δ_own", "δ_reg") : ())...,
                           (rwalk ? ("τ_cr", "τ_co", "σ0_ch", "δ_own", "δ_reg") : ())...,
-                          (works ? ("β_works",) : ())..., (big ? ("a_ρ", "δ_λ2") : ())...))
+                          (works ? ("β_works",) : ())..., (big ? ("a_ρ", "δ_λ2") : ())...,
+                          (traffic ? Tuple("η[$n]" for n in ctx.tnames) : ())...,
+                          (fpace ? ("β_fp", "τ_fp") : ())..., (short ? ("τ_sh[π drv]", "τ_sh[π car]", "τ_sh[λ drv]", "τ_sh[λ car]") : ())...))
     v = flat(scal)[:, j]
     println(rpad(nm, 12), round(mean(v); digits = 4), " ± ", round(std(v); digits = 4))
 end
@@ -283,6 +319,18 @@ ct = DataFrame(machine = d.machines, mean = vec(mean(C; dims = 1)), sd = vec(std
 sort!(dt, :mean); sort!(ct, :mean)
 CSV.write("output/$(tag)_drivers.csv", dt)
 CSV.write("output/$(tag)_cars.csv", ct)
+if short                             # maximum pace and consistency per driver (#113)
+    S = flat(shd)
+    col(k) = vec(mean(S[:, ((k - 1) * nd + 1):(k * nd)]; dims = 1))
+    csd(k) = vec(std(S[:, ((k - 1) * nd + 1):(k * nd)]; dims = 1))
+    pt = DataFrame(driver = d.competitors, name = [names_of[c] for c in d.competitors],
+                   laps = [count(==(k), d.comp) for k in eachindex(d.competitors)],
+                   peak = col(5), peak_sd = csd(5), mean_pace = vec(mean(D; dims = 1)),
+                   short_mean = col(3), short_mean_sd = csd(3), short_sd = col(4), short_sd_sd = csd(4),
+                   short_freq = col(1), short_size = col(2))
+    sort!(pt, :peak)
+    CSV.write("output/$(tag)_peak.csv", pt)
+end
 if rwalk                             # race-level chassis walk states (#108)
     XR = flat(collect3(race_states))
     rwt = DataFrame(state = rwk.names, mean = vec(mean(XR; dims = 1)), sd = vec(std(XR; dims = 1)),

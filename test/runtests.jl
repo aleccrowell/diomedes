@@ -1812,6 +1812,61 @@ end
                     @test o == LDP.dimension(rdm)
                 end
             end
+            # #113: traffic bins, field-pace slopes, shortfall offsets (a random field pace, so the
+            # slopes matter on these few cars)
+            c9 = LapContext(d9, lt5; traffic = true)
+            @test size(c9.tbin) == (length(d9.y), length(Diomedes.TRAFFIC_BINS)) && maximum(c9.tbin) <= length(c9.tnames)
+            n9, nc9, nm9, nr9 = length(d9.y), length(d9.competitors), length(d9.machines), length(d9.races)
+            ctxs = [LapContext(c9.tbin, c9.tnames, randn(rng, n9), t, f, s) for (t, f, s) in
+                    ((false, false, true), (true, true, false), (true, true, true))]
+            # the likelihood against a direct sum: μ the mean pace, the noise centred μ - q·λ_lap below it
+            let c = ctxs[3], γ = randn(rng, nr9), δ = randn(rng, nr9), ηt = 0.3 .* randn(rng, length(c.tnames)),
+                φ = 1 .+ 0.2 .* randn(rng, nm9), sh = 0.3 .* randn(rng, 2nc9 + 2nm9), πr = fill(0.3, nr9), λr = fill(0.8, nr9)
+                z(n) = zeros(n)
+                v = Diomedes.lap_loglik(γ, δ, z(nc9), z(nm9), z(2length(d9.eras)), z(nc9), z(nm9), z(1), z(nc9), z(nm9),
+                                        z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), 0.5, πr, λr, z(nc9), 0.0,
+                                        1.0, ηt, φ, sh, RaceWalk(), c, d9)
+                h = [sum((ηt[k] for k in c.tbin[j, :] if k > 0); init = 0.0) + φ[d9.mach[j]] * c.fp[j] for j in 1:n9]
+                hb = [mean(h[d9.race .== r]) for r in 1:nr9]
+                ref = sum(begin
+                              r, cj, m = d9.race[j], d9.comp[j], d9.mach[j]
+                              q = Diomedes.logistic(Diomedes.logit(0.3) + sh[cj] + sh[nc9 + m])
+                              λl = 0.8 * exp(sh[nc9 + nm9 + cj] + sh[2nc9 + nm9 + m])
+                              Diomedes.paceloss_logpdf(d9.y[j] - (γ[r] + δ[r] * d9.fracc[j] + h[j] - hb[r] - q * λl), 0.5, q, λl)
+                          end for j in 1:n9)
+                @test v ≈ ref
+            end
+            for c in ctxs, flags in ((;), (; big = true, dinc = true), (; dinc = true),
+                                     (; rwalk = true, track = true, dinc = true, starts = true, big = true, sdrv = false))
+                m = lap_effects(d9; flags..., cars = fc, ctx = c)
+                rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+                rg = NamedTuple(getfield(rdm, :_varname_ranges))
+                xw = 0.5 .* randn(rng, LDP.dimension(rdm))
+                for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_sc, :σ1, :τ_dinc, :σ0_ch, :δ_own, :δ_reg, :δ_λ2, :τ_cr, :τ_co,
+                          :τ_fp, :τ_sh)
+                    haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
+                end
+                @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]
+                @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), xw).tape) < 1000
+                let o = 0
+                    for (name, (n, _)) in Diomedes.lap_layout(d9; flags..., cw = cwl, ctx = c,
+                                                              rwk = get(flags, :rwalk, false) ? rwk : nothing)
+                        @test rg[name].range == (o + 1):(o + n)
+                        o += n
+                    end
+                    @test o == LDP.dimension(rdm)
+                end
+            end
+            # warm start from a fit without them: the new blocks get the defaults
+            let m = lap_effects(d9; cars = fc, ctx = ctxs[3])
+                dim9 = sum(first(last(p)) for p in Diomedes.lap_layout(d9))
+                f9 = (; hamiltonian = (; metric = (; M⁻¹ = ones(dim9))), kernel = (; τ = (; integrator = (; ϵ = 0.04))))
+                w9 = lap_warm_start(f9, d9, d9; ctx_new = ctxs[3])
+                r9 = NamedTuple(getfield(LDF(m), :_varname_ranges))
+                @test length(w9.Minv) == LDP.dimension(LDF(m))
+                @test all(==(Diomedes.LAP_WARM_DEFAULT[:u_sh]), w9.Minv[r9.u_sh.range]) &&
+                      w9.Minv[r9.η_tr.range] == fill(Diomedes.LAP_WARM_DEFAULT[:η_tr], length(ctxs[3].tnames))
+            end
         end
         # warm start from a fit without them: the new blocks get the defaults
         ws8 = lap_warm_start(fake, d_old, d8; starts_new = true, age_new = true, circuits_new = true)

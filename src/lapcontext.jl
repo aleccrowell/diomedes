@@ -95,3 +95,55 @@ function field_pace(d::LapData; window::Int = 2, min_cars::Int = 5)
     end
     return fp
 end
+
+# Traffic bins for the lap model (#113), from the shapes in scripts/context_check.jl:
+# name, which laps (by the LapTraffic fields), the gap they're binned on, the bin edges (s)
+const TRAFFIC_BINS = [
+    (:air, t -> t.ahead_laps .>= 0, t -> t.ahead, [0.0, 0.5, 1.0, 1.5, 2.0]),     # dirty air, car ahead not lapped
+    (:lapped, t -> t.ahead_laps .< 0, t -> t.ahead, [0.0, 1.0, 2.0, 3.0]),        # catching a lapped car
+    (:blue, t -> t.behind_laps .> 0, t -> t.behind, [0.0, 0.5, 1.0, 1.5, 2.0]),   # being lapped (blue flags)
+    (:defend, t -> t.behind_laps .== 0, t -> t.behind, [0.0, 0.5, 1.0]),          # a car close behind, same lap
+    (:cruise, t -> isinf.(t.front), t -> t.back, [5.0, Inf]),                     # leading, over 5 s clear
+]
+
+"""
+    LapContext(d::LapData, laps; traffic = false, fpace = false, short = false)
+    LapContext()
+
+Per-lap context and the switches for the lap model's #113 terms:
+- `traffic`: shared effects of the `TRAFFIC_BINS` (`tbin[j, g]`: lap j's bin in group g,
+  numbered across groups, 0 if none; `tnames` the bins);
+- `fpace`: car-season slopes on `field_pace(d)` (`fp`);
+- `short`: driver and car-season offsets on the shortfall (logit π and log λ), with
+  the lap's mean pace as the location (see `lap_loglik`).
+`LapContext()` has none of them.
+"""
+struct LapContext
+    tbin::Matrix{Int}
+    tnames::Vector{String}
+    fp::Vector{Float64}
+    traffic::Bool
+    fpace::Bool
+    short::Bool
+end
+LapContext() = LapContext(zeros(Int, 0, 0), String[], Float64[], false, false, false)
+
+function LapContext(d::LapData, laps::AbstractDataFrame; traffic::Bool = false, fpace::Bool = false, short::Bool = false)
+    tbin, tnames = traffic_bins(LapTraffic(d, laps))
+    return LapContext(tbin, tnames, field_pace(d), traffic, fpace, short)
+end
+
+"Bin index of every lap in each `TRAFFIC_BINS` group (numbered across groups, 0 if none) and the bins' names."
+function traffic_bins(tr::LapTraffic)
+    n = length(tr.ahead)
+    tbin = zeros(Int, n, length(TRAFFIC_BINS))
+    names = String[]
+    for (g, (name, sel, gap, edges)) in enumerate(TRAFFIC_BINS)
+        s, x, k0 = sel(tr), gap(tr), length(names)
+        for k in 1:(length(edges) - 1)
+            push!(names, "$(name)_$(edges[k])-$(edges[k + 1])")
+            tbin[s .& (edges[k] .<= x .< edges[k + 1]), g] .= k0 + k
+        end
+    end
+    return tbin, names
+end
