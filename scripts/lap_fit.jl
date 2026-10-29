@@ -154,7 +154,12 @@ if action == "chain"
                             missing_old = wmiss)
         n_adapts = 300
         println("warm start from $(basename(wfile)): step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
-    elseif warm !== nothing
+    end
+    ws_from = ws
+    # with both warm= and warmfrom=, the warm= fit's metric and step size, and the warmfrom=
+    # fit's metric for the #113 blocks (#113: a 2022–2024 probe's metric alone, scaled to
+    # 2011–2026, left every chain of the full fit diverging on each iteration)
+    if warm !== nothing
         old_seasons = parse(Int, warm[1]):parse(Int, warm[2])
         # the old fit: the first that exists of: the same terms; the same without the
         # age curve and circuit slopes; also without starts; also without the lead-lap and
@@ -205,6 +210,19 @@ if action == "chain"
                                       big_new = big, rwalk_old = old_flags[14], rwalk_new = rwalk, sdrv_old = old_flags[15],
                                       sdrv_new = sdrv, dinc1_old = old_flags[16], dinc1_new = dinc1, ctx_new = ctx), 300
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
+        if ws_from !== nothing
+            Minv = let M = copy(ws.Minv), o = 0
+                for (name, (n, _)) in Diomedes.lap_layout(d; tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits,
+                                                          track, dinc, walk, works, big, rwalk, sdrv, dinc1, ctx)
+                    name in (:η_tr, Diomedes.FPACE_PARAMS..., Diomedes.SHORT_PARAMS...) &&
+                        (M[(o + 1):(o + n)] .= ws_from.Minv[(o + 1):(o + n)])
+                    o += n
+                end
+                M
+            end
+            ws = (; Minv, ϵ = ws.ϵ)
+            println("  with the #113 blocks' metric from the warmfrom fit"); flush(stdout)
+        end
     end
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k, n_samples = n_draws,
                                   block = n_block, progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, lead,
