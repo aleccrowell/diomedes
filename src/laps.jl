@@ -392,9 +392,12 @@ lap's incident probability and loss mean are
 (with `ctx.fpace` also + κ[1]·fp on logit q and + κ[2]·fp on log λ_lap: the field
 pace moves the shortfall too, so slow laps of a wet spell are conditions as well as
 losses), and μ is the lap's mean pace rather than its clean-lap location: the pace noise is
-centred on μ - q·λ_lap, the edge the shortfall is measured from. Mean pace is what
-the laps pin down; the edge is split from it only by the shape of the distribution,
-a ridge the sampler would otherwise have to follow (#113). Off, these are unused.
+centred on μ - q_b·λ_b, the edge the shortfall is measured from, with q_b and λ_b the
+lap's q and λ_lap without the field-pace term. Mean pace is what the laps pin down; the
+edge is split from it only by the shape of the distribution, a ridge the sampler would
+otherwise have to follow (#113). The field pace's part is left out of the edge: in wet
+races (λ ≈ 6 %, fp up to ±9 %) it moved the edge by tens of % of lap time per unit κ,
+and the 2011–2026 fit diverged on nearly every iteration. Off, these are unused.
 """
 function lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, rwk::RaceWalk,
                     ctx, d::LapData)
