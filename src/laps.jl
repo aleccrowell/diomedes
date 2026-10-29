@@ -407,9 +407,10 @@ function lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr,
         if ctx.short        # driver and car-season shortfall offsets; μ the mean pace (#113)
             c, m = d.comp[j], d.mach[j]
             f = ctx.fpace ? ctx.fp[j] : 0.0
-            q = logistic(logit(πr[r]) + (iszero(ρ) ? πd[c] : zero(eltype(πd))) + sh[c] + sh[nc + m] + κ[1] * f)
-            λl = λr[r] * exp(sh[nc + nm + c] + sh[2nc + nm + m] + κ[end] * f)
-            e = μ - q * λl
+            xb = logit(πr[r]) + (iszero(ρ) ? πd[c] : zero(eltype(πd))) + sh[c] + sh[nc + m]
+            λb = λr[r] * exp(sh[nc + nm + c] + sh[2nc + nm + m])
+            q, λl = logistic(xb + κ[1] * f), λb * exp(κ[end] * f)
+            e = μ - logistic(xb) * λb       # the edge from the base shortfall: the field pace only shapes the losses
             s += iszero(ρ) ? paceloss_logpdf(d.y[j] - e, σ, q, λl) :
                  pacebig_logpdf(d.y[j] - e, σ, q, λl, logistic(logit(ρ) + πd[c]), λ2)
         elseif iszero(ρ)    # single loss: the driver's offset is on the incident probability
@@ -503,7 +504,8 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
             q = logistic(x)
             lq = (-log1pexp(x), x - log1pexp(x))
             λl = λb * exp(κλ * f)
-            e = μ - q * λl
+            qb = logistic(xb)
+            e = μ - qb * λb                         # the edge from the base shortfall (see lap_loglik)
             if big
                 ρl, lρl = noπd ? (ρ, lρ) : (ρd[c], lρd[c])
                 v, pμ, pσ, pπ, pλ, pρ, pλ2 = pacebig_row_vg(y, 0.0, 0.0, false, e, σ, q, λl, ρl, λ2, lq, lρl)
@@ -517,14 +519,15 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
             else
                 v, pμ, pσ, pπ, pλ = paceloss_row_vg(y, e, σ, q, λl, lq)
             end
-            # e = μ - q·λ_lap: q and λ_lap also move the location
-            wq = (pπ - pμ * λl) * q * (1 - q)        # ∂ℓ/∂(logit q)
-            wλ = (pλ - pμ * q) * λl                  # ∂ℓ/∂(log λ_lap)
+            # e = μ - q_b·λ_b: the base shortfall also moves the location, the field pace's part doesn't
+            wqm, wλm = pπ * q * (1 - q), pλ * λl     # through the mixture: ∂ℓ/∂(logit q), ∂ℓ/∂(log λ_lap)
+            wq = wqm - pμ * λb * qb * (1 - qb)       # ∂ℓ/∂(base logit q)
+            wλ = wλm - pμ * qb * λb                  # ∂ℓ/∂(base log λ)
             gπr[r] += wq / (πr[r] * (1 - πr[r]))
             big || (gπd[c] += wq)
             gsh[c] += wq; gsh[nc + m] += wq
             gsh[nc + nm + c] += wλ; gsh[2nc + nm + m] += wλ
-            ctx.fpace && (gκ[1] += wq * f; gκ[end] += wλ * f)
+            ctx.fpace && (gκ[1] += wqm * f; gκ[end] += wλm * f)
             val += v
             gμ[j] = pμ
             gγ[r] += pμ; gδ[r] += pμ * d.fracc[j]

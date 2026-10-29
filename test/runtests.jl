@@ -1833,7 +1833,9 @@ end
                               r, cj, m = d9.race[j], d9.comp[j], d9.mach[j]
                               q = Diomedes.logistic(Diomedes.logit(0.3) + sh[cj] + sh[nc9 + m] + κ[1] * c.fp[j])
                               λl = 0.8 * exp(sh[nc9 + nm9 + cj] + sh[2nc9 + nm9 + m] + κ[2] * c.fp[j])
-                              Diomedes.paceloss_logpdf(d9.y[j] - (γ[r] + δ[r] * d9.fracc[j] + h[j] - hb[r] - q * λl), 0.5, q, λl)
+                              qb = Diomedes.logistic(Diomedes.logit(0.3) + sh[cj] + sh[nc9 + m])
+                              λb = 0.8 * exp(sh[nc9 + nm9 + cj] + sh[2nc9 + nm9 + m])
+                              Diomedes.paceloss_logpdf(d9.y[j] - (γ[r] + δ[r] * d9.fracc[j] + h[j] - hb[r] - qb * λb), 0.5, q, λl)
                           end for j in 1:n9)
                 @test v ≈ ref
             end
