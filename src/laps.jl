@@ -353,7 +353,7 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
 end
 
 """
-    lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, rwk, ctx, d::LapData)
+    lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, rwk, ctx, d::LapData)
 
 Log-likelihood of the laps in `d` under pace + loss noise (`paceloss_logpdf`),
 with incident probability `πr[race]` shifted on the logit scale by the driver's
@@ -389,13 +389,15 @@ the field pace (h += φ[machine]·fp); and `sh`, the shortfall offsets, laid out
 lap's incident probability and loss mean are
     logit q = logit πr[race] (+ πd[driver] without big losses) + sh_π[driver] + sh_π[machine],
     log λ_lap = log λr[race] + sh_λ[driver] + sh_λ[machine],
-and μ is the lap's mean pace rather than its clean-lap location: the pace noise is
+(with `ctx.fpace` also + κ[1]·fp on logit q and + κ[2]·fp on log λ_lap: the field
+pace moves the shortfall too, so slow laps of a wet spell are conditions as well as
+losses), and μ is the lap's mean pace rather than its clean-lap location: the pace noise is
 centred on μ - q·λ_lap, the edge the shortfall is measured from. Mean pace is what
 the laps pin down; the edge is split from it only by the shape of the distribution,
 a ridge the sampler would otherwise have to follow (#113). Off, these are unused.
 """
-function lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, rwk::RaceWalk, ctx,
-                    d::LapData)
+function lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, rwk::RaceWalk,
+                    ctx, d::LapData)
     h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, rwk, ctx, d)
     nc, nm = length(d.competitors), length(d.machines)
     s = 0.0
@@ -404,8 +406,9 @@ function lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr,
         μ = γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r]
         if ctx.short        # driver and car-season shortfall offsets; μ the mean pace (#113)
             c, m = d.comp[j], d.mach[j]
-            q = logistic(logit(πr[r]) + (iszero(ρ) ? πd[c] : zero(eltype(πd))) + sh[c] + sh[nc + m])
-            λl = λr[r] * exp(sh[nc + nm + c] + sh[2nc + nm + m])
+            f = ctx.fpace ? ctx.fp[j] : 0.0
+            q = logistic(logit(πr[r]) + (iszero(ρ) ? πd[c] : zero(eltype(πd))) + sh[c] + sh[nc + m] + κ[1] * f)
+            λl = λr[r] * exp(sh[nc + nm + c] + sh[2nc + nm + m] + κ[end] * f)
             e = μ - q * λl
             s += iszero(ρ) ? paceloss_logpdf(d.y[j] - e, σ, q, λl) :
                  pacebig_logpdf(d.y[j] - e, σ, q, λl, logistic(logit(ρ) + πd[c]), λ2)
@@ -457,10 +460,11 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, rwk::RaceWal
 end
 
 function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ,
-                              λ2, ηt, φ, sh, rwk::RaceWalk, ctx, d::LapData)
+                              λ2, ηt, φ, sh, κ, rwk::RaceWalk, ctx, d::LapData)
     h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, rwk, ctx, d)
     gxr, rw = zeros(length(xr)), !isempty(rwk.lap)
-    gηt, gφ, gsh = zeros(length(ηt)), zeros(length(φ)), zeros(length(sh))
+    gηt, gφ, gsh, gκ = zeros(length(ηt)), zeros(length(φ)), zeros(length(sh)), zeros(length(κ))
+    κπ, κλ = ctx.fpace ? (κ[1], κ[end]) : (0.0, 0.0)
     nc = length(d.competitors)
     N = length(d.y)
     gμ = zeros(N)
@@ -483,19 +487,22 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     lρd = big && !noπd ? [(log1p(-p), log(p)) for p in ρd] : Tuple{Float64,Float64}[]
     # without: on π; a driver's laps in a race are consecutive, so their π is computed once
     rc_last, q, lq = (0, 0), 0.0, (0.0, 0.0)
-    λl = 0.0
+    λl, xb, λb = 0.0, 0.0, 0.0
     for j in 1:N
         r, y, c = d.race[j], d.y[j], d.comp[j]
         μ = γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r]
         if ctx.short        # driver and car-season shortfall offsets, μ the mean pace (#113; see lap_loglik)
             m = d.mach[j]
             if (r, c) != rc_last                    # a driver's laps in a race: consecutive, one machine
-                x = Lr[r] + (big ? 0.0 : πd[c]) + sh[c] + sh[nc + m]
-                q = logistic(x)
-                lq = (-log1pexp(x), x - log1pexp(x))
-                λl = λr[r] * exp(sh[nc + nm + c] + sh[2nc + nm + m])
+                xb = Lr[r] + (big ? 0.0 : πd[c]) + sh[c] + sh[nc + m]
+                λb = λr[r] * exp(sh[nc + nm + c] + sh[2nc + nm + m])
                 rc_last = (r, c)
             end
+            f = ctx.fpace ? ctx.fp[j] : 0.0         # the field pace on the shortfall, per lap
+            x = xb + κπ * f
+            q = logistic(x)
+            lq = (-log1pexp(x), x - log1pexp(x))
+            λl = λb * exp(κλ * f)
             e = μ - q * λl
             if big
                 ρl, lρl = noπd ? (ρ, lρ) : (ρd[c], lρd[c])
@@ -517,6 +524,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
             big || (gπd[c] += wq)
             gsh[c] += wq; gsh[nc + m] += wq
             gsh[nc + nm + c] += wλ; gsh[2nc + nm + m] += wλ
+            ctx.fpace && (gκ[1] += wq * f; gκ[end] += wλ * f)
             val += v
             gμ[j] = pμ
             gγ[r] += pμ; gδ[r] += pμ * d.fracc[j]
@@ -581,7 +589,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     gs = (gσ, gρ, gλ2)
     pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* gδ, Δ .* ga, Δ .* gb, Δ .* gβ, Δ .* gsl, Δ .* gdv, Δ .* gη, Δ .* gtd, Δ .* gtm,
                    Δ .* gfage, Δ .* gcx, Δ .* gxr, Δ * gs[1], Δ .* gπr, Δ .* gλr, Δ .* gπd, Δ * gs[2], Δ * gs[3],
-                   Δ .* gηt, Δ .* gφ, Δ .* gsh, NoTangent(), NoTangent(), NoTangent())
+                   Δ .* gηt, Δ .* gφ, Δ .* gsh, Δ .* gκ, NoTangent(), NoTangent(), NoTangent())
     return val, pullback
 end
 # β (tyres), sl (career slopes), dv (car development), η (lead laps), td, tm
@@ -599,7 +607,8 @@ for Tβ in _TA_OR_CONST, Tsl in _TA_OR_CONST, Tdv in _TA_OR_CONST, Tη in _TA_OR
                                                        πr::ReverseDiff.TrackedArray, λr::ReverseDiff.TrackedArray,
                                                        πd::$Td, ρ::ReverseDiff.TrackedReal, λ2::ReverseDiff.TrackedReal,
                                                        ηt::ReverseDiff.TrackedArray, φ::ReverseDiff.TrackedArray,
-                                                       sh::ReverseDiff.TrackedArray, rwk::RaceWalk, ctx, d::LapData)
+                                                       sh::ReverseDiff.TrackedArray, κ::ReverseDiff.TrackedArray,
+                                                       rwk::RaceWalk, ctx, d::LapData)
 end
 
 """
@@ -773,7 +782,9 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
 - Maximum pace and consistency (#113, switched on by `ctx`, a `LapContext`):
   `traffic`, shared effects of the traffic bins, η_tr ~ N(0, 1) in %; `fpace`, each
   car-season's slope on the field pace, φ = β_fp + τ_fp·(u - season mean u),
-  β_fp ~ N(1, 0.5), τ_fp ~ half-N(0, 0.5); `short`, driver and car-season offsets
+  β_fp ~ N(1, 0.5), τ_fp ~ half-N(0, 0.5), and with `short` the field pace on the
+  shortfall's logit π and log λ too, κ_fp ~ N(0, 1) (so a wet spell's slow laps aren't
+  only losses, #113); `short`, driver and car-season offsets
   on the shortfall's logit π and log λ (four blocks, each τ_sh[k]·(u - mean u),
   τ_sh ~ half-N(0, 0.5)), with the driver and car effects then on the mean pace and
   the clean-lap edge below it by the expected shortfall (see `lap_loglik`).
@@ -944,8 +955,11 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         τ_fp ~ truncated(Normal(0, 0.5); lower = 0)
         u_fp ~ StdNormalVec(nm)
         φ = β_fp .+ τ_fp .* center_by(u_fp, d.mach_season, mach_counts)
+        κ_fp ~ StdNormalVec(2)  # the field pace on the shortfall's logit π and log λ (used with `short`)
+        κ = κ_fp
     else
         φ = 0 .* a_π .+ zeros(1)
+        κ = 0 .* a_π .+ zeros(2)
     end
     if ctx.short            # shortfall offsets on logit π and log λ, drivers and car-seasons, centred
         # one vector in four blocks (drivers' π, cars' π, drivers' λ, cars' λ), each centred
@@ -957,7 +971,7 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     else
         sh = 0 .* a_π .+ zeros(1)
     end
-    @addlogprob! lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, rwk, ctx, d)
+    @addlogprob! lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, rwk, ctx, d)
     if starts
         sd = sdrv ? career_slopes(τ_sd, u_sd) : 0 .* a_π .+ zeros(length(d.competitors))   # τ·(u - mean u)
         sc = τ_sc .* center_by(u_sc, d.mach_season, mach_counts)
@@ -1139,7 +1153,7 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                                        δ_own = 0.1 + 0.1 * rand(rng), δ_reg = 0.1 + 0.1 * rand(rng)) : (;),
                             ctx.traffic ? (; η_tr = 0.05 .* randn(rng, length(ctx.tnames))) : (;),
                             ctx.fpace ? (; β_fp = 1 + 0.05 * randn(rng), τ_fp = 0.05 + 0.05 * rand(rng),
-                                           u_fp = 0.1 .* randn(rng, length(d.machines))) : (;),
+                                           u_fp = 0.1 .* randn(rng, length(d.machines)), κ_fp = 0.05 .* randn(rng, 2)) : (;),
                             ctx.short ? (; τ_sh = 0.05 .+ 0.05 .* rand(rng, 4),
                                            u_sh = 0.1 .* randn(rng, 2length(d.competitors) + 2length(d.machines))) : (;))
     # leave out what the model doesn't sample (no residual with the race walk, no driver start effects)
@@ -1164,7 +1178,7 @@ const CIRCUIT_PARAMS = (:τ_cx, :u_cx)
 const TRACK_PARAMS = (:β_track_π, :β_track_λ)
 const DINC_PARAMS = (:τ_dinc, :u_dinc)
 const WALK_PARAMS = (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :δ_reg)
-const FPACE_PARAMS = (:β_fp, :τ_fp, :u_fp)
+const FPACE_PARAMS = (:β_fp, :τ_fp, :u_fp, :κ_fp)
 const SHORT_PARAMS = (:τ_sh, :u_sh)
 # block of each shortfall offset (#113): drivers' logit π, car-seasons' logit π, drivers' log λ, car-seasons' log λ
 short_blocks(nc, nm) = vcat(fill(1, nc), fill(2, nm), fill(3, nc), fill(4, nm))
@@ -1223,6 +1237,7 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           # #113 terms, sampled after the big losses and before the lap-1 incident offsets
                           :η_tr => (length(ctx.tnames), ctx.tnames),
                           :β_fp => (1, nothing), :τ_fp => (1, nothing), :u_fp => (length(d.machines), d.machines),
+                          :κ_fp => (2, ["π", "λ"]),
                           :τ_sh => (4, ["π_drv", "π_car", "λ_drv", "λ_car"]),
                           :u_sh => (2length(d.competitors) + 2length(d.machines),
                                     vcat("π|" .* d.competitors, "π|" .* d.machines, "λ|" .* d.competitors, "λ|" .* d.machines)),
@@ -1243,7 +1258,7 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                               :τ_en => 0.01, :σ0_en => 0.01, :z_en => 0.01, :δ_own => 0.01, :δ_reg => 0.01,
                               :β_works => 1e-3, :τ_dinc1 => 0.01, :u_dinc1 => 0.01, :a_ρ => 0.01, :δ_λ2 => 0.01,
                               :τ_cr => 0.01, :τ_co => 0.01, :xs_cr => 0.01, :η_tr => 1e-4, :β_fp => 1e-4,
-                              :τ_fp => 0.01, :u_fp => 0.01, :τ_sh => 0.01, :u_sh => 0.01)
+                              :τ_fp => 0.01, :u_fp => 0.01, :κ_fp => 1e-3, :τ_sh => 0.01, :u_sh => 0.01)
 
 """
     lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old = true, tyres_new = tyres_old,
@@ -1254,7 +1269,7 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                    dinc_old = false, dinc_new = dinc_old, walk_old = false, walk_new = walk_old,
                    works_old = false, works_new = works_old, big_old = false, big_new = big_old, rwalk_old = false,
                    rwalk_new = rwalk_old, sdrv_old = true, sdrv_new = sdrv_old, dinc1_old = false,
-                   dinc1_new = dinc1_old, ctx_old = LapContext(), ctx_new = ctx_old) -> (; Minv, ϵ)
+                   dinc1_new = dinc1_old, ctx_old = LapContext(), ctx_new = ctx_old, missing_old = ()) -> (; Minv, ϵ)
 
 Diagonal inverse metric and step size for a fit to `d_new`, from the adapted
 NUTS `state` of a fit to `d_old` (`only(Turing.loadstate(chain))`, or its
@@ -1264,7 +1279,8 @@ levels get their group's median. Scalars are scaled by the ratio of lap
 counts (posterior variance ∝ 1/data). Adaptation still runs on the new fit;
 this only gives it a good start. `tyres_*` and `slopes_*` say whether each fit
 has the tyre terms and career slopes (`lap_effects`); a block the old fit
-doesn't have starts from `LAP_WARM_DEFAULT`.
+doesn't have starts from `LAP_WARM_DEFAULT`; `missing_old` names blocks its flags would
+give it but it predates (e.g. `(:κ_fp,)` for a #113 fit from before that term).
 """
 function lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old::Bool = true, tyres_new::Bool = tyres_old,
                         slopes_old::Bool = false, slopes_new::Bool = slopes_old,
@@ -1277,13 +1293,14 @@ function lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old::Bool =
                         works_old::Bool = false, works_new::Bool = works_old, big_old::Bool = false,
                         big_new::Bool = big_old, rwalk_old::Bool = false, rwalk_new::Bool = rwalk_old,
                         sdrv_old::Bool = true, sdrv_new::Bool = sdrv_old, dinc1_old::Bool = false,
-                        dinc1_new::Bool = dinc1_old, ctx_old = LapContext(), ctx_new = ctx_old)
+                        dinc1_new::Bool = dinc1_old, ctx_old = LapContext(), ctx_new = ctx_old, missing_old = ())
     ad = lap_adapted(state)
     Mo = ad.Minv
     lo = lap_layout(d_old; tyres = tyres_old, slopes = slopes_old, dev = dev_old, lead = lead_old, tyre_mgmt = tyre_mgmt_old,
                     starts = starts_old, age = age_old, circuits = circuits_old, track = track_old, dinc = dinc_old,
                     walk = walk_old, works = works_old, big = big_old, rwalk = rwalk_old, sdrv = sdrv_old, dinc1 = dinc1_old,
                     ctx = ctx_old)
+    lo = filter(p -> first(p) ∉ missing_old, lo)
     ln = lap_layout(d_new; tyres = tyres_new, slopes = slopes_new, dev = dev_new, lead = lead_new, tyre_mgmt = tyre_mgmt_new,
                     starts = starts_new, age = age_new, circuits = circuits_new, track = track_new, dinc = dinc_new,
                     walk = walk_new, works = works_new, big = big_new, rwalk = rwalk_new, sdrv = sdrv_new, dinc1 = dinc1_new,

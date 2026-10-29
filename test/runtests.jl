@@ -1821,17 +1821,18 @@ end
                     ((false, false, true), (true, true, false), (true, true, true))]
             # the likelihood against a direct sum: μ the mean pace, the noise centred μ - q·λ_lap below it
             let c = ctxs[3], γ = randn(rng, nr9), δ = randn(rng, nr9), ηt = 0.3 .* randn(rng, length(c.tnames)),
-                φ = 1 .+ 0.2 .* randn(rng, nm9), sh = 0.3 .* randn(rng, 2nc9 + 2nm9), πr = fill(0.3, nr9), λr = fill(0.8, nr9)
+                φ = 1 .+ 0.2 .* randn(rng, nm9), sh = 0.3 .* randn(rng, 2nc9 + 2nm9), πr = fill(0.3, nr9), λr = fill(0.8, nr9),
+                κ = [0.4, -0.3]
                 z(n) = zeros(n)
                 v = Diomedes.lap_loglik(γ, δ, z(nc9), z(nm9), z(2length(d9.eras)), z(nc9), z(nm9), z(1), z(nc9), z(nm9),
                                         z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), 0.5, πr, λr, z(nc9), 0.0,
-                                        1.0, ηt, φ, sh, RaceWalk(), c, d9)
+                                        1.0, ηt, φ, sh, κ, RaceWalk(), c, d9)
                 h = [sum((ηt[k] for k in c.tbin[j, :] if k > 0); init = 0.0) + φ[d9.mach[j]] * c.fp[j] for j in 1:n9]
                 hb = [mean(h[d9.race .== r]) for r in 1:nr9]
                 ref = sum(begin
                               r, cj, m = d9.race[j], d9.comp[j], d9.mach[j]
-                              q = Diomedes.logistic(Diomedes.logit(0.3) + sh[cj] + sh[nc9 + m])
-                              λl = 0.8 * exp(sh[nc9 + nm9 + cj] + sh[2nc9 + nm9 + m])
+                              q = Diomedes.logistic(Diomedes.logit(0.3) + sh[cj] + sh[nc9 + m] + κ[1] * c.fp[j])
+                              λl = 0.8 * exp(sh[nc9 + nm9 + cj] + sh[2nc9 + nm9 + m] + κ[2] * c.fp[j])
                               Diomedes.paceloss_logpdf(d9.y[j] - (γ[r] + δ[r] * d9.fracc[j] + h[j] - hb[r] - q * λl), 0.5, q, λl)
                           end for j in 1:n9)
                 @test v ≈ ref
@@ -1866,6 +1867,12 @@ end
                 @test length(w9.Minv) == LDP.dimension(LDF(m))
                 @test all(==(Diomedes.LAP_WARM_DEFAULT[:u_sh]), w9.Minv[r9.u_sh.range]) &&
                       w9.Minv[r9.η_tr.range] == fill(Diomedes.LAP_WARM_DEFAULT[:η_tr], length(ctxs[3].tnames))
+                # from a fit with the #113 terms but before κ_fp: that block gets the default
+                dimk = sum(first(last(p)) for p in Diomedes.lap_layout(d9; ctx = ctxs[3])) - 2
+                fk = (; hamiltonian = (; metric = (; M⁻¹ = ones(dimk))), kernel = (; τ = (; integrator = (; ϵ = 0.04))))
+                @test_throws DimensionMismatch lap_warm_start(fk, d9, d9; ctx_old = ctxs[3])
+                wk = lap_warm_start(fk, d9, d9; ctx_old = ctxs[3], missing_old = (:κ_fp,))
+                @test length(wk.Minv) == LDP.dimension(LDF(m)) && wk.Minv[r9.κ_fp.range] == fill(1e-3, 2)
             end
         end
         # warm start from a fit without them: the new blocks get the defaults

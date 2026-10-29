@@ -51,7 +51,8 @@
 # `fpace` car-season slopes on the field pace, `short` driver and car-season offsets on the
 # shortfall (logit π, log λ), the driver effects then being mean pace; combine writes
 # <tag>_peak.csv (peak pace, shortfall mean/sd/frequency/size per driver). A warm start
-# comes from a fit without these terms.
+# comes from a fit without these terms, or with `warmfrom=<tag>` from an earlier fit with the
+# same terms (e.g. a probe over fewer seasons), whose chain k's warm-start state is used.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
@@ -124,7 +125,36 @@ if action == "chain"
     # (finished, same-pits) fit, and adapt for 300 iterations instead of 500
     warm = match(r"^warm=(\d{4})-(\d{4})$", get(args, 5, ""))
     ws, n_adapts = nothing, 500
-    if warm !== nothing
+    # warmfrom=<tag>: start from chain k's adapted metric and step size of an earlier fit with
+    # the same terms over other seasons, named by its tag (e.g. a probe, #113), which covers
+    # every block, including the #113 terms that `warm=` fits don't have
+    wfa = findfirst(a -> startswith(a, "warmfrom="), ARGS)
+    if wfa !== nothing
+        wtag = String(split(ARGS[wfa], "=")[2])
+        wm = match(r"^laps_(\d{4})-(\d{4})_(recorded|inferred)", wtag)
+        wm === nothing && error("warmfrom: not a lap fit tag: $wtag")
+        wfile = joinpath("output", "$(wtag)_chain$(k)_warmstate.jls")
+        isfile(wfile) || error("warmfrom: no $wfile")
+        wseasons, wpits = parse(Int, wm[1]):parse(Int, wm[2]), Symbol(wm[3])
+        od = (res = fetch_results(jolpica, collect(wseasons)), laps = fetch_laps(jolpica, collect(wseasons)),
+              pits = wpits === :recorded ? fetch_pit_stops(jolpica, collect(wseasons)) : nothing)
+        d_old = prepare_laps(od.laps, od.res; pits = wpits, pit_stops = od.pits, circuits = circ,
+                             stoppage = !occursin("_keepslow", wtag))
+        ctx_old = traffic || fpace || short ? LapContext(d_old, od.laps; traffic, fpace, short) : LapContext()
+        # blocks the old fit predates: κ_fp (#113's field pace on the shortfall) came after probe 113b
+        wst = deserialize(wfile)
+        nold = sum(first(last(p)) for p in Diomedes.lap_layout(d_old; tyres, slopes, dev, lead, tyre_mgmt, starts, age,
+                                                                circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1,
+                                                                ctx = ctx_old, rwk = rwalk ? RaceWalk(d_old) : nothing))
+        wmiss = fpace && length(Diomedes.lap_adapted(wst).Minv) == nold - 2 ? (:κ_fp,) : ()
+        ws = lap_warm_start(wst, d_old, d; tyres_old = tyres, slopes_old = slopes, dev_old = dev,
+                            lead_old = lead, tyre_mgmt_old = tyre_mgmt, starts_old = starts, age_old = age,
+                            circuits_old = circuits, track_old = track, dinc_old = dinc, walk_old = walk, works_old = works,
+                            big_old = big, rwalk_old = rwalk, sdrv_old = sdrv, dinc1_old = dinc1, ctx_old, ctx_new = ctx,
+                            missing_old = wmiss)
+        n_adapts = 300
+        println("warm start from $(basename(wfile)): step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
+    elseif warm !== nothing
         old_seasons = parse(Int, warm[1]):parse(Int, warm[2])
         # the old fit: the first that exists of: the same terms; the same without the
         # age curve and circuit slopes; also without starts; also without the lead-lap and
@@ -249,7 +279,7 @@ scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], tyres ? cha
                                 works ? [chain[:β_works][i, c]] : Float64[],
                                 big ? [chain[:a_ρ][i, c], chain[:δ_λ2][i, c]] : Float64[],
                                 traffic ? chain[:η_tr][i, c] : Float64[],
-                                fpace ? [chain[:β_fp][i, c], chain[:τ_fp][i, c]] : Float64[],
+                                fpace ? vcat([chain[:β_fp][i, c], chain[:τ_fp][i, c]], chain[:κ_fp][i, c]) : Float64[],
                                 short ? chain[:τ_sh][i, c] : Float64[]))
 # #113: per driver at the base rates (no track terms, a car with zero offset): shortfall
 # frequency q, size λ, mean q·λ and sd λ·√(q(2 - q)), and the peak pace, the mean-pace
@@ -306,7 +336,7 @@ for (j, nm) in enumerate((string.(scal_names)..., (tyres ? Tuple(n for e in d.er
                           (rwalk ? ("τ_cr", "τ_co", "σ0_ch", "δ_own", "δ_reg") : ())...,
                           (works ? ("β_works",) : ())..., (big ? ("a_ρ", "δ_λ2") : ())...,
                           (traffic ? Tuple("η[$n]" for n in ctx.tnames) : ())...,
-                          (fpace ? ("β_fp", "τ_fp") : ())..., (short ? ("τ_sh[π drv]", "τ_sh[π car]", "τ_sh[λ drv]", "τ_sh[λ car]") : ())...))
+                          (fpace ? ("β_fp", "τ_fp", "κ_fp[π]", "κ_fp[λ]") : ())..., (short ? ("τ_sh[π drv]", "τ_sh[π car]", "τ_sh[λ drv]", "τ_sh[λ car]") : ())...))
     v = flat(scal)[:, j]
     println(rpad(nm, 12), round(mean(v); digits = 4), " ± ", round(std(v); digits = 4))
 end
