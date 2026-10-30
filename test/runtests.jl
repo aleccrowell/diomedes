@@ -1284,6 +1284,10 @@ end
         b3 = Diomedes.read_block(joinpath(dir3, "t_block2.jls"))
         @test b3.ϵ == 0.5b1.ϵ && b3.Minv == b1.Minv && vec(ch3[:m])[1:20] == vec(ch[:m])[1:20]
         @test all(vec(b3.chain[:step_size]) .== 0.5b1.ϵ) && !isfile(joinpath(dir3, "t_steptune.txt"))
+        # resuming with another block size would misread the saved blocks: refused (#113)
+        @test_throws ArgumentError Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)),
+                                                                  joinpath(dir2, "t"); n_samples = 40, n_adapts = 100,
+                                                                  block = 10)
         # combines read the draws alone
         @test vec(Diomedes.block_chain(joinpath(dir, "t_block2.jls"))[:m]) == vec(b2.chain[:m]) == vec(ch[:m])[21:40]
         # with_step_size replaces only the step size

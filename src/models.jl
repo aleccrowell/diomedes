@@ -357,6 +357,10 @@ function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int
         if isfile(file)
             b = read_block(file)
             ch, Minv, ϵ = b.chain, b.Minv, b.ϵ
+            # blocks are numbered by position, so resuming with another `block` would misread them
+            nb = size(ch, 1)
+            nb == min(block, n_samples - (j - 1) * block) ||
+                throw(ArgumentError("$file holds $nb draws, but block = $block: resume with the block size it was saved with"))
             progress_log === nothing || (println(progress_log, "block $j: loaded from $file"); flush(progress_log))
         else
             nj = min(block, n_samples - (j - 1) * block)
