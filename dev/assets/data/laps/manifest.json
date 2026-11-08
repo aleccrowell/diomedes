@@ -1,56 +1,76 @@
 {
-    "model": "lap_effects (stint age, career slopes, in-season development, lead laps, tyre management, starts, age curve, circuit slopes)",
-    "fit": "laps_1996-2025_inferred_slopes_dev_lead_tyremgmt_starts_age_circ",
-    "data": "F1 1996–2025 clean laps (Ergast lap times to 2019, Jolpica from 2020, inferred pit stops): 531737 laps, 145 drivers, 320 machine-seasons, 567 races; excluded lap1 11506, no_machine 0, pit 40218, slow_race 32156, stoppage 124",
+    "model": "lap_effects (stint age, career slopes, lead laps, tyre management, starts, age curve, circuit slopes, track terms, incident proneness, big losses, race-level chassis walk, no driver start effects, traffic, field pace, peak pace and shortfall, slow laps kept)",
+    "fit": "laps_2011-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_keepslow",
+    "data": "F1 2011–2026 clean laps (Jolpica lap times, recorded pit stops): 316071 laps, 80 drivers, 168 machine-seasons, 326 races; excluded lap1 6637, no_machine 0, pit 20200, slow_race 23601, stoppage 0",
     "race_model": "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
     "convergence": {
-        "max_rhat": 1.014,
-        "min_ess": 219,
+        "max_rhat": 1.018,
+        "min_ess": 312,
         "divergences": 0,
         "groups": {
+            "race walk": {
+                "max_rhat": 1.014,
+                "min_ess": 381
+            },
             "tyre (drv)": {
-                "max_rhat": 1.006,
-                "min_ess": 1136
+                "max_rhat": 1.003,
+                "min_ess": 3845
             },
             "start (car)": {
+                "max_rhat": 1.006,
+                "min_ess": 3298
+            },
+            "incidents": {
                 "max_rhat": 1.005,
-                "min_ess": 2690
+                "min_ess": 4086
+            },
+            "fpace car": {
+                "max_rhat": 1.005,
+                "min_ess": 4260
             },
             "drivers": {
-                "max_rhat": 1.014,
-                "min_ess": 219
+                "max_rhat": 1.015,
+                "min_ess": 318
             },
             "slopes": {
-                "max_rhat": 1.013,
-                "min_ess": 252
-            },
-            "dev": {
-                "max_rhat": 1.006,
-                "min_ess": 2272
+                "max_rhat": 1.014,
+                "min_ess": 368
             },
             "age curve": {
-                "max_rhat": 1.008,
-                "min_ess": 588
+                "max_rhat": 1.01,
+                "min_ess": 583
             },
             "scalars": {
-                "max_rhat": 1.01,
-                "min_ess": 443
+                "max_rhat": 1.016,
+                "min_ess": 388
             },
             "tyre (car)": {
-                "max_rhat": 1.007,
-                "min_ess": 1061
+                "max_rhat": 1.003,
+                "min_ess": 4006
             },
             "cars": {
-                "max_rhat": 1.007,
-                "min_ess": 730
+                "max_rhat": 1.018,
+                "min_ess": 314
             },
             "circuits": {
-                "max_rhat": 1.007,
-                "min_ess": 2530
+                "max_rhat": 1.006,
+                "min_ess": 1006
             },
-            "start (drv)": {
-                "max_rhat": 1.004,
-                "min_ess": 2065
+            "peak": {
+                "max_rhat": 1.013,
+                "min_ess": 312
+            },
+            "short q": {
+                "max_rhat": 1.003,
+                "min_ess": 3630
+            },
+            "short λ": {
+                "max_rhat": 1.003,
+                "min_ess": 3123
+            },
+            "short car": {
+                "max_rhat": 1.003,
+                "min_ess": 3606
             }
         }
     },
@@ -65,12 +85,12 @@
             ],
             "draws": 4000,
             "kept": true,
-            "mean_logjoint": -852126.4,
+            "mean_logjoint": -402873.4,
             "scalars": {
-                "tau_delta": 4.5816,
-                "sigma": 0.735,
-                "pi_base": 0.1576,
-                "lambda_base": 3.4911
+                "tau_delta": 4.0308,
+                "sigma": 0.5212,
+                "pi_base": 0.2008,
+                "lambda_base": 0.872
             },
             "convergence": null
         }
@@ -82,6 +102,6 @@
     ],
     "mode_drop_nats": 10,
     "exported_by": "scripts/export_site.jl laps",
-    "export_commit": "6dd9f6f",
-    "date": "2026-10-25"
+    "export_commit": "363d3eb",
+    "date": "2026-11-07"
 }
