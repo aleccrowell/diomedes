@@ -3,7 +3,7 @@
 #   julia --project scripts/bench/lap_gradient.jl <first>-<last> [reps=30] [terms...]
 #
 # `terms` are lap_fit.jl's: notyres, slopes, dev, lead, tyremgmt, starts, age, circuits, track, dinc,
-# walk, works, big, rwalk, nostartdrv and #113's traffic, fpace, short (with none
+# walk, works, big, rwalk, nostartdrv, #113's traffic, fpace, short and #116's cond, wetdev (with none
 # given: notyres slopes dev, the model these timings were first taken for).
 # Prints the median time of a log density and of a log density + gradient at a
 # point near the prior centre, with the sampler's AD (uncompiled ReverseDiff).
@@ -14,7 +14,7 @@ using Diomedes, Turing, Statistics, Printf, Random, DataFrames
 const DynamicPPL = Turing.DynamicPPL
 const LogDensityProblems = Turing.LogDensityProblems
 
-terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc", "walk", "works", "big", "rwalk", "nostartdrv", "traffic", "fpace", "short")
+terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc", "walk", "works", "big", "rwalk", "nostartdrv", "traffic", "fpace", "short", "cond", "wetdev")
 has = any(in(terms), ARGS) ? Set(filter(in(terms), ARGS)) : Set(["notyres", "slopes", "dev"])
 args = filter(a -> a ∉ terms && a ∉ ("recorded", "keepslow"), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
@@ -33,7 +33,9 @@ model = lap_effects(d; tyres = "notyres" ∉ has, slopes = "slopes" ∈ has, dev
                     works = "works" ∈ has, big = "big" ∈ has, rwalk = "rwalk" ∈ has, sdrv = "nostartdrv" ∉ has,
                     ctx = any(in(has), ("traffic", "fpace", "short")) ?
                           LapContext(d, src(fetch_laps); traffic = "traffic" ∈ has, fpace = "fpace" ∈ has,
-                                     short = "short" ∈ has) : LapContext())
+                                     short = "short" ∈ has) : LapContext(),
+                    cond = "cond" ∈ has ? LapConditions(d, read_lap_conditions(), jolpica_driver_numbers(JolpicaF1(), collect(seasons));
+                                                        wetdev = "wetdev" ∈ has) : LapConditions())
 println("terms: ", join(sort(collect(has)), " "))
 ldf = DynamicPPL.LogDensityFunction(model, DynamicPPL.getlogjoint_internal, DynamicPPL.LinkAll();
                                     adtype = Diomedes.gap_sampler().adtype)

@@ -1323,6 +1323,28 @@ end
             @test d.y ≈ 100 .* log.(d.rows.time_ms ./ 91_000)      # median clean lap: 5 laps of a at 90 s, 7 of b at 91 s
         end
         @test_throws ArgumentError prepare_laps(lt, rows; pits = :recorded)
+        # lap conditions (#116): joined by car number; a lap without a compound takes its stint's
+        let d = prepare_laps(lt, rows; pits = :recorded, pit_stops = ps)
+            ca = Dict(2 => missing, 3 => "SOFT", 6 => "INTERMEDIATE", 9 => missing, 10 => "INTERMEDIATE")
+            cond = DataFrame(event_id = String[], driver_number = Int[], lap = Int[], compound = Union{Missing,String}[],
+                             lap_time_ms = Union{Missing,Float64}[], track_temp = Union{Missing,Float64}[],
+                             rainfall = Union{Missing,Float64}[])
+            for r in eachrow(lt)
+                r.competitor_id == "b" && r.lap == 4 && continue                    # a lap the source lacks
+                push!(cond, ("2019-01", r.competitor_id == "a" ? 44 : 33, r.lap,
+                             r.competitor_id == "a" ? get(ca, r.lap, "SOFT") : "MEDIUM", r.time_ms,
+                             r.competitor_id == "a" ? 30.0 : 40.0, r.competitor_id == "b" && r.lap == 10 ? 1.0 : 0.0))
+            end
+            nums = Dict(("2019-01", 44) => "a", ("2019-01", 33) => "b")
+            c = LapConditions(d, cond, nums)
+            ia, ib = d.rows.competitor_id .== "a", d.rows.competitor_id .== "b"
+            @test COMPOUNDS[c.comp[ia]] == ["SOFT", "SOFT", "INTERMEDIATE", "INTERMEDIATE", "INTERMEDIATE"]   # laps 2,3,6,9,10
+            @test all(==(2), c.comp[ib]) && c.check.compound_filled == 3 && c.check.matched ≈ 11 / 12
+            @test c.wet == Float64.(ia .& (d.rows.lap .>= 6)) && c.rain == Float64.(ib .& (d.rows.lap .== 10))
+            m = (5 * 30 + 6 * 40) / 11                                          # b's lap 4 has no temperature
+            @test c.tt[ia] ≈ fill((30 - m) / 10, 5) && c.tt[ib .& (d.rows.lap .== 4)] == [0.0] && c.check.time_agrees == 1
+            @test_throws ArgumentError LapConditions(d, transform(cond, :event_id => ByRow(_ -> "2019-02") => :event_id), nums)
+        end
         # traffic and field pace (#113): three cars at 90, 91 and 121 s a lap, every car 3%
         # slower on lap 4, so c is caught by a and b. Crossings (laps done): …, c 242 (2),
         # a 270 (3), b 273 (3), a 362.7 (4), c 363 (3), b 366.73 (4), a 452.7 (5),
@@ -1830,7 +1852,7 @@ end
                 z(n) = zeros(n)
                 v = Diomedes.lap_loglik(γ, δ, z(nc9), z(nm9), z(2length(d9.eras)), z(nc9), z(nm9), z(1), z(nc9), z(nm9),
                                         z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), 0.5, πr, λr, z(nc9), 0.0,
-                                        1.0, ηt, φ, sh, κ, RaceWalk(), c, d9)
+                                        1.0, ηt, φ, sh, κ, z(1), z(1), RaceWalk(), c, LapConditions(), d9)
                 h = [sum((ηt[k] for k in c.tbin[j, :] if k > 0); init = 0.0) + φ[d9.mach[j]] * c.fp[j] for j in 1:n9]
                 hb = [mean(h[d9.race .== r]) for r in 1:nr9]
                 ref = sum(begin
@@ -1879,6 +1901,54 @@ end
                 @test_throws DimensionMismatch lap_warm_start(fk, d9, d9; ctx_old = ctxs[3])
                 wk = lap_warm_start(fk, d9, d9; ctx_old = ctxs[3], missing_old = (:κ_fp,))
                 @test length(wk.Minv) == LDP.dimension(LDF(m)) && wk.Minv[r9.κ_fp.range] == fill(1e-3, 2)
+            end
+            # #116: per-lap conditions (compound, track temperature, rain), shared and wet deviations
+            let n = n9, comp = rand(rng, 0:length(COMPOUNDS), n9)
+                wet = [Float64(k in Diomedes.WET_COMPOUNDS) for k in comp]
+                cnd(wd) = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, wd, (;))
+                conds = [cnd(false), cnd(true)]
+                # zero condition effects: the model without them
+                m0 = lap_effects(d9)
+                for c in conds
+                    mc = lap_effects(d9; cond = c)
+                    θc = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))),
+                               c.wetdev ? (; τ_wet = [0.3, 0.4], u_wet = zeros(nm9 + nc9)) : (;))
+                    @test Turing.DynamicPPL.loglikelihood(mc, θc) ≈ Turing.DynamicPPL.loglikelihood(m0, θ)
+                end
+                # h against a direct sum
+                cv, wv, c = randn(rng, 10), randn(rng, nm9 + nc9), conds[2]
+                z(k) = zeros(k)
+                h0, _ = Diomedes.lap_h(z(nc9), z(nm9), z(2length(d9.eras)), z(nc9), z(nm9), z(1), z(nc9), z(nm9),
+                                       z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), z(1), z(1), cv, wv,
+                                       RaceWalk(), LapContext(), c, d9)
+                @test h0 ≈ [(c.comp[j] > 1 ? cv[c.comp[j] - 1] + cv[c.comp[j] + 3] * d9.stint[j] / 10 : 0.0) + cv[9] * c.tt[j] +
+                            cv[10] * c.rain[j] + (wv[d9.mach[j]] + wv[nm9 + d9.comp[j]]) * c.wet[j] for j in 1:n]
+                # gradients against ForwardDiff, with and without the shortfall terms; layout
+                for c in conds, cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
+                    m = lap_effects(d9; flags..., cars = fc, ctx = cx, cond = c)
+                    rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+                    rg = NamedTuple(getfield(rdm, :_varname_ranges))
+                    @test haskey(rg, :z_cond) && length(rg.z_cond.range) == (cx.short ? 14 : 10) && haskey(rg, :u_wet) == c.wetdev
+                    xw = 0.5 .* randn(rng, LDP.dimension(rdm))
+                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet)
+                        haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
+                    end
+                    @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]
+                    let o = 0
+                        for (name, (k, _)) in Diomedes.lap_layout(d9; flags..., cw = cwl, ctx = cx, cond = c)
+                            @test rg[name].range == (o + 1):(o + k)
+                            o += k
+                        end
+                        @test o == LDP.dimension(rdm)
+                    end
+                end
+                # warm start from a fit without them: the new blocks get the defaults
+                dim9 = sum(first(last(p)) for p in Diomedes.lap_layout(d9))
+                f9 = (; hamiltonian = (; metric = (; M⁻¹ = ones(dim9))), kernel = (; τ = (; integrator = (; ϵ = 0.04))))
+                w9 = lap_warm_start(f9, d9, d9; cond_new = conds[2])
+                r9 = NamedTuple(getfield(LDF(lap_effects(d9; cond = conds[2])), :_varname_ranges))
+                @test length(w9.Minv) == last(r9.u_wet.range) && all(==(1e-3), w9.Minv[r9.z_cond.range])
+                @test_throws ArgumentError lap_effects(d9; cond = LapConditions(comp[1:2], wet[1:2], z(2), z(2), true, false, (;)))
             end
         end
         # warm start from a fit without them: the new blocks get the defaults
