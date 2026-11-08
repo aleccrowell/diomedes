@@ -2,7 +2,7 @@
 
 ```@autodocs
 Modules = [Diomedes]
-Pages = ["laps.jl", "circuits.jl"]
+Pages = ["laps.jl", "lapcontext.jl", "circuits.jl"]
 Private = false
 ```
 
@@ -10,6 +10,6 @@ Private = false
 
 ```@autodocs
 Modules = [Diomedes]
-Pages = ["laps.jl", "circuits.jl"]
+Pages = ["laps.jl", "lapcontext.jl", "circuits.jl"]
 Public = false
 ```
