@@ -2,8 +2,10 @@
 #
 #   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> chain <k> [warm=<first>-<last>]
 #                                                       # one chain, checkpointed; optionally warm-started
-#   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> combine [n=4 | k1,k2,...]
+#   julia --project scripts/lap_fit.jl <first>-<last> <recorded|inferred> combine [n=4 | 4 | k1,k2,...]
 #
+# Flags (`slopes`, `traffic`, ...) and key=value options (`warm=`, `draws=`, ...) may come in
+# any order after the positional arguments; an unknown flag or option is an error.
 # `recorded` excludes the in/out laps of Ergast's recorded pit stops (2011 on);
 # `inferred` infers stops from the lap times (`infer_pit_stops`). Chains are
 # saved in blocks of 100 draws under output/laps_<first>-<last>_<pits>_chain<k>;
@@ -88,10 +90,24 @@ drawsarg = findfirst(a -> startswith(a, "draws="), ARGS)
 n_draws = drawsarg === nothing ? 1000 : parse(Int, split(ARGS[drawsarg], "=")[2])
 blockarg = findfirst(a -> startswith(a, "block="), ARGS)
 n_block = blockarg === nothing ? (probe ? 25 : 100) : parse(Int, split(ARGS[blockarg], "=")[2])
-args = filter(a -> a ∉ ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
-                         "walk", "works", "big", "keepslow", "rwalk", "nostartdrv", "dinc1", "notune", "probe") &&
-                   !startswith(a, "delta=") && !startswith(a, "step=") && !startswith(a, "draws=") &&
-                   !startswith(a, "block="), ARGS)
+# Flags and key=value options may come anywhere; the rest are positional (#114: a flag
+# missing from this list was read as the chain count, and warm= had to be 5th).
+FLAGS = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
+         "walk", "works", "big", "keepslow", "rwalk", "nostartdrv", "dinc1", "notune", "probe",
+         "traffic", "fpace", "short")
+KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "n")
+optkey(a) = (i = findfirst('=', a); i === nothing ? nothing : a[1:prevind(a, i)])
+badkeys = [a for a in ARGS if optkey(a) !== nothing && optkey(a) ∉ KEYS]
+isempty(badkeys) || error("unknown option(s): $(join(badkeys, ", ")); known: $(join(KEYS .* "=", ", "))")
+optval(key) = (i = findfirst(a -> optkey(a) == key, ARGS); i === nothing ? nothing : String(split(ARGS[i], "="; limit = 2)[2]))
+args = filter(a -> a ∉ FLAGS && optkey(a) === nothing, ARGS)
+# positional: <first>-<last> <pits> [chain <k> | combine [<n> | k1,k2,...]]; anything else
+# is an unknown flag (e.g. a typo), which would otherwise silently drop a term
+length(args) >= 2 || error("usage: lap_fit.jl <first>-<last> <recorded|inferred> chain <k> | combine [<n>] [flags...]")
+let extra = get(args, 4, nothing) === nothing ? args[5:end] :
+            occursin(r"^\d+(,\d+)*$", args[4]) ? args[5:end] : args[4:end]
+    isempty(extra) || error("unknown argument(s): $(join(extra, ", ")); flags: $(join(FLAGS, " "))")
+end
 m = match(r"^(\d{4})-(\d{4})$", args[1])
 seasons = parse(Int, m[1]):parse(Int, m[2])
 pits = Symbol(args[2])
@@ -123,7 +139,8 @@ if action == "chain"
     k = parse(Int, args[4])
     # warm=<first>-<last>: start from the adapted metric and step size of chain k of that
     # (finished, same-pits) fit, and adapt for 300 iterations instead of 500
-    warm = match(r"^warm=(\d{4})-(\d{4})$", get(args, 5, ""))
+    warm = match(r"^(\d{4})-(\d{4})$", something(optval("warm"), ""))
+    optval("warm") !== nothing && warm === nothing && error("warm=: expected <first>-<last>, got $(optval("warm"))")
     ws, n_adapts = nothing, 500
     # warmfrom=<tag>: start from chain k's adapted metric and step size of an earlier fit with
     # the same terms over other seasons, named by its tag (e.g. a probe, #113), which covers
@@ -248,7 +265,8 @@ function load_blocks(prefix)
     haskey(ENV, "LAP_MAX_BLOCKS") && (files = files[1:min(end, parse(Int, ENV["LAP_MAX_BLOCKS"]))])
     return reduce(vcat, [Diomedes.block_chain(joinpath(dir, f)) for f in files])
 end
-arg = get(args, 4, "4")              # chains 1..n, or a comma-separated list (e.g. 2,3,4)
+arg = something(optval("n"), get(args, 4, "4"))   # chains 1..n (`n=4` or `4`), or a list (e.g. 2,3,4)
+occursin(r"^\d+(,\d+)*$", arg) || error("combine: expected a chain count or list, got $arg")
 ks = occursin(",", arg) ? parse.(Int, split(arg, ",")) : 1:parse(Int, arg)
 chain = reduce(hcat, [load_blocks("output/$(tag)_chain$(k)") for k in ks])
 ni, nc = size(chain[:σ])
