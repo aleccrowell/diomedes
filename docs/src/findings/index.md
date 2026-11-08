@@ -76,9 +76,10 @@ prior (`_fgam`), which gave the same out-of-sample fit.
   incidents, season by season.
 - [Retirements](retirements.md): retirement rates by cause and season,
   the most and least reliable cars, and incident-proneness.
-- [Lap times](laps.md): the lap-time model, from lap-by-lap pace 1996–2025:
+- [Lap times](laps.md): the lap-time model, from lap-by-lap pace 2011–2026:
   green-flag pace rather than results, compared with the race model car by car
-  and driver by driver.
+  and driver by driver, and each driver's peak pace and how consistently they
+  reach it.
 - [Rallying (WRC)](wrc.md): drivers and cars from WRC stage
   times, 2018–2025.
 - [Data downloads](data.md): every table behind the charts, with its columns

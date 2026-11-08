@@ -2,7 +2,7 @@
 
 [`lap_effects`](@ref) / [`fit_laps`](@ref): per-lap pace instead of whole-race
 times (#12). It uses partial races before a retirement and has far more data
-per driver–car pair. It is **in development**: see #12 for the current state.
+per driver–car pair. It is **in development**: see #113 for the current state.
 
 ## Outcome and clean laps
 
@@ -16,7 +16,10 @@ keeps clean green-flag laps and excludes:
 - lap 1 (the standing start);
 - race-wide slow laps (safety car, VSC, red flag), detected when the field's
   median lap is over 1.25× the race median, plus the restart lap after each;
-- a car's laps over 2× its own median lap (a red-flag stoppage, or a very long stop);
+- a car's laps over 2× its own median lap (a red-flag stoppage, or a very long stop),
+  unless `stoppage = false` (`lap_fit.jl … keepslow`, #108). With recorded stops
+  no lap is then dropped for its own size, so a car's largest incidents stay in
+  for the big-loss component;
 - pit in- and out-laps, either **recorded** (Ergast's pit stops, 2011 on) or
   **inferred** from the lap times ([`infer_pit_stops`](@ref)).
 
@@ -52,13 +55,37 @@ y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁[era]
   centred within each season, with a spread τ_cx ~ half-N(0, 0.5) per dimension.
 - Noise is pace + loss, as in the race model. Traffic, mistakes and damage are
   incident losses.
+- Terms from the race model (#108): `track = true` puts walls, mixed and wet races
+  on logit π and log λ (as in #81); `dinc = true` adds per-driver incident
+  proneness, centred; `big = true` makes a share ρ of incidents big losses of their
+  own mean (as in #16), with the proneness then on that share; `rwalk = true`
+  replaces the car-season effect and the development trend with a walk of each
+  works' chassis form from race to race ([`RaceWalk`](@ref)), pooled across
+  off-seasons with steps for changes of ownership and major rule changes;
+  `sdrv = false` drops the per-driver start effects (barely identified).
+- Maximum pace and consistency (#113), through a [`LapContext`](@ref) built by
+  `LapContext(d, laps; traffic, fpace, short)`:
+  - `traffic`: shared effects of binned gaps from [`LapTraffic`](@ref): to the car
+    ahead on track (dirty air), a lapped car ahead, blue flags, a car close behind
+    on the same lap (defending), and leading by over 5 s (cruising);
+  - `fpace`: the field's pace on each lap ([`field_pace`](@ref): the field's median lap,
+    smoothed over neighbouring laps, beyond the race's mean and trend), with a slope per car-season around a
+    shared β_fp ~ N(1, 0.5). With `short` it also moves the shortfall's logit π and
+    log λ (κ_fp), but not the edge;
+  - `short`: driver and car-season offsets on the small-loss part's logit π and
+    log λ, which becomes the shortfall from each driver's peak. The driver and car
+    effects are then on the mean pace, and the clean-lap edge sits below it by the
+    expected shortfall from the race, driver and car offsets. The field pace
+    shapes the losses but doesn't move the edge, which would make a very stiff
+    direction (#113: the fit then diverged on nearly every iteration).
 - Driver and car-season effects are centred as in the race model. Every term is
   centred within its race, so γ is the race's mean lap.
 
 ## Long fits and warm starts
 
-About 175k laps (2011–19) to 410k (1996–2019): a fit takes hours to a day on a
-Raspberry Pi 5. Fits are checkpointed (see [Running long fits](@ref)). A
+About 175k laps (2011–19) to 530k (1996–2025): a fit takes hours to a day on a
+Raspberry Pi 5. The 2011–2026 fit with every #108 and #113 term (316k laps) took
+about 9 h per chain at ~230 leapfrog steps per draw. Fits are checkpointed (see [Running long fits](@ref)). A
 larger fit can warm-start from a smaller one: [`lap_warm_start`](@ref) maps the
 adapted step size and diagonal metric across by parameter label, and
 [`lap_warm_sampler`](@ref) runs AdvancedHMC's NUTS from there with a shorter
@@ -83,3 +110,6 @@ chain = fit_laps(d; checkpoint = "output/laps_2011-2019_chain1", seed = 1000)
   slower. Resuming them at a fixed step size (`lap_fit.jl … step=<x>`) fixes this.
 - **Career slopes are loose:** τ_slope ≈ 2, against about 1 in the race model.
   Short careers at the edges of the data trade slope against level.
+- **Conditions go to the shortfall:** in the 2011–2026 fit the field pace moves the
+  edge with a slope of only 0.17, and wet and mixed laps are read mostly as
+  shortfall rather than a slower limit (#116).

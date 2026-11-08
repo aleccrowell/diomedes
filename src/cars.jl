@@ -92,7 +92,12 @@ end
 
 function CarWalks(g::GapData, cars = car_table())
     t, c = g.rows[g.rows.kind .== :timed, :], g.rows[g.rows.kind .== :lapped, :]
-    rows = vcat(t, c; cols = :union)
+    return CarWalks(vcat(t, c; cols = :union), minimum(g.race_season), maximum(g.race_season), cars)
+end
+
+# rows: season, round, competitor_id, machine_id; a row without an F1DB entry
+# for its (season, round, driver, machine) takes its car-season's most common
+function CarWalks(rows::AbstractDataFrame, first_season::Int, last_season::Int, cars)
     # each row's F1DB constructor and engine maker; unmatched rows: their car-season's most common
     ent = Dict{Tuple{Int,Int,String,String},Tuple{String,String}}()
     bycar = Dict{Tuple{String,Int},Dict{Tuple{String,String},Int}}()
@@ -111,9 +116,9 @@ function CarWalks(g::GapData, cars = car_table())
     end
     wk = [_lookup_range(cars.works, :f1db_constructor, ch, r.season, :works_id) for ((ch, _), r) in zip(ce, eachrow(rows))]
     bd = [_lookup_range(cars.engines, :f1db_engine, en, r.season, :builder_id) for ((_, en), r) in zip(ce, eachrow(rows))]
-    s0 = minimum(g.race_season)
-    ns = maximum(g.race_season) - s0 + 1
-    own = Set((r.works_id, r.season) for r in eachrow(cars.ownership))
+    s0 = first_season
+    ns = last_season - s0 + 1
+    own = Set{Tuple{String,Int}}((String(r.works_id), Int(r.season)) for r in eachrow(cars.ownership))
     regs = cars.regulations
     ch, ich = _walk_states(collect(zip(wk, rows.season)), s0, ns, own, regs.season[regs.chassis .== 1])
     en, ien = _walk_states(collect(zip(bd, rows.season)), s0, ns, Set{Tuple{String,Int}}(), regs.season[regs.engine .== 1])

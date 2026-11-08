@@ -1254,6 +1254,13 @@ end
         ch = Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)), joinpath(dir, "t");
                                             n_samples = 40, n_adapts = 100, block = 20, tune_step = true)
         @test size(ch[:m]) == (40, 1)
+        # every iteration, warm-up included, traced as it is sampled
+        tr = readlines(joinpath(dir, "t_trace.tsv"))
+        hd = split(tr[1], '\t')
+        @test hd[1:4] == ["block", "iter", "n_steps", "tree_depth"] && "m" in hd && "s" in hd
+        # (warm-up and draws; a block's starting point may add a row)
+        @test count(l -> startswith(l, "1\t"), tr) >= 100 + 20 - 1 && count(l -> startswith(l, "2\t"), tr) >= 20
+        @test parse(Float64, split(tr[end], '\t')[findfirst(==("m"), hd)]) == vec(ch[:m])[end]
         probe = readlines(joinpath(dir, "t_steptune.txt"))
         @test startswith(probe[1], "factor") && startswith(probe[end], "chosen")
         b1, b2 = Diomedes.read_block(joinpath(dir, "t_block1.jls")), Diomedes.read_block(joinpath(dir, "t_block2.jls"))
@@ -1277,6 +1284,10 @@ end
         b3 = Diomedes.read_block(joinpath(dir3, "t_block2.jls"))
         @test b3.ϵ == 0.5b1.ϵ && b3.Minv == b1.Minv && vec(ch3[:m])[1:20] == vec(ch[:m])[1:20]
         @test all(vec(b3.chain[:step_size]) .== 0.5b1.ϵ) && !isfile(joinpath(dir3, "t_steptune.txt"))
+        # resuming with another block size would misread the saved blocks: refused (#113)
+        @test_throws ArgumentError Diomedes.run_nuts_checkpointed(model, Turing.InitFromParams((; m = 0.0, s = 1.0)),
+                                                                  joinpath(dir2, "t"); n_samples = 40, n_adapts = 100,
+                                                                  block = 10)
         # combines read the draws alone
         @test vec(Diomedes.block_chain(joinpath(dir, "t_block2.jls"))[:m]) == vec(b2.chain[:m]) == vec(ch[:m])[21:40]
         # with_step_size replaces only the step size
@@ -1312,6 +1323,40 @@ end
             @test d.y ≈ 100 .* log.(d.rows.time_ms ./ 91_000)      # median clean lap: 5 laps of a at 90 s, 7 of b at 91 s
         end
         @test_throws ArgumentError prepare_laps(lt, rows; pits = :recorded)
+        # traffic and field pace (#113): three cars at 90, 91 and 121 s a lap, every car 3%
+        # slower on lap 4, so c is caught by a and b. Crossings (laps done): …, c 242 (2),
+        # a 270 (3), b 273 (3), a 362.7 (4), c 363 (3), b 366.73 (4), a 452.7 (5),
+        # b 457.73 (5), c 487.63 (4), …, c 608.63 (5)
+        rowst = DataFrame(series = "f1", season = 2019, event_id = "2019-01", competitor_id = ["a", "b", "c"],
+                          machine_id = ["m1", "m1", "m2"])
+        ltt = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
+                        time_ms = Float64[], position = Union{Missing,Int}[])
+        for (c, t) in (("a", 90_000.0), ("b", 91_000.0), ("c", 121_000.0)), l in 1:6
+            push!(ltt, ("f1", 2019, "2019-01", c, l, t * (l == 4 ? 1.03 : 1.0), missing))
+        end
+        dt = prepare_laps(ltt, rowst; pits = :inferred)
+        tr = LapTraffic(dt, ltt)
+        row(c, l) = findfirst(i -> dt.rows.competitor_id[i] == c && dt.rows.lap[i] == l, 1:nrow(dt.rows))
+        let i = row("a", 4)            # start of a's lap 4: its lap-3 crossing at 270
+            @test tr.ahead[i] ≈ 270 - 242 && tr.ahead_laps[i] == -1      # c, a lap down
+            @test tr.behind[i] ≈ 3 && tr.behind_laps[i] == 0             # b
+            @test isinf(tr.front[i]) && tr.back[i] ≈ 3                   # leading
+        end
+        let i = row("b", 6)            # start of b's lap 6: its lap-5 crossing at 457.73
+            @test tr.ahead[i] ≈ 457.73 - 452.7 && tr.ahead_laps[i] == 0     # a, same lap
+            @test tr.behind[i] ≈ 487.63 - 457.73 && tr.behind_laps[i] == -1 # c, a lap down
+            @test tr.front[i] ≈ 457.73 - 452.7 && tr.back[i] ≈ 608.63 - 457.73
+        end
+        let i = row("c", 5)            # start of c's lap 5: its lap-4 crossing at 487.63
+            @test tr.ahead[i] ≈ 487.63 - 457.73 && tr.ahead_laps[i] == 1    # b, a lap up
+            @test tr.behind[i] ≈ 542.7 - 487.63 && tr.behind_laps[i] == 2   # a, two laps up
+            @test tr.front[i] ≈ 487.63 - 366.73 && isinf(tr.back[i])
+        end
+        @test isinf(tr.ahead[row("a", 2)]) && tr.front[row("c", 2)] ≈ 121 - 91
+        fp = field_pace(dt; window = 0, min_cars = 3)
+        @test all(fp[dt.rows.lap .== 4] .> 1) && all(fp[dt.rows.lap .!= 4] .< 1)
+        @test sum(fp) ≈ 0 atol = 1e-9                                   # detrended within the race
+        @test all(iszero, field_pace(dt; window = 0, min_cars = 4))      # no lap has 4 cars
         # log density against a direct sum, and the fused gradient against ForwardDiff
         rng = Xoshiro(12)
         lt2 = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
@@ -1646,6 +1691,194 @@ end
                     o += n
                 end
                 @test o == LDP.dimension(rdm)
+            end
+        end
+        # no per-car size cut (#108): every lap the cut dropped is kept
+        let dk = prepare_laps(lt5, rows7; pits = :inferred, stoppage = false)
+            @test length(dk.y) >= length(d7.y) && dk.excluded[:stoppage] == 0
+        end
+        # track terms and driver incident proneness (#108)
+        @test size(d8.race_track) == (nr, 0)
+        @test_throws ArgumentError lap_effects(d8; track = true)
+        circt = transform(circ, :event_id => ByRow(e -> 1) => :W)
+        circt.W = [r % 3 for r in eachindex(d7.races)]
+        circt.condition = [r == 1 ? "wet" : r == 2 ? "mixed" : "dry" for r in eachindex(d7.races)]
+        d9 = prepare_laps(lt5, rows7; pits = :inferred, circuits = circt)
+        @test d9.race_track_names == [:tight, :mixed, :wet] && d9.race_track[:, 1] == circt.W ./ 2 &&
+              d9.race_track[1, 3] == 1 && d9.race_track[2, 2] == 1 && sum(d9.race_track[:, 2:3]) == 2
+        let m9 = lap_effects(d9; track = true, dinc = true), nc = length(d9.competitors)
+            θ9 = merge(θ, (; β_track_π = [0.3, 0.8, 1.5], β_track_λ = [0.1, 0.2, 0.3], τ_dinc = 0.7, u_dinc = randn(rng, nc)))
+            πr = Diomedes.logistic.(θ.a_π .+ d9.race_track * θ9.β_track_π)
+            λr = exp.(θ.a_λ .+ d9.race_track * θ9.β_track_λ)
+            o = 0.7 .* (θ9.u_dinc .- mean(θ9.u_dinc))
+            b9 = Diomedes.sum_to_zero_by(θ.b_mach, d9.mach_season, Diomedes.lap_mach_counts(d9))
+            h9 = [a[d9.comp[j]] + b9[d9.mach[j]] + θ.β[1] * d9.stint[j] / 10 + θ.β[2] * (d9.stint[j] / 10)^2 for j in eachindex(d9.y)]
+            h9bar = [mean(h9[d9.race .== r]) for r in 1:nr]
+            f9bar = [mean(d9.frac[d9.race .== r]) for r in 1:nr]
+            ll9 = sum(Diomedes.paceloss_logpdf(d9.y[j] - (θ.γ[d9.race[j]] + θ.δ[d9.race[j]] * (d9.frac[j] - f9bar[d9.race[j]]) +
+                                                           h9[j] - h9bar[d9.race[j]]), θ.σ,
+                                               Diomedes.logistic(Diomedes.logit(πr[d9.race[j]]) + o[d9.comp[j]]),
+                                               λr[d9.race[j]]) for j in eachindex(d9.y))
+            @test Turing.DynamicPPL.loglikelihood(m9, θ9) ≈ ll9
+            # without the terms the likelihood is unchanged from the scalar-π form
+            @test Turing.DynamicPPL.loglikelihood(lap_effects(d9), θ) ≈ Turing.DynamicPPL.loglikelihood(lap_effects(d7), θ)
+            # big incident losses (#108): pacebig_logpdf per lap, the drivers' offsets on the big-loss share
+            θ9b = merge(θ9, (; a_ρ = -2.0, δ_λ2 = 2.0))
+            λ29 = exp(θ.a_λ + 2.0)
+            ll9b = sum(Diomedes.pacebig_logpdf(d9.y[j] - (θ.γ[d9.race[j]] + θ.δ[d9.race[j]] * (d9.frac[j] - f9bar[d9.race[j]]) +
+                                                          h9[j] - h9bar[d9.race[j]]), θ.σ, πr[d9.race[j]],
+                                               λr[d9.race[j]], Diomedes.logistic(-2.0 + o[d9.comp[j]]), λ29) for j in eachindex(d9.y))
+            @test Turing.DynamicPPL.loglikelihood(lap_effects(d9; track = true, dinc = true, big = true), θ9b) ≈ ll9b
+        end
+        for flags in ((; track = true), (; dinc = true), (; big = true), (; track = true, dinc = true, slopes = true, starts = true,
+                                                                            age = true, circuits = true, big = true))
+            m = lap_effects(d9; flags...)
+            rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            x9 = 0.5 .* randn(rng, LDP.dimension(rdm))
+            for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_slope, :τ_sd, :τ_sc, :σ1, :τ_age, :τ_cx, :τ_dinc, :τ_dinc1, :δ_λ2)
+                haskey(rg, k) && (x9[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
+            end
+            @test LDP.logdensity_and_gradient(rdm, x9)[2] ≈ LDP.logdensity_and_gradient(fdm, x9)[2]
+            @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), x9).tape) < 1000
+            let o = 0
+                for (name, (n, _)) in Diomedes.lap_layout(d9; flags...)
+                    @test rg[name].range == (o + 1):(o + n)
+                    o += n
+                end
+                @test o == LDP.dimension(rdm)
+            end
+        end
+        # chassis and engine walks with the works term (#108): car tables for the fixture's
+        # machines, two engine builders, one works pairing
+        let seas = [d9.seasons[s] for s in d9.mach_season]
+            mids = [replace(m, Regex("_$(y)\$") => "") for (m, y) in zip(d9.machines, seas)]
+            ucon = unique(mids)
+            eng(c) = isodd(findfirst(==(c), ucon)) ? "e1" : "e2"
+            fc = (; entries = DataFrame(season = seas, round = fill(1, length(seas)), driver_id = fill("x", length(seas)),
+                                        machine_id = mids, f1db_constructor = mids, f1db_engine = eng.(mids)),
+                  works = DataFrame(f1db_constructor = ucon, first_year = 1900, last_year = 2100, works_id = ucon),
+                  engines = DataFrame(f1db_engine = ["e1", "e2"], first_year = 1900, last_year = 2100, builder_id = ["e1", "e2"]),
+                  ownership = DataFrame(works_id = String[], season = Int[]),
+                  regulations = DataFrame(season = Int[], chassis = Int[], engine = Int[]),
+                  works_engines = DataFrame(builder_id = ["e1"], works_id = [ucon[1]], first_year = 1900, last_year = 2100))
+            cwl = CarWalks(d9, fc)
+            @test length(cwl.row_ch) == length(d9.machines) && sum(cwl.row_works) == count(==(ucon[1]), mids)
+            mw = lap_effects(d9; walk = true, works = true, cars = fc)
+            θw = merge(θ, (; τ_ch = 0.3, σ0_ch = 1.0, z_ch = zeros(length(cwl.chassis.prev)), τ_en = 0.2, σ0_en = 0.5,
+                           z_en = zeros(length(cwl.engine.prev)), δ_own = 0.2, δ_reg = 0.2, β_works = 0.0))
+            # zero walks and works term: the base model's likelihood
+            @test Turing.DynamicPPL.loglikelihood(mw, θw) ≈ Turing.DynamicPPL.loglikelihood(lap_effects(d9), θ)
+            θw2 = merge(θw, (; β_works = 0.4))
+            @test !(Turing.DynamicPPL.loglikelihood(mw, θw2) ≈ Turing.DynamicPPL.loglikelihood(mw, θw))
+            @test_throws ArgumentError lap_effects(d9; works = true, cars = fc)
+            # race-level chassis walk (#108): states per works per race, chained in race order
+            rwk = RaceWalk(d9, fc)
+            @test length(rwk.lap) == length(d9.y) && length(rwk.start) == length(d9.s_y) && sum(rwk.counts) == length(rwk.prev)
+            @test all(rwk.prev[k] == 0 || rwk.prev[k] == k - 1 for k in eachindex(rwk.prev))
+            wk(k) = first(rsplit(rwk.names[k], " "; limit = 2))
+            @test all(rwk.prev[k] == 0 || wk(rwk.prev[k]) == wk(k) for k in eachindex(rwk.prev))
+            @test all(rwk.boundary[k] == (rwk.prev[k] > 0 && d9.race_season[rwk.race[k]] != d9.race_season[rwk.race[rwk.prev[k]]])
+                      for k in eachindex(rwk.prev))
+            @test all(rwk.race[rwk.lap[j]] == d9.race[j] for j in eachindex(d9.y))
+            @test_throws ArgumentError lap_effects(d9; rwalk = true, dev = true, cars = fc)
+            # zero walk steps: no car part, as the base model with zero car effects
+            mr = lap_effects(d9; rwalk = true, cars = fc)
+            θr = merge((; (k => v for (k, v) in pairs(θ) if k ∉ (:σ_mach, :b_mach))...),
+                       (; τ_cr = 0.1, τ_co = 0.3, σ0_ch = 1.0, xs_cr = zeros(length(rwk.prev)), δ_own = 0.2, δ_reg = 0.2))
+            @test Turing.DynamicPPL.loglikelihood(mr, θr) ≈
+                  Turing.DynamicPPL.loglikelihood(lap_effects(d9), merge(θ, (; b_mach = zeros(length(d9.machines)))))
+            @test !(Turing.DynamicPPL.loglikelihood(mr, merge(θr, (; xs_cr = randn(rng, length(rwk.prev))))) ≈
+                    Turing.DynamicPPL.loglikelihood(mr, θr))
+            # directly sampled states: the step form's prior, less the log Jacobian Σ log sd of steps → states
+            sdr = Diomedes.race_walk_sd(0.1, 0.3, 1.0, 0.2, 0.2, rwk)
+            zr = randn(rng, length(rwk.prev))
+            @test Diomedes.walk_states_logpdf(Diomedes.walk_path(zr .* sdr, rwk.prev), sdr, rwk.prev) ≈
+                  sum(Diomedes.normlogpdf.(zr)) - sum(log.(sdr))
+            for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true, big = true),
+                          (; rwalk = true), (; rwalk = true, track = true, dinc = true, starts = true, big = true, sdrv = false),
+                          (; rwalk = true, dinc = true, starts = true, dinc1 = true))
+                m = lap_effects(d9; flags..., cars = fc)
+                rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+                rg = NamedTuple(getfield(rdm, :_varname_ranges))
+                xw = 0.5 .* randn(rng, LDP.dimension(rdm))
+                for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_sd, :τ_sc, :σ1, :τ_dinc, :τ_dinc1, :τ_ch, :σ0_ch, :τ_en, :σ0_en, :δ_own,
+                          :δ_reg, :δ_λ2, :τ_cr, :τ_co)
+                    haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
+                end
+                @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]
+                @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), xw).tape) < 1000
+                let o = 0
+                    for (name, (n, _)) in Diomedes.lap_layout(d9; flags..., cw = cwl, rwk = get(flags, :rwalk, false) ? rwk : nothing)
+                        @test rg[name].range == (o + 1):(o + n)
+                        o += n
+                    end
+                    @test o == LDP.dimension(rdm)
+                end
+            end
+            # #113: traffic bins, field-pace slopes, shortfall offsets (a random field pace, so the
+            # slopes matter on these few cars)
+            c9 = LapContext(d9, lt5; traffic = true)
+            @test size(c9.tbin) == (length(d9.y), length(Diomedes.TRAFFIC_BINS)) && maximum(c9.tbin) <= length(c9.tnames)
+            n9, nc9, nm9, nr9 = length(d9.y), length(d9.competitors), length(d9.machines), length(d9.races)
+            ctxs = [LapContext(c9.tbin, c9.tnames, randn(rng, n9), t, f, s) for (t, f, s) in
+                    ((false, false, true), (true, true, false), (true, true, true))]
+            # the likelihood against a direct sum: μ the mean pace, the noise centred μ - q·λ_lap below it
+            let c = ctxs[3], γ = randn(rng, nr9), δ = randn(rng, nr9), ηt = 0.3 .* randn(rng, length(c.tnames)),
+                φ = 1 .+ 0.2 .* randn(rng, nm9), sh = 0.3 .* randn(rng, 2nc9 + 2nm9), πr = fill(0.3, nr9), λr = fill(0.8, nr9),
+                κ = [0.4, -0.3]
+                z(n) = zeros(n)
+                v = Diomedes.lap_loglik(γ, δ, z(nc9), z(nm9), z(2length(d9.eras)), z(nc9), z(nm9), z(1), z(nc9), z(nm9),
+                                        z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), 0.5, πr, λr, z(nc9), 0.0,
+                                        1.0, ηt, φ, sh, κ, RaceWalk(), c, d9)
+                h = [sum((ηt[k] for k in c.tbin[j, :] if k > 0); init = 0.0) + φ[d9.mach[j]] * c.fp[j] for j in 1:n9]
+                hb = [mean(h[d9.race .== r]) for r in 1:nr9]
+                ref = sum(begin
+                              r, cj, m = d9.race[j], d9.comp[j], d9.mach[j]
+                              q = Diomedes.logistic(Diomedes.logit(0.3) + sh[cj] + sh[nc9 + m] + κ[1] * c.fp[j])
+                              λl = 0.8 * exp(sh[nc9 + nm9 + cj] + sh[2nc9 + nm9 + m] + κ[2] * c.fp[j])
+                              qb = Diomedes.logistic(Diomedes.logit(0.3) + sh[cj] + sh[nc9 + m])
+                              λb = 0.8 * exp(sh[nc9 + nm9 + cj] + sh[2nc9 + nm9 + m])
+                              Diomedes.paceloss_logpdf(d9.y[j] - (γ[r] + δ[r] * d9.fracc[j] + h[j] - hb[r] - qb * λb), 0.5, q, λl)
+                          end for j in 1:n9)
+                @test v ≈ ref
+            end
+            for c in ctxs, flags in ((;), (; big = true, dinc = true), (; dinc = true),
+                                     (; rwalk = true, track = true, dinc = true, starts = true, big = true, sdrv = false))
+                m = lap_effects(d9; flags..., cars = fc, ctx = c)
+                rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
+                rg = NamedTuple(getfield(rdm, :_varname_ranges))
+                xw = 0.5 .* randn(rng, LDP.dimension(rdm))
+                for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_sc, :σ1, :τ_dinc, :σ0_ch, :δ_own, :δ_reg, :δ_λ2, :τ_cr, :τ_co,
+                          :τ_fp, :τ_sh)
+                    haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
+                end
+                @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]
+                @test length(Diomedes.ReverseDiff.GradientTape(z -> LDP.logdensity(LDF(m), z), xw).tape) < 1000
+                let o = 0
+                    for (name, (n, _)) in Diomedes.lap_layout(d9; flags..., cw = cwl, ctx = c,
+                                                              rwk = get(flags, :rwalk, false) ? rwk : nothing)
+                        @test rg[name].range == (o + 1):(o + n)
+                        o += n
+                    end
+                    @test o == LDP.dimension(rdm)
+                end
+            end
+            # warm start from a fit without them: the new blocks get the defaults
+            let m = lap_effects(d9; cars = fc, ctx = ctxs[3])
+                dim9 = sum(first(last(p)) for p in Diomedes.lap_layout(d9))
+                f9 = (; hamiltonian = (; metric = (; M⁻¹ = ones(dim9))), kernel = (; τ = (; integrator = (; ϵ = 0.04))))
+                w9 = lap_warm_start(f9, d9, d9; ctx_new = ctxs[3])
+                r9 = NamedTuple(getfield(LDF(m), :_varname_ranges))
+                @test length(w9.Minv) == LDP.dimension(LDF(m))
+                @test all(==(Diomedes.LAP_WARM_DEFAULT[:u_sh]), w9.Minv[r9.u_sh.range]) &&
+                      w9.Minv[r9.η_tr.range] == fill(Diomedes.LAP_WARM_DEFAULT[:η_tr], length(ctxs[3].tnames))
+                # from a fit with the #113 terms but before κ_fp: that block gets the default
+                dimk = sum(first(last(p)) for p in Diomedes.lap_layout(d9; ctx = ctxs[3])) - 2
+                fk = (; hamiltonian = (; metric = (; M⁻¹ = ones(dimk))), kernel = (; τ = (; integrator = (; ϵ = 0.04))))
+                @test_throws DimensionMismatch lap_warm_start(fk, d9, d9; ctx_old = ctxs[3])
+                wk = lap_warm_start(fk, d9, d9; ctx_old = ctxs[3], missing_old = (:κ_fp,))
+                @test length(wk.Minv) == LDP.dimension(LDF(m)) && wk.Minv[r9.κ_fp.range] == fill(1e-3, 2)
             end
         end
         # warm start from a fit without them: the new blocks get the defaults
