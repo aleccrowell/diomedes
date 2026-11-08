@@ -33,7 +33,9 @@ time agrees with the source's within 0.5 s (a lap-number offset would fail it).
 With `cond` (switched on in `lap_effects` when `on`), the lap's mean pace gets the compound
 offsets against SOFT, compound-specific stint slopes, a track-temperature slope and a rain
 effect; with `short` also wet-tyre and rain terms on the shortfall. With `wetdev`, car-season
-and driver deviations on wet-tyre laps (see `lap_effects`).
+and driver deviations on wet-tyre laps (see `lap_effects`); with `wetpool` too, the car-seasons'
+are pooled through a wet walk over each works' seasons (the chassis walk's states, `CarWalks`)
+instead of being independent (#116 step 1).
 """
 struct LapConditions
     comp::Vector{Int}
@@ -42,9 +44,12 @@ struct LapConditions
     rain::Vector{Float64}
     on::Bool
     wetdev::Bool
+    wetpool::Bool
     check::NamedTuple
 end
-LapConditions() = LapConditions(Int[], Float64[], Float64[], Float64[], false, false, (;))
+LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, check::NamedTuple) =
+    LapConditions(comp, wet, tt, rain, on, wetdev, false, check)
+LapConditions() = LapConditions(Int[], Float64[], Float64[], Float64[], false, false, false, (;))
 
 """
     read_lap_conditions(path = data/conditions/lap_conditions.csv) -> DataFrame
@@ -57,7 +62,9 @@ function read_lap_conditions(path::AbstractString = joinpath(dirname(@__DIR__), 
                     missingstring = "")
 end
 
-function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDict; wetdev::Bool = false)
+function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDict; wetdev::Bool = false,
+                       wetpool::Bool = false)
+    wetpool && !wetdev && throw(ArgumentError("wetpool pools the wet deviations: it needs wetdev"))
     ci = Dict(c => k for (k, c) in enumerate(COMPOUNDS))
     have = Set(cond.event_id)
     nod = filter(e -> e ∉ have, d.races)
@@ -117,7 +124,7 @@ function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDic
              compound_known = count(>(0), comp) / n, compound_filled = filled, wet = sum(wet) / n, rain = sum(rain) / n,
              track_temp_known = count(!isnan, ttraw) / n, unknown_cars = length(unknown_cars),
              compounds = Dict((k == 0 ? "unknown" : COMPOUNDS[k]) => count(==(k), comp) for k in 0:length(COMPOUNDS)))
-    return LapConditions(comp, wet, tt, rain, true, wetdev, check)
+    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, check)
 end
 
 function Base.show(io::IO, c::LapConditions)
@@ -127,7 +134,7 @@ function Base.show(io::IO, c::LapConditions)
           "$(round(k.time_agrees; digits = 3)), compound known $(round(k.compound_known; digits = 3)) ",
           "($(k.compound_filled) filled from the stint), wet tyres $(round(k.wet; digits = 3)), rain ",
           "$(round(k.rain; digits = 3)), track temp known $(round(k.track_temp_known; digits = 3))",
-          c.wetdev ? "; wet deviations" : "", ")")
+          c.wetdev ? (c.wetpool ? "; wet deviations, cars pooled by works" : "; wet deviations") : "", ")")
 end
 
 # Shared condition effects (`cv` in `lap_loglik`): names and prior sds, laid out as
@@ -151,3 +158,22 @@ wet_blocks(d::LapData) = vcat(fill(1, length(d.machines)), fill(2, length(d.comp
 @inline cond_short(cv, cond::LapConditions, j) =
     (cv[COND_KAPPA[1]] * cond.wet[j] + cv[COND_KAPPA[3]] * cond.rain[j],
      cv[COND_KAPPA[2]] * cond.wet[j] + cv[COND_KAPPA[4]] * cond.rain[j])
+
+# The two blocks of the wet deviations as one vector (car-seasons, then drivers): `vcat` of
+# tracked arrays is ambiguous for ReverseDiff, so it has its own rule (#116, `wetpool`)
+wet_join(a, b) = vcat(a, b)
+function ChainRulesCore.rrule(::typeof(wet_join), a, b)
+    na = length(a)
+    pullback(ȳ) = (y = collect(ChainRulesCore.unthunk(ȳ)); (NoTangent(), y[1:na], y[(na + 1):end]))
+    return wet_join(a, b), pullback
+end
+ReverseDiff.@grad_from_chainrules wet_join(a::ReverseDiff.TrackedArray, b::ReverseDiff.TrackedArray)
+
+# Pooled car-season wet deviations (#116 step 1): a walk per works over its seasons on the
+# chassis walk's states, each works' first season N(0, σ0), a season's step N(0, τ·√gap),
+# centred within season (the shared wet offset takes a season's mean); each car-season takes
+# its works' state.
+function wet_car_walk(σ0, τ, z, cw)
+    x = walk_path(walk_steps(τ, σ0, 0.0, 0.0, z, cw.chassis), cw.chassis.prev)
+    return center_by(x, cw.chassis.season, cw.chassis.counts)[cw.row_ch]
+end
