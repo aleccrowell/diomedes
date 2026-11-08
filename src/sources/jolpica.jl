@@ -160,6 +160,32 @@ function jolpica_row(race, r)
     )
 end
 
+"""
+    jolpica_driver_numbers(src::JolpicaF1, seasons) -> Dict{Tuple{String,Int},String}
+
+`(event_id, car number) => competitor_id` from the season results pages (the same
+cached responses as `fetch_results`), to join sources keyed by car number, such as
+the lap conditions (#116).
+"""
+function jolpica_driver_numbers(src::JolpicaF1, seasons::AbstractVector{<:Integer})
+    out = Dict{Tuple{String,Int},String}()
+    for season in seasons
+        offset, total = 0, 1
+        while offset < total
+            url = "$(src.base_url)/$season/results.json?limit=$JOLPICA_PAGE&offset=$offset"
+            mr = cached_json(url; cache_dir = src.cache_dir, limiter = src.limiter, refresh = src.refresh).MRData
+            total = parse(Int, mr.total)
+            for race in mr.RaceTable.Races, r in race.Results
+                n = maybeint(get(r, :number, nothing))
+                n === missing && continue
+                out[(string(race.season, "-", lpad(parse(Int, race.round), 2, '0')), n)] = String(r.Driver.driverId)
+            end
+            offset += JOLPICA_PAGE
+        end
+    end
+    return out
+end
+
 # Rounds of a season, from its schedule (one request), skipping the Indianapolis 500.
 function jolpica_rounds(src::JolpicaF1, season::Integer)
     url = "$(src.base_url)/$season.json?limit=$JOLPICA_PAGE"
