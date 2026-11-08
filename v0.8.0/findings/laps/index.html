@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="referrer" content="no-referrer"/><title>Lap times · Diomedes.jl</title><meta name="title" content="Lap times · Diomedes.jl"/><meta property="og:title" content="Lap times · Diomedes.jl"/><meta property="twitter:title" content="Lap times · Diomedes.jl"/><meta name="description" content="Documentation for Diomedes.jl."/><meta property="og:description" content="Documentation for Diomedes.jl."/><meta property="twitter:description" content="Documentation for Diomedes.jl."/><meta property="og:url" content="https://aleccrowell.github.io/diomedes/stable/findings/laps/"/><meta property="twitter:url" content="https://aleccrowell.github.io/diomedes/stable/findings/laps/"/><link rel="canonical" href="https://aleccrowell.github.io/diomedes/stable/findings/laps/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script><script src="../../assets/figures.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Diomedes.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Methodology</span><ul><li><a class="tocitem" href="../../methodology/">Overview</a></li><li><a class="tocitem" href="../../methodology/identification/">Identification</a></li><li><a class="tocitem" href="../../methodology/data_handling/">Data handling</a></li><li><a class="tocitem" href="../../methodology/noise/">Noise</a></li><li><a class="tocitem" href="../../methodology/progression/">Model progression</a></li><li><a class="tocitem" href="../../methodology/retirements/">Retirements</a></li><li><a class="tocitem" href="../../methodology/laps/">Lap-time model</a></li><li><a class="tocitem" href="../../methodology/limitations/">Limitations</a></li></ul></li><li><span class="tocitem">Findings</span><ul><li><a class="tocitem" href="../">Overview</a></li><li><a class="tocitem" href="../drivers/">Drivers</a></li><li><a class="tocitem" href="../explorer/">Driver vs car</a></li><li><a class="tocitem" href="../cars/">Cars</a></li><li><a class="tocitem" href="../careers/">Careers</a></li><li><a class="tocitem" href="../eras/">Eras</a></li><li><a class="tocitem" href="../retirements/">Retirements</a></li><li class="is-active"><a class="tocitem" href>Lap times</a><ul class="internal"><li><a class="tocitem" href="#Lap-model-against-the-race-model:-cars"><span>Lap model against the race model: cars</span></a></li><li><a class="tocitem" href="#Lap-model-against-the-race-model:-drivers"><span>Lap model against the race model: drivers</span></a></li><li><a class="tocitem" href="#Peak-pace-and-consistency"><span>Peak pace and consistency</span></a></li><li><a class="tocitem" href="#The-shape-of-a-career-on-laps"><span>The shape of a career on laps</span></a></li><li><a class="tocitem" href="#Circuit-slopes"><span>Circuit slopes</span></a></li><li><a class="tocitem" href="#Convergence"><span>Convergence</span></a></li><li><a class="tocitem" href="#Download-the-data"><span>Download the data</span></a></li></ul></li><li><a class="tocitem" href="../wrc/">Rallying (WRC)</a></li><li><a class="tocitem" href="../data/">Data downloads</a></li></ul></li><li><a class="tocitem" href="../../getting_started/">Getting started</a></li><li><a class="tocitem" href="../../data/">Data</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../models/overview/">Overview</a></li><li><a class="tocitem" href="../../models/zscore/">Z-score model</a></li><li><a class="tocitem" href="../../models/gap/">Gap and pace + loss models</a></li><li><a class="tocitem" href="../../models/retirement/">Retirement model</a></li><li><a class="tocitem" href="../../models/laps/">Lap-time model</a></li></ul></li><li><a class="tocitem" href="../../fitting/">Running long fits</a></li><li><a class="tocitem" href="../../comparison/">Model comparison</a></li><li><a class="tocitem" href="../../scripts/">Scripts</a></li><li><span class="tocitem">API reference</span><ul><li><a class="tocitem" href="../../api/data/">Data sources and schemas</a></li><li><a class="tocitem" href="../../api/zscore/">Preparation and z-score model</a></li><li><a class="tocitem" href="../../api/gap/">Gap and pace + loss models</a></li><li><a class="tocitem" href="../../api/comparison/">Model comparison</a></li><li><a class="tocitem" href="../../api/retirement/">Retirement model</a></li><li><a class="tocitem" href="../../api/laps/">Lap-time model</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Findings</a></li><li class="is-active"><a href>Lap times</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Lap times</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/aleccrowell/diomedes" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/aleccrowell/diomedes/blob/master/docs/src/findings/laps.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Lap-times"><a class="docs-heading-anchor" href="#Lap-times">Lap times</a><a id="Lap-times-1"></a><a class="docs-heading-anchor-permalink" href="#Lap-times" title="Permalink"></a></h1><p>Results of the lap-time model (see <a href="../../methodology/laps/#The-lap-time-model">The lap-time model</a>), fitted to green-flag laps from 2011 to the 2026 races run so far (Jolpica lap times, recorded pit stops). Besides driver and car effects it has:</p><ul><li>each driver&#39;s <strong>peak pace</strong> and how often and how far their laps fall short of it (<a href="https://github.com/aleccrowell/diomedes/issues/113">#113</a>, <a href="#Peak-pace-and-consistency">below</a>);</li><li>traffic around each lap (dirty air, blue flags, lapped cars, a car close behind or a big lead), and the field&#39;s pace on each lap of a race, with a slope per car-season (<a href="https://github.com/aleccrowell/diomedes/issues/113">#113</a>);</li><li>a career slope per driver (season-level age);</li><li>a stint-age curve, with driver and car-season deviations from it (tyre management);</li><li>an effect of leading the race;</li><li>lap 1 as its own term, with the grid slot and car-season start effects (<a href="https://github.com/aleccrowell/diomedes/issues/66">#66</a>);</li><li>a population age curve shared by all drivers, as in the race model (<a href="https://github.com/aleccrowell/diomedes/issues/12">#12</a>);</li><li>car-season slopes on three circuit dimensions: average lap speed, street score and race-time air temperature (<a href="https://github.com/aleccrowell/diomedes/issues/14">#14</a>);</li><li>from the race model (<a href="https://github.com/aleccrowell/diomedes/issues/108">#108</a>): walls, mixed and wet races on the incident terms, per-driver incident proneness, big incident losses, and each team&#39;s form as a walk from race to race in place of a fixed car-season effect.</li></ul><p>It is <strong>in development</strong> (<a href="https://github.com/aleccrowell/diomedes/issues/113">#113</a>). Its four chains converge to a single mode (<a href="#Convergence">below</a>). The previous fit, 1996–2025 without the #108 and #113 terms, is described in <a href="https://github.com/aleccrowell/diomedes/issues/66">#66</a> and <a href="https://github.com/aleccrowell/diomedes/issues/12">#12</a>. Its driver effects correlate 0.88 with this fit&#39;s mean pace (39 drivers with at least 2,000 laps in both).</p><div class="admonition is-info" id="What-these-numbers-measure-29221b59f8b2e64a"><header class="admonition-header">What these numbers measure<a class="admonition-anchor" href="#What-these-numbers-measure-29221b59f8b2e64a" title="Permalink"></a></header><div class="admonition-body"><p>The race model and the lap model are two views of the same question from different data, and neither is the reference for the other. The race model measures the time to finish a race, from one result per driver per race since 1950. That includes pit stops, strategy, safety-car periods and incidents, and it relies on its own split between pace and incident losses. The lap model measures green-flag pace under race conditions, plus the start (lap 1), from about 50 laps per driver per race since 2011. Its driver effects in the comparisons below are <strong>mean pace</strong>: the peak less the laps that fall short of it. Traffic is now a term of its own, but the tyre, fuel and engine management drivers do when they don&#39;t need to push stays in, apart from what the lead and big-lead terms take. Pit-stop timing, strategy and safety-car periods are left out. So it <strong>underrates drivers who win comfortably</strong> (they manage their pace) and flatters drivers who lose most of their time in the parts of a race it leaves out. Where the two agree, the result doesn&#39;t depend on either model&#39;s blind spots. Where they disagree, either could be wrong. Its driver ranking answers a different question from the race model&#39;s: pace on clean laps, not results.</p></div></div><div id="manifest-laps"></div>
+<script>
+fetch(documenterBaseURL + "/assets/data/laps/manifest.json").then(r => r.json()).then(m => {
+  document.getElementById("manifest-laps").innerHTML =
+    `<p><small>Fit <code>${m.fit}</code>. Data: ${m.data}. Convergence: max R-hat ${m.convergence.max_rhat},
+     min bulk ESS ${m.convergence.min_ess}, ${m.convergence.divergences} divergence(s). Compared with the race model
+     <code>${m.race_model}</code>. Exported ${m.date}.</small></p>`;
+});
+</script><h2 id="Lap-model-against-the-race-model:-cars"><a class="docs-heading-anchor" href="#Lap-model-against-the-race-model:-cars">Lap model against the race model: cars</a><a id="Lap-model-against-the-race-model:-cars-1"></a><a class="docs-heading-anchor-permalink" href="#Lap-model-against-the-race-model:-cars" title="Permalink"></a></h2><p>Each point is a car-season, placed by its effect in the two models. They agree
+closely (correlation
+<span class="diomedes-stat" data-path="assets/data/laps/vs_race_cars.csv" data-stat="corr" data-x="race_mean" data-y="lap_mean">…</span>
+over <span class="diomedes-stat" data-path="assets/data/laps/vs_race_cars.csv" data-stat="count" data-format="int">…</span>
+car-seasons). The lap model's spread is larger, because clean laps leave out the
+safety-car bunching and strategy noise that compress race time gaps.</p><div id="fig-laps-cars" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-laps-cars", {
+  data: { url: "assets/data/laps/vs_race_cars.csv",
+          format: { type: "csv", parse: { laps: "number", lap_mean: "number", lap_sd: "number", season: "number",
+                                          race_mean: "number", race_sd: "number" } } },
+  // "constructor" can't be used as a field name in Vega (Object.prototype); use a copy
+  transform: [{ calculate: "datum.constructor", as: "team" }],
+  params: [{ name: "zoom", select: "interval", bind: "scales" }],
+  width: "container", height: 420,
+  mark: { type: "circle", size: 70, opacity: 0.8 },
+  encoding: {
+    x: { field: "race_mean", type: "quantitative", title: "Race model: car effect (%)" },
+    y: { field: "lap_mean", type: "quantitative", title: "Lap model: car effect (%)" },
+    // a gradient legend: 30 seasons as separate entries would run past the plot's height
+    color: { field: "season", type: "quantitative", title: "Season", scale: { scheme: "viridis" },
+             legend: { format: "d", gradientLength: 300 } },
+    tooltip: [{ field: "team", title: "Constructor" }, { field: "season", title: "Season" },
+              { field: "race_mean", title: "Race model (%)", format: ".2f" },
+              { field: "lap_mean", title: "Lap model (%)", format: ".2f" }, { field: "laps", title: "Laps" }]
+  }
+});
+</script><h2 id="Lap-model-against-the-race-model:-drivers"><a class="docs-heading-anchor" href="#Lap-model-against-the-race-model:-drivers">Lap model against the race model: drivers</a><a id="Lap-model-against-the-race-model:-drivers-1"></a><a class="docs-heading-anchor-permalink" href="#Lap-model-against-the-race-model:-drivers" title="Permalink"></a></h2><p>Drivers agree less (correlation
+<span class="diomedes-stat" data-path="assets/data/laps/vs_race_drivers.csv" data-stat="corr" data-x="race_mean" data-y="lap_mean" data-filter="laps>=500">…</span>
+over the <span class="diomedes-stat" data-path="assets/data/laps/vs_race_drivers.csv" data-stat="count" data-filter="laps>=500" data-format="int">…</span>
+drivers with at least 500 clean laps), and the lap model's driver effects are
+less spread out. Race gaps include what the lap model leaves out: pit stops,
+strategy, safety-car periods and the laps lost to incidents. So back-markers look
+faster on laps than in races, and the front-runners less dominant. Adding starts,
+lead laps and tyre management did not change that
+(<a href="https://github.com/aleccrowell/diomedes/issues/66">#66</a>). The pattern holds in this fit, with
+traffic as its own term: lap-model mean pace rises about 0.45 % per 1 % of
+race-model effect. The race model's effects also cover whole
+careers from 1950, while this fit starts in 2011: a career that began earlier
+(Alonso, Räikkönen, Massa, Button, Webber) enters here only from 2011.</p><div id="fig-laps-drivers" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-laps-drivers", {
+  data: { url: "assets/data/laps/vs_race_drivers.csv",
+          format: { type: "csv", parse: { laps: "number", lap_mean: "number", lap_sd: "number",
+                                          race_mean: "number", race_sd: "number" } } },
+  transform: [{ filter: "datum.laps >= 500" }],
+  params: [{ name: "zoom", select: "interval", bind: "scales" }],
+  width: "container", height: 420,
+  mark: { type: "circle", opacity: 0.8 },
+  encoding: {
+    x: { field: "race_mean", type: "quantitative", title: "Race model: driver effect, whole career (%)" },
+    y: { field: "lap_mean", type: "quantitative", title: "Lap model: mean pace, 2011–2026 (%)" },
+    size: { field: "laps", type: "quantitative", title: "Laps", scale: { range: [20, 300] } },
+    tooltip: [{ field: "name", title: "Driver" }, { field: "laps", title: "Laps" },
+              { field: "race_mean", title: "Race model (%)", format: ".2f" },
+              { field: "lap_mean", title: "Lap model (%)", format: ".2f" }]
+  }
+});
+</script><p>Drivers with at least 500 clean laps.</p><h2 id="Peak-pace-and-consistency"><a class="docs-heading-anchor" href="#Peak-pace-and-consistency">Peak pace and consistency</a><a id="Peak-pace-and-consistency-1"></a><a class="docs-heading-anchor-permalink" href="#Peak-pace-and-consistency" title="Permalink"></a></h2><p>The model splits each driver&#39;s laps in two (<a href="https://github.com/aleccrowell/diomedes/issues/113">#113</a>). The <strong>peak</strong> is their clean-lap pace on the car&#39;s limit. On other laps they <strong>fall short</strong> of it. How often, and by how much, varies by driver and by car-season, because a hard car to drive shouldn&#39;t read as inconsistent drivers. Mean pace is the peak plus the expected shortfall (how often × how far). All three are in % of lap time against the drivers&#39; average, lower = better. The shortfall is net of the traffic, lead and big-lead terms, of the field&#39;s pace on the lap, and of incidents, which have their own losses.</p><p>Most of the difference between drivers is peak pace. Over the
+<span class="diomedes-stat" data-path="assets/data/laps/peak.csv" data-stat="count" data-filter="laps>=2000" data-format="int">…</span>
+drivers with at least 2,000 laps, the peaks spread about six times as much as the
+expected shortfalls (sd 0.22 % against 0.04 %), and they are unrelated (correlation
+<span class="diomedes-stat" data-path="assets/data/laps/peak.csv" data-stat="corr" data-x="peak" data-y="short_mean" data-filter="laps>=2000">…</span>).
+Peak and mean pace correlate
+<span class="diomedes-stat" data-path="assets/data/laps/peak.csv" data-stat="corr" data-x="peak" data-y="mean_pace" data-filter="laps>=2000">…</span>.
+Max Verstappen is the outlier on both: the fastest peak (−0.66 %) and the
+smallest expected shortfall (0.075 %), because he falls short on 8 % of laps, where
+the other drivers do on 12–37 %. Drivers differ mostly in how often they fall short,
+not how far: the mean size of a shortfall stays between 0.7 % and 1.1 %. Car-seasons
+vary more than drivers in both.</p>
+<p>A caveat: a shortfall the driver chose and one they couldn't avoid look the same.
+Beyond the traffic and lead terms, a car managing its pace (holding a position,
+saving tyres or fuel) reads as falling short. And wet and mixed laps still go
+mostly to the shortfall rather than to a slower limit, so drivers with more wet
+laps may look less consistent than they are
+(<a href="https://github.com/aleccrowell/diomedes/issues/116">#116</a>).</p><div id="fig-laps-peak" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-laps-peak", {
+  data: { url: "assets/data/laps/peak.csv",
+          format: { type: "csv", parse: { laps: "number", peak: "number", peak_sd: "number", mean_pace: "number",
+                                          short_mean: "number", short_mean_sd: "number", short_sd: "number",
+                                          short_freq: "number", short_size: "number" } } },
+  transform: [{ filter: "datum.laps >= 2000" }],
+  params: [{ name: "zoom", select: "interval", bind: "scales" }],
+  width: "container", height: 420,
+  mark: { type: "circle", opacity: 0.8 },
+  encoding: {
+    x: { field: "peak", type: "quantitative", title: "Peak pace (%, lower = faster)", scale: { zero: false } },
+    y: { field: "short_mean", type: "quantitative", title: "Expected shortfall (%, lower = more consistent)",
+         scale: { zero: false } },
+    size: { field: "laps", type: "quantitative", title: "Laps", scale: { range: [20, 300] } },
+    tooltip: [{ field: "name", title: "Driver" }, { field: "laps", title: "Laps" },
+              { field: "peak", title: "Peak (%)", format: ".2f" },
+              { field: "mean_pace", title: "Mean pace (%)", format: ".2f" },
+              { field: "short_mean", title: "Expected shortfall (%)", format: ".3f" },
+              { field: "short_freq", title: "Share of laps short", format: ".0%" },
+              { field: "short_size", title: "Mean shortfall when short (%)", format: ".2f" }]
+  }
+});
+</script><p>Drivers with at least 2,000 clean laps, at the base rates: a dry race, with a car whose own shortfall offsets are zero.</p><h2 id="The-shape-of-a-career-on-laps"><a class="docs-heading-anchor" href="#The-shape-of-a-career-on-laps">The shape of a career on laps</a><a id="The-shape-of-a-career-on-laps-1"></a><a class="docs-heading-anchor-permalink" href="#The-shape-of-a-career-on-laps" title="Permalink"></a></h2><p>The population age curve on clean laps: how pace changes with age for the average driver, in % of lap time (negative = faster), with a 90% band. As in the race model (<a href="../careers/">Careers</a>), only its <strong>shape</strong> is identified: it has no constant or linear part, because those can&#39;t be told apart from the drivers&#39; career slopes and the car-seasons. Read the bends, not the slope. Pace improves steeply through the late teens, by about 0.35 % from 17 to 21, then stays within about ±0.06 % from 21 to 33. From 34 on it jumps from one year to the next: each age there rests on a handful of drivers (Alonso, Räikkönen, Hamilton, Button), so it mostly follows their seasons, and it shows no clear decline.</p><div id="fig-laps-age" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-laps-age", {
+  data: { url: "assets/data/laps/age_curve.csv",
+          format: { type: "csv", parse: { age: "number", laps: "number", mean: "number", q05: "number", q95: "number" } } },
+  width: "container", height: 300,
+  encoding: { x: { field: "age", type: "quantitative", title: "Age", scale: { zero: false } } },
+  layer: [
+    { mark: { type: "area", opacity: 0.25 },
+      encoding: { y: { field: "q05", type: "quantitative", title: "Pace relative to the curve's average (%)", scale: { reverse: true } },
+                  y2: { field: "q95" } } },
+    { mark: { type: "line", point: true },
+      encoding: { y: { field: "mean", type: "quantitative" },
+                  tooltip: [{ field: "age", title: "Age" }, { field: "laps", title: "Laps at this age" },
+                            { field: "mean", title: "Curve (%)", format: ".2f" },
+                            { field: "q05", title: "5%", format: ".2f" }, { field: "q95", title: "95%", format: ".2f" }] } }
+  ]
+});
+</script><p>The vertical axis is reversed, so faster is higher.</p><h2 id="Circuit-slopes"><a class="docs-heading-anchor" href="#Circuit-slopes">Circuit slopes</a><a id="Circuit-slopes-1"></a><a class="docs-heading-anchor-permalink" href="#Circuit-slopes" title="Permalink"></a></h2><p>Each car-season has a slope on three circuit dimensions, centred within the season: how much faster or slower it is, relative to the field, at a circuit one standard deviation above average. The dimensions are average lap speed (sd 20 km/h), street score (sd 0.35 on the 0–1 scale; see the <a href="https://github.com/aleccrowell/diomedes/tree/master/reference/circuits">circuit tables</a>) and air temperature at race time (sd 4.8 °C). Positive means relatively <strong>slower</strong> there. The spread of the slopes across car-seasons is about 0.11 % per sd for speed, 0.08 % for street score and 0.05 % for temperature. That&#39;s smaller than in the 1996–2025 fit (0.16, 0.16 and 0.11 %). This fit covers fewer seasons, and its race-to-race walk of each team&#39;s form can take up some of what a fixed car-season effect left to the circuit slopes; which of the two matters more hasn&#39;t been checked.</p><div id="fig-laps-circuits" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-laps-circuits", {
+  data: { url: "assets/data/laps/cars.csv",
+          format: { type: "csv", parse: { laps: "number", speed_mean: "number", street_mean: "number", temp_mean: "number" } } },
+  transform: [
+    { filter: "datum.laps >= 500" },
+    { fold: ["speed_mean", "street_mean", "temp_mean"], as: ["dimension", "slope"] },
+    { calculate: "{speed_mean: 'Speed', street_mean: 'Street score', temp_mean: 'Temperature'}[datum.dimension]", as: "dim" }
+  ],
+  width: "container", height: 220,
+  mark: { type: "tick", opacity: 0.6, thickness: 2 },
+  encoding: {
+    x: { field: "slope", type: "quantitative", title: "Slope, % of lap time per sd (positive = relatively slower)" },
+    y: { field: "dim", type: "nominal", title: null },
+    tooltip: [{ field: "id", title: "Car-season" }, { field: "dim", title: "Dimension" },
+              { field: "slope", title: "Slope (%)", format: ".2f" }, { field: "laps", title: "Laps" }]
+  }
+});
+</script><p>Car-seasons with at least 500 laps.</p><h2 id="Convergence"><a class="docs-heading-anchor" href="#Convergence">Convergence</a><a id="Convergence-1"></a><a class="docs-heading-anchor-permalink" href="#Convergence" title="Permalink"></a></h2><p>All four chains converge to one mode: τ&lt;sub&gt;δ&lt;/sub&gt; = 4.03 and lap noise σ = 0.521 % in every chain, with no divergences. They sampled at the same tree depth (about 7.6, 220–233 leapfrog steps per draw) and the same step size (0.038–0.039). The driver, car-season, peak and race-walk levels mix most slowly (bulk ESS 310–380 from 4,000 draws). The shortfall, tyre, start, circuit and field-pace terms all have an ESS above 1,000. The first full fit with these terms diverged on nearly every iteration, because the field pace moved the clean-lap edge through the shortfall. With the edge set by the base shortfall only, it didn&#39;t diverge at all (<a href="https://github.com/aleccrowell/diomedes/issues/113">#113</a>). The table gives the chains&#39; scalars.</p><div id="laps-modes"></div>
+<script>
+fetch(documenterBaseURL + "/assets/data/laps/manifest.json").then(r => r.json()).then(m => {
+  if (!m.modes) return;
+  const f = (x, d) => (x === null || x === undefined) ? "–" : Number(x).toFixed(d);
+  let h = "<table><thead><tr><th>Mode</th><th>Chains</th><th>τ<sub>δ</sub></th><th>Lap noise σ (%)</th>" +
+          "<th>Lost-time lap probability</th><th>Lost-time lap mean (%)</th><th>Mean log density</th>" +
+          "<th>Max R-hat within mode</th></tr></thead><tbody>";
+  for (const md of m.modes) {
+    h += `<tr><td>${md.label}</td><td>${md.chains.join(", ")}</td><td>${f(md.scalars.tau_delta, 2)}</td>` +
+         `<td>${f(md.scalars.sigma, 3)}</td><td>${f(md.scalars.pi_base, 3)}</td><td>${f(md.scalars.lambda_base, 2)}</td>` +
+         `<td>${f(md.mean_logjoint, 0)}</td><td>${md.convergence ? f(md.convergence.max_rhat, 3) : "–"}</td></tr>`;
+  }
+  h += "</tbody></table>";
+  const names = { drivers: "Drivers", cars: "Car-seasons", tyremgmt_drivers: "Driver tyre management",
+                  tyremgmt_cars: "Car tyre management", starts_drivers: "Driver starts", starts_cars: "Car starts" };
+  for (const e of (m.effects_by_mode || [])) {
+    h += `<p>Effects, mode ${e.modes}:</p><table><thead><tr><th></th><th>n</th><th>Correlation</th>` +
+         "<th>Largest difference</th><th>Median difference / sd</th><th>Largest difference / sd</th></tr></thead><tbody>";
+    for (const k of Object.keys(names)) {
+      const a = e[k]; if (!a) continue;
+      h += `<tr><td>${names[k]}</td><td>${a.n}</td><td>${f(a.corr, 4)}</td><td>${f(a.max_diff, 3)}</td>` +
+           `<td>${f(a.median_diff_sd, 2)}</td><td>${f(a.max_diff_sd, 2)}</td></tr>`;
+    }
+    h += "</tbody></table>";
+  }
+  document.getElementById("laps-modes").innerHTML = h;
+});
+</script><h2 id="Download-the-data"><a class="docs-heading-anchor" href="#Download-the-data">Download the data</a><a id="Download-the-data-1"></a><a class="docs-heading-anchor-permalink" href="#Download-the-data" title="Permalink"></a></h2><p><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv"><code>vs_race_cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv"><code>vs_race_drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/drivers.csv"><code>drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/cars.csv"><code>cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/age_curve.csv"><code>age_curve.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/peak.csv"><code>peak.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/incidents.csv"><code>incidents.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/modes.csv"><code>modes.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../retirements/">« Retirements</a><a class="docs-footer-nextpage" href="../wrc/">Rallying (WRC) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.20.0 on <span class="colophon-date" title="Sunday 8 November 2026 13:52">Sunday 8 November 2026</span>. Using Julia version 1.13.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

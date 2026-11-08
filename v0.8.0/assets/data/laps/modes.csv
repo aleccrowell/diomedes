@@ -1,0 +1,17 @@
+chain,mode,kept,quantity,label,mean,q05,q95
+1,A,true,tau_delta,Spread of per-race lap-time trends (τ_δ),4.0303,3.7964,4.2789
+1,A,true,sigma,Lap noise σ (%),0.5214,0.5191,0.5238
+1,A,true,pi_base,Lost-time lap probability,0.2005,0.1902,0.2112
+1,A,true,lambda_base,Lost-time lap mean (%),0.8718,0.85,0.8932
+2,A,true,tau_delta,Spread of per-race lap-time trends (τ_δ),4.0347,3.7973,4.297
+2,A,true,sigma,Lap noise σ (%),0.5212,0.5188,0.5235
+2,A,true,pi_base,Lost-time lap probability,0.2007,0.1914,0.2105
+2,A,true,lambda_base,Lost-time lap mean (%),0.872,0.85,0.8933
+3,A,true,tau_delta,Spread of per-race lap-time trends (τ_δ),4.0311,3.7907,4.3194
+3,A,true,sigma,Lap noise σ (%),0.5212,0.5189,0.5237
+3,A,true,pi_base,Lost-time lap probability,0.2008,0.1912,0.2107
+3,A,true,lambda_base,Lost-time lap mean (%),0.8727,0.8502,0.8948
+4,A,true,tau_delta,Spread of per-race lap-time trends (τ_δ),4.0269,3.7954,4.2742
+4,A,true,sigma,Lap noise σ (%),0.5212,0.5188,0.5236
+4,A,true,pi_base,Lost-time lap probability,0.201,0.1908,0.212
+4,A,true,lambda_base,Lost-time lap mean (%),0.8715,0.8509,0.8924
