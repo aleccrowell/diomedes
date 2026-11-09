@@ -843,6 +843,10 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
   driven by cars with ~30 wet laps): a wet walk per works over its seasons on the chassis
   walk's states (`wet_car_walk`), first season N(0, σ0_wet), steps N(0, τ_wws·√gap), centred
   within season, σ0_wet ~ half-N(0, 1), τ_wws ~ half-N(0, 0.5); drivers τ_wetd·(u - mean u).
+  Pooling didn't identify them either (probe 2: τ_wws ≈ 2.5 % per season): the large ones are
+  car-seasons with a few dozen wet laps in mixed races, where a car's wet laps fall at its own
+  stage of the rain, which the lap terms don't see. With `cond.wetcar = false` (`wetdrv`) only
+  the drivers' deviations τ_wetd·(u - mean u) are in.
 """
 @model function lap_effects(d::LapData, mach_counts::Vector{Int}, age_basis, tyres::Bool, slopes::Bool, dev::Bool,
                             lead::Bool, tyre_mgmt::Bool, starts::Bool, age::Bool, circuits::Bool, track::Bool = false,
@@ -1040,6 +1044,10 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         τ_wetd ~ truncated(Normal(0, 1); lower = 0)          # drivers, centred
         u_wetd ~ StdNormalVec(nc)
         wv = wet_join(wet_car_walk(σ0_wet, τ_wws, z_wet, wcw), τ_wetd .* (u_wetd .- mean(u_wetd)))
+    elseif cond.on && cond.wetdev && !cond.wetcar   # drivers' deviations only (`wetdrv`)
+        τ_wetd ~ truncated(Normal(0, 1); lower = 0)
+        u_wetd ~ StdNormalVec(nc)
+        wv = wet_join(0 .* τ_wetd .+ zeros(nm), τ_wetd .* (u_wetd .- mean(u_wetd)))
     elseif cond.on && cond.wetdev   # car-season and driver deviations on wet-tyre laps, centred (#116)
         τ_wet ~ filldist(truncated(Normal(0, 1); lower = 0), 2)
         u_wet ~ StdNormalVec(nm + nc)
@@ -1244,6 +1252,8 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                                 (; σ0_wet = 0.2 + 0.2 * rand(rng), τ_wws = 0.1 + 0.1 * rand(rng),
                                    z_wet = 0.1 .* randn(rng, length(wcw.chassis.prev)), τ_wetd = 0.2 + 0.2 * rand(rng),
                                    u_wetd = 0.1 .* randn(rng, length(d.competitors))) :
+                            cond.on && cond.wetdev && !cond.wetcar ?
+                                (; τ_wetd = 0.2 + 0.2 * rand(rng), u_wetd = 0.1 .* randn(rng, length(d.competitors))) :
                             cond.on && cond.wetdev ? (; τ_wet = 0.1 .+ 0.1 .* rand(rng, 2),
                                                         u_wet = 0.1 .* randn(rng, length(d.machines) + length(d.competitors))) : (;))
     # leave out what the model doesn't sample (no residual with the race walk, no driver start effects)
@@ -1272,7 +1282,8 @@ const FPACE_PARAMS = (:β_fp, :τ_fp, :u_fp, :κ_fp)
 const SHORT_PARAMS = (:τ_sh, :u_sh)
 const COND_PARAMS = (:z_cond,)
 const WETDEV_PARAMS = (:τ_wet, :u_wet)
-const WETPOOL_PARAMS = (:σ0_wet, :τ_wws, :z_wet, :τ_wetd, :u_wetd)
+const WETPOOL_PARAMS = (:σ0_wet, :τ_wws, :z_wet)     # the pooled car part (`wetwalk`)
+const WETDRV_PARAMS = (:τ_wetd, :u_wetd)             # drivers, with `wetwalk` or `wetdrv`
 # block of each shortfall offset (#113): drivers' logit π, car-seasons' logit π, drivers' log λ, car-seasons' log λ
 short_blocks(nc, nm) = vcat(fill(1, nc), fill(2, nm), fill(3, nc), fill(4, nm))
 
@@ -1295,8 +1306,9 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                 (dinc1 || first(p) ∉ (:τ_dinc1, :u_dinc1)) && (big || first(p) ∉ (:a_ρ, :δ_λ2)) &&
                 (ctx.traffic || first(p) !== :η_tr) && (ctx.fpace || first(p) ∉ FPACE_PARAMS) &&
                 (ctx.short || first(p) ∉ SHORT_PARAMS) && (cond.on || first(p) ∉ COND_PARAMS) &&
-                (cond.on && cond.wetdev && !cond.wetpool || first(p) ∉ WETDEV_PARAMS) &&
-                (cond.on && cond.wetdev && cond.wetpool || first(p) ∉ WETPOOL_PARAMS),
+                (cond.on && cond.wetdev && cond.wetcar && !cond.wetpool || first(p) ∉ WETDEV_PARAMS) &&
+                (cond.on && cond.wetdev && cond.wetpool || first(p) ∉ WETPOOL_PARAMS) &&
+                (cond.on && cond.wetdev && (cond.wetpool || !cond.wetcar) || first(p) ∉ WETDRV_PARAMS),
                          [:σ_comp => (1, nothing), :σ_mach => (1, nothing), :σ => (1, nothing),
                           :a_comp => (length(d.competitors), d.competitors), :b_mach => (length(d.machines), d.machines),
                           :μ_γ => (1, nothing), :γ => (length(d.races), d.races), :μ_δ => (1, nothing),

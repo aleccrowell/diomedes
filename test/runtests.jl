@@ -1909,13 +1909,15 @@ end
                 conds = [cnd(false), cnd(true)]
                 cpool = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, true, (;))
                 wcw9 = CarWalks(d9, fc)
+                cdrv = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, false, false, (;))
                 # zero condition effects: the model without them
                 m0 = lap_effects(d9)
-                for c in (conds..., cpool)
+                for c in (conds..., cpool, cdrv)
                     mc = lap_effects(d9; cond = c, cars = fc)
                     θc = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))),
                                c.wetpool ? (; σ0_wet = 0.5, τ_wws = 0.2, z_wet = zeros(length(wcw9.chassis.prev)), τ_wetd = 0.3,
                                               u_wetd = zeros(nc9)) :
+                               !c.wetcar ? (; τ_wetd = 0.3, u_wetd = zeros(nc9)) :
                                c.wetdev ? (; τ_wet = [0.3, 0.4], u_wet = zeros(nm9 + nc9)) : (;))
                     @test Turing.DynamicPPL.loglikelihood(mc, θc) ≈ Turing.DynamicPPL.loglikelihood(m0, θ)
                 end
@@ -1934,12 +1936,13 @@ end
                     xc = Diomedes.center_by(x, wcw9.chassis.season, wcw9.chassis.counts)
                     @test Diomedes.wet_car_walk(0.5, 0.2, z, wcw9) == xc[wcw9.row_ch]
                 end
-                for c in (conds..., cpool), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
+                for c in (conds..., cpool, cdrv), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
                     m = lap_effects(d9; flags..., cars = fc, ctx = cx, cond = c)
                     rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                     rg = NamedTuple(getfield(rdm, :_varname_ranges))
                     @test haskey(rg, :z_cond) && length(rg.z_cond.range) == (cx.short ? 14 : 10) &&
-                          haskey(rg, :u_wet) == (c.wetdev && !c.wetpool) && haskey(rg, :z_wet) == c.wetpool
+                          haskey(rg, :u_wet) == (c.wetdev && c.wetcar && !c.wetpool) && haskey(rg, :z_wet) == c.wetpool &&
+                          haskey(rg, :u_wetd) == (c.wetpool || !c.wetcar)
                     xw = 0.5 .* randn(rng, LDP.dimension(rdm))
                     for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd)
                         haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
