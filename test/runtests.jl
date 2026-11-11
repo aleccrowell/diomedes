@@ -1344,6 +1344,13 @@ end
             m = (5 * 30 + 6 * 40) / 11                                          # b's lap 4 has no temperature
             @test c.tt[ia] ≈ fill((30 - m) / 10, 5) && c.tt[ib .& (d.rows.lap .== 4)] == [0.0] && c.check.time_agrees == 1
             @test_throws ArgumentError LapConditions(d, transform(cond, :event_id => ByRow(_ -> "2019-02") => :event_id), nums)
+            # `wetshr` (#116 option 2): only car-seasons with enough wet-tyre laps (a's car has 3)
+            cs = LapConditions(d, cond, nums; wetdev = true, wetmin = 3)
+            @test cs.wetmin == 3 && cs.wetcars == [d.mach[findfirst(ia)]] && c.wetmin == 0 && isempty(c.wetcars)
+            @test Diomedes.wet_cars(d.mach, c.wet, length(d.machines), 4) == Int[]
+            @test_throws ArgumentError LapConditions(d, cond, nums; wetdev = true, wetmin = 4)       # none has 4
+            @test_throws ArgumentError LapConditions(d, cond, nums; wetmin = 3)                     # needs wetdev
+            @test_throws ArgumentError LapConditions(d, cond, nums; wetdev = true, wetcar = false, wetmin = 3)
         end
         # traffic and field pace (#113): three cars at 90, 91 and 121 s a lap, every car 3%
         # slower on lap 4, so c is caught by a and b. Crossings (laps done): …, c 242 (2),
@@ -1910,16 +1917,37 @@ end
                 cpool = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, true, (;))
                 wcw9 = CarWalks(d9, fc)
                 cdrv = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, false, false, (;))
+                # `wetshr`: deviations only for the car-seasons with at least the median count of wet laps
+                nwet = [count(j -> d9.mach[j] == m && wet[j] > 0, 1:n) for m in 1:nm9]
+                wmin = max(1, round(Int, median(nwet)))
+                wcs = Diomedes.wet_cars(d9.mach, wet, nm9, wmin)
+                @test wcs == findall(>=(wmin), nwet) && 0 < length(wcs) < nm9
+                cshr = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, false, true,
+                                     wmin, wcs, (;))
+                @test Diomedes.wet_scatter([1.0, 2.0], [3, 1], 4) == [2.0, 0.0, 1.0, 0.0]
                 # zero condition effects: the model without them
                 m0 = lap_effects(d9)
-                for c in (conds..., cpool, cdrv)
+                for c in (conds..., cpool, cdrv, cshr)
                     mc = lap_effects(d9; cond = c, cars = fc)
                     θc = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))),
                                c.wetpool ? (; σ0_wet = 0.5, τ_wws = 0.2, z_wet = zeros(length(wcw9.chassis.prev)), τ_wetd = 0.3,
                                               u_wetd = zeros(nc9)) :
                                !c.wetcar ? (; τ_wetd = 0.3, u_wetd = zeros(nc9)) :
+                               c.wetmin > 0 ? (; τ_wetc = 0.2, u_wetc = zeros(length(c.wetcars)), τ_wetd = 0.3, u_wetd = zeros(nc9)) :
                                c.wetdev ? (; τ_wet = [0.3, 0.4], u_wet = zeros(nm9 + nc9)) : (;))
                     @test Turing.DynamicPPL.loglikelihood(mc, θc) ≈ Turing.DynamicPPL.loglikelihood(m0, θ)
+                end
+                # `wetshr` gives the same likelihood as `wetdev` with the same deviations: its car-seasons'
+                # centred within season among themselves, the others 0 (so still centred), drivers centred
+                let uc = randn(rng, length(cshr.wetcars)), ud = randn(rng, nc9)
+                    gw, cn = Diomedes.wet_car_groups(d9, cshr.wetcars)
+                    wvc = zeros(nm9); wvc[cshr.wetcars] = 0.2 .* Diomedes.center_by(uc, gw, cn)
+                    wvd = 0.3 .* (ud .- mean(ud))
+                    @test all(abs.([sum(wvc[d9.mach_season .== k]) for k in eachindex(d9.seasons)]) .< 1e-10)
+                    θ0 = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))))
+                    cdev = LapConditions(cshr.comp, cshr.wet, cshr.tt, cshr.rain, true, true, (;))
+                    @test Turing.DynamicPPL.loglikelihood(lap_effects(d9; cond = cshr), merge(θ0, (; τ_wetc = 0.2, u_wetc = uc, τ_wetd = 0.3, u_wetd = ud))) ≈
+                          Turing.DynamicPPL.loglikelihood(lap_effects(d9; cond = cdev), merge(θ0, (; τ_wet = [1.0, 1.0], u_wet = vcat(wvc, wvd))))
                 end
                 # h against a direct sum
                 cv, wv, c = randn(rng, 10), randn(rng, nm9 + nc9), conds[2]
@@ -1936,15 +1964,16 @@ end
                     xc = Diomedes.center_by(x, wcw9.chassis.season, wcw9.chassis.counts)
                     @test Diomedes.wet_car_walk(0.5, 0.2, z, wcw9) == xc[wcw9.row_ch]
                 end
-                for c in (conds..., cpool, cdrv), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
+                for c in (conds..., cpool, cdrv, cshr), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
                     m = lap_effects(d9; flags..., cars = fc, ctx = cx, cond = c)
                     rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                     rg = NamedTuple(getfield(rdm, :_varname_ranges))
                     @test haskey(rg, :z_cond) && length(rg.z_cond.range) == (cx.short ? 14 : 10) &&
-                          haskey(rg, :u_wet) == (c.wetdev && c.wetcar && !c.wetpool) && haskey(rg, :z_wet) == c.wetpool &&
-                          haskey(rg, :u_wetd) == (c.wetpool || !c.wetcar)
+                          haskey(rg, :u_wet) == (c.wetdev && c.wetcar && !c.wetpool && c.wetmin == 0) &&
+                          haskey(rg, :z_wet) == c.wetpool && haskey(rg, :u_wetd) == (c.wetpool || !c.wetcar || c.wetmin > 0) &&
+                          haskey(rg, :u_wetc) == (c.wetmin > 0) && (c.wetmin == 0 || length(rg.u_wetc.range) == length(c.wetcars))
                     xw = 0.5 .* randn(rng, LDP.dimension(rdm))
-                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd)
+                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd, :τ_wetc)
                         haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
                     end
                     @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]

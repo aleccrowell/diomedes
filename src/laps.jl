@@ -846,7 +846,12 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
   Pooling didn't identify them either (probe 2: τ_wws ≈ 2.5 % per season): the large ones are
   car-seasons with a few dozen wet laps in mixed races, where a car's wet laps fall at its own
   stage of the rain, which the lap terms don't see. With `cond.wetcar = false` (`wetdrv`) only
-  the drivers' deviations τ_wetd·(u - mean u) are in.
+  the drivers' deviations τ_wetd·(u - mean u) are in. With `cond.wetmin > 0` (`wetshr`, #116
+  option 2), only the car-seasons in `cond.wetcars` (≥ `WETSHR_MIN` wet-tyre laps) get one,
+  τ_wetc·(u - season mean u) with τ_wetc ~ half-N(0, `WETSHR_SD`), and the others 0; drivers as
+  with `wetdrv`. A profile of probe 1's likelihood showed why the few-lap ones failed: towards
+  a faster wet limit the likelihood falls slowly (the losses absorb it; nothing absorbs laps
+  faster than the limit), and with ~30 wet laps it is nearly flat there.
 """
 @model function lap_effects(d::LapData, mach_counts::Vector{Int}, age_basis, tyres::Bool, slopes::Bool, dev::Bool,
                             lead::Bool, tyre_mgmt::Bool, starts::Bool, age::Bool, circuits::Bool, track::Bool = false,
@@ -1048,6 +1053,13 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         τ_wetd ~ truncated(Normal(0, 1); lower = 0)
         u_wetd ~ StdNormalVec(nc)
         wv = wet_join(0 .* τ_wetd .+ zeros(nm), τ_wetd .* (u_wetd .- mean(u_wetd)))
+    elseif cond.on && cond.wetdev && cond.wetmin > 0   # car-seasons with enough wet laps only, spread shrunk (`wetshr`)
+        τ_wetc ~ truncated(Normal(0, WETSHR_SD); lower = 0)
+        u_wetc ~ StdNormalVec(length(cond.wetcars))
+        τ_wetd ~ truncated(Normal(0, 1); lower = 0)
+        u_wetd ~ StdNormalVec(nc)
+        gw, cw_n = wet_car_groups(d, cond.wetcars)
+        wv = wet_join(wet_scatter(τ_wetc .* center_by(u_wetc, gw, cw_n), cond.wetcars, nm), τ_wetd .* (u_wetd .- mean(u_wetd)))
     elseif cond.on && cond.wetdev   # car-season and driver deviations on wet-tyre laps, centred (#116)
         τ_wet ~ filldist(truncated(Normal(0, 1); lower = 0), 2)
         u_wet ~ StdNormalVec(nm + nc)
@@ -1254,6 +1266,9 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                                    u_wetd = 0.1 .* randn(rng, length(d.competitors))) :
                             cond.on && cond.wetdev && !cond.wetcar ?
                                 (; τ_wetd = 0.2 + 0.2 * rand(rng), u_wetd = 0.1 .* randn(rng, length(d.competitors))) :
+                            cond.on && cond.wetdev && cond.wetmin > 0 ?
+                                (; τ_wetc = 0.1 + 0.1 * rand(rng), u_wetc = 0.1 .* randn(rng, length(cond.wetcars)),
+                                   τ_wetd = 0.2 + 0.2 * rand(rng), u_wetd = 0.1 .* randn(rng, length(d.competitors))) :
                             cond.on && cond.wetdev ? (; τ_wet = 0.1 .+ 0.1 .* rand(rng, 2),
                                                         u_wet = 0.1 .* randn(rng, length(d.machines) + length(d.competitors))) : (;))
     # leave out what the model doesn't sample (no residual with the race walk, no driver start effects)
@@ -1283,7 +1298,8 @@ const SHORT_PARAMS = (:τ_sh, :u_sh)
 const COND_PARAMS = (:z_cond,)
 const WETDEV_PARAMS = (:τ_wet, :u_wet)
 const WETPOOL_PARAMS = (:σ0_wet, :τ_wws, :z_wet)     # the pooled car part (`wetwalk`)
-const WETDRV_PARAMS = (:τ_wetd, :u_wetd)             # drivers, with `wetwalk` or `wetdrv`
+const WETDRV_PARAMS = (:τ_wetd, :u_wetd)             # drivers, with `wetwalk`, `wetdrv` or `wetshr`
+const WETSHR_PARAMS = (:τ_wetc, :u_wetc)             # car-seasons with enough wet laps (`wetshr`)
 # block of each shortfall offset (#113): drivers' logit π, car-seasons' logit π, drivers' log λ, car-seasons' log λ
 short_blocks(nc, nm) = vcat(fill(1, nc), fill(2, nm), fill(3, nc), fill(4, nm))
 
@@ -1306,9 +1322,10 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                 (dinc1 || first(p) ∉ (:τ_dinc1, :u_dinc1)) && (big || first(p) ∉ (:a_ρ, :δ_λ2)) &&
                 (ctx.traffic || first(p) !== :η_tr) && (ctx.fpace || first(p) ∉ FPACE_PARAMS) &&
                 (ctx.short || first(p) ∉ SHORT_PARAMS) && (cond.on || first(p) ∉ COND_PARAMS) &&
-                (cond.on && cond.wetdev && cond.wetcar && !cond.wetpool || first(p) ∉ WETDEV_PARAMS) &&
+                (cond.on && cond.wetdev && cond.wetcar && !cond.wetpool && cond.wetmin == 0 || first(p) ∉ WETDEV_PARAMS) &&
                 (cond.on && cond.wetdev && cond.wetpool || first(p) ∉ WETPOOL_PARAMS) &&
-                (cond.on && cond.wetdev && (cond.wetpool || !cond.wetcar) || first(p) ∉ WETDRV_PARAMS),
+                (cond.on && cond.wetdev && cond.wetmin > 0 || first(p) ∉ WETSHR_PARAMS) &&
+                (cond.on && cond.wetdev && (cond.wetpool || !cond.wetcar || cond.wetmin > 0) || first(p) ∉ WETDRV_PARAMS),
                          [:σ_comp => (1, nothing), :σ_mach => (1, nothing), :σ => (1, nothing),
                           :a_comp => (length(d.competitors), d.competitors), :b_mach => (length(d.machines), d.machines),
                           :μ_γ => (1, nothing), :γ => (length(d.races), d.races), :μ_δ => (1, nothing),
@@ -1355,6 +1372,7 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :u_wet => (length(d.machines) + length(d.competitors), vcat(d.machines, d.competitors)),
                           :σ0_wet => (1, nothing), :τ_wws => (1, nothing),
                           :z_wet => wcw === nothing ? (0, nothing) : (length(wcw.chassis.prev), wcw.chassis.names),
+                          :τ_wetc => (1, nothing), :u_wetc => (length(cond.wetcars), d.machines[cond.wetcars]),
                           :τ_wetd => (1, nothing), :u_wetd => (length(d.competitors), d.competitors),
                           :τ_dinc1 => (1, nothing), :u_dinc1 => (length(d.competitors), d.competitors)])
 
@@ -1375,7 +1393,8 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                               :τ_cr => 0.01, :τ_co => 0.01, :xs_cr => 0.01, :η_tr => 1e-4, :β_fp => 1e-4,
                               :τ_fp => 0.01, :u_fp => 0.01, :κ_fp => 1e-3, :τ_sh => 0.01, :u_sh => 0.01,
                               :z_cond => 1e-3, :τ_wet => 0.01, :u_wet => 0.01,
-                              :σ0_wet => 0.01, :τ_wws => 0.01, :z_wet => 0.01, :τ_wetd => 0.01, :u_wetd => 0.01)
+                              :σ0_wet => 0.01, :τ_wws => 0.01, :z_wet => 0.01, :τ_wetd => 0.01, :u_wetd => 0.01,
+                              :τ_wetc => 0.01, :u_wetc => 0.01)
 
 """
     lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old = true, tyres_new = tyres_old,

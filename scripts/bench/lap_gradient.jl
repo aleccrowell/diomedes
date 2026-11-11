@@ -14,7 +14,7 @@ using Diomedes, Turing, Statistics, Printf, Random, DataFrames
 const DynamicPPL = Turing.DynamicPPL
 const LogDensityProblems = Turing.LogDensityProblems
 
-terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc", "walk", "works", "big", "rwalk", "nostartdrv", "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv")
+terms = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc", "walk", "works", "big", "rwalk", "nostartdrv", "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr")
 has = any(in(terms), ARGS) ? Set(filter(in(terms), ARGS)) : Set(["notyres", "slopes", "dev"])
 args = filter(a -> a ∉ terms && a ∉ ("recorded", "keepslow"), ARGS)
 m = match(r"^(\d{4})-(\d{4})$", args[1])
@@ -35,8 +35,8 @@ model = lap_effects(d; tyres = "notyres" ∉ has, slopes = "slopes" ∈ has, dev
                           LapContext(d, src(fetch_laps); traffic = "traffic" ∈ has, fpace = "fpace" ∈ has,
                                      short = "short" ∈ has) : LapContext(),
                     cond = "cond" ∈ has ? LapConditions(d, read_lap_conditions(), jolpica_driver_numbers(JolpicaF1(), collect(seasons));
-                                                        wetdev = any(in(has), ("wetdev", "wetwalk", "wetdrv")), wetpool = "wetwalk" ∈ has,
-                                                        wetcar = "wetdrv" ∉ has) : LapConditions())
+                                                        wetdev = any(in(has), ("wetdev", "wetwalk", "wetdrv", "wetshr")), wetpool = "wetwalk" ∈ has,
+                                                        wetcar = "wetdrv" ∉ has, wetmin = "wetshr" ∈ has ? Diomedes.WETSHR_MIN : 0) : LapConditions())
 println("terms: ", join(sort(collect(has)), " "))
 ldf = DynamicPPL.LogDensityFunction(model, DynamicPPL.getlogjoint_internal, DynamicPPL.LinkAll();
                                     adtype = Diomedes.gap_sampler().adtype)
