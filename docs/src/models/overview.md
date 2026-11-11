@@ -15,7 +15,7 @@ the noise.
 | [Gap model](@ref "Gap model: Student-t noise") | finishers, lapped cars as intervals | Student-t(4) or Gaussian | superseded by pace + loss |
 | [Pace + loss](@ref "Pace + loss model") | as the gap model | Gaussian pace noise + exponential incident losses | **the main model**; many optional terms |
 | [Retirement model](@ref) | every start | competing-risks hazards | complements the pace models |
-| [Lap-time model](@ref) | clean laps, F1 1996– | pace + loss, per lap | in development (#12) |
+| [Lap-time model](@ref) | clean laps, F1 1996– (published fit 2011–2026) | pace + loss, per lap, with peak pace and shortfall | published; in development (#116) |
 
 ## Which pace model to use
 

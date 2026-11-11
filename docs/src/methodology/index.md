@@ -19,8 +19,9 @@ cover how to run them.
    and what it found, and how models were compared.
 5. [Retirements and selection bias](@ref): a competing-risks model of
    retirements, and whether dropping them biases the pace effects.
-6. [The lap-time model](@ref): per-lap pace, inferred pit laps, and agreement
-   with the race model.
+6. [The lap-time model](@ref): per-lap pace, peak pace and consistency, traffic
+   and field pace, per-lap conditions, inferred pit laps, and agreement with the
+   race model.
 7. [Limitations](@ref).
 
 Links of the form [#15](https://github.com/aleccrowell/diomedes/issues/15)

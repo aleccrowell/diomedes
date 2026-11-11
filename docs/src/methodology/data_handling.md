@@ -62,7 +62,7 @@ counted 599 retirements with numeric positions as lapped ([#19](https://github.c
 In the Ergast data, retirements are dropped. Whether that biases the effects is
 tested separately (see [Retirements and selection bias](@ref)).
 
-## Jolpica data, 1950–2025
+## Jolpica data, 1950–2026
 
 The current fits use the Jolpica API, Ergast's successor, which continues the
 same tables past 2019 ([#55](https://github.com/aleccrowell/diomedes/issues/55)). Over 1950–2019 it matches the Ergast dump: the same
@@ -83,7 +83,7 @@ laps up to its first gap. Two things change from
   as retirements of unknown cause, through the total hazard with no split
   between causes ([A competing-risks model of retirements](@ref)).
 
-The 1950–2025 race refit also adds retirements from 1996 as partial gaps,
+The race fits since 1950–2025 (the published one is 1950–2026) also add retirements from 1996 as partial gaps,
 measured 3 laps before the car stopped, from lap times (Ergast to 2019, Jolpica
 after).
 
@@ -127,3 +127,10 @@ retirement selection check. They come from Jolpica, like the results (the publis
 lap fits read 1996–2019 from the Ergast dump). Pit stops before 2011 are inferred from lap times
 ([`infer_pit_stops`](@ref)). Over 2011–2019, the inferred stops give the same
 effects as the recorded ones (driver correlation 0.998) ([#12](https://github.com/aleccrowell/diomedes/issues/12)).
+
+Per-lap conditions (tyre compound, track temperature, rain) come from the F1
+timing data, through `scripts/conditions/fetch_conditions.py` ([`read_lap_conditions`](@ref)):
+FastF1's live-timing mirror for 2021–22 and OpenF1 from 2023. Earlier seasons
+aren't available: the official archive needs an account. They join the Jolpica laps
+by car number ([`jolpica_driver_numbers`](@ref)); 99.7 % of laps match, with lap times
+agreeing within 0.5 s on ≥ 99.97 % of them ([#116](https://github.com/aleccrowell/diomedes/issues/116)).

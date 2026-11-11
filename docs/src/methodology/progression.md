@@ -22,7 +22,7 @@ before the red-flag correction ([#19](https://github.com/aleccrowell/diomedes/is
 
 The circuit and walk rows were fitted to F1 1950–2025 with retirements from
 1996 as partial gaps, each compared with the row above. The last row was fitted
-to 1950–2026 (the 17 races of 2026 so far) and compared with the walk fit on the
+to 1950–2026 (the 17 races of 2026 run when it was fitted) and compared with the walk fit on the
 17,063 rows the two share, so the comparison is approximate: each fit's own
 extra rows also inform its parameters.
 The circuit slopes and track terms were added together and their gain isn't

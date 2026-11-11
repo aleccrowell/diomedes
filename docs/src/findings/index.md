@@ -1,7 +1,7 @@
 # Findings
 
 Results of the best race-time model so far, fitted to every classified F1
-finish from 1950 to 2026 (2026 through the 17 races run so far), from the
+finish from 1950 to 2026 (2026 through the 17 races run when it was fitted), from the
 Jolpica API. Lapped cars enter as intervals,
 or at their exact gap where their own time is recorded (2023 on), and
 retirements from 1996 as partial gaps.
