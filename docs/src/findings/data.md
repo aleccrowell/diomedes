@@ -10,7 +10,7 @@ posterior intervals (`q05`, `q95`). `sd` is the posterior standard deviation.
 ## Race-model files
 
 ```@raw html
-<p>F1 1950–2026 (Jolpica API; 2026 through the 17 races run so far), best pace + loss model. The manifest also records
+<p>F1 1950–2026 (Jolpica API; 2026 through the 17 races run when it was fitted), best pace + loss model. The manifest also records
 the modes the chains settled in, convergence by group, and how far the effects
 differ between modes.
 <a class="diomedes-data" data-path="assets/data/race/manifest.json">manifest.json</a></p>
@@ -123,6 +123,21 @@ at the base rates (a dry race, a car with zero shortfall offsets)</td></tr>
 <td><code>lap_mean</code>, <code>lap_sd</code>: lap model (mean pace); <code>race_mean</code>, <code>race_sd</code>: race model (whole career)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv">vs_race_cars.csv</a></td><td>car-season in both models</td>
 <td><code>lap_mean</code>, <code>lap_sd</code>, <code>race_mean</code>, <code>race_sd</code>, <code>constructor</code>, <code>season</code>, <code>laps</code></td></tr>
+</tbody></table>
+```
+
+### Lap conditions files
+
+```@raw html
+<p>The 2021–2026 lap fit with per-lap conditions (<a href="https://github.com/aleccrowell/diomedes/issues/116">#116</a>): tyre compound, track temperature and rain from the F1 timing data (FastF1 for 2021–22, OpenF1 from 2023).
+<a class="diomedes-data" data-path="assets/data/laps_conditions/manifest.json">manifest.json</a></p>
+<table>
+<thead><tr><th>File</th><th>One row per</th><th>Columns</th></tr></thead>
+<tbody>
+<tr><td><a class="diomedes-data" data-path="assets/data/laps_conditions/conditions.csv">conditions.csv</a></td><td>term</td>
+<td><code>term</code> (the fit's parameter name), <code>group</code>, <code>label</code>, <code>unit</code>; <code>mean</code>, <code>sd</code>: the compound offsets against SOFT, compound stint slopes, track temperature and rain on the pace, wet tyres and rain on the shortfall, and for reference the spread of the wet deviations, the field-pace slope and the lap noise</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/laps_conditions/wet_drivers.csv">wet_drivers.csv</a></td><td>driver</td>
+<td><code>id</code>, <code>name</code>, <code>wet_laps</code>: clean laps on intermediate or wet tyres; <code>mean</code>, <code>sd</code>: deviation on those laps from the driver's dry pace, % of lap time, centred across drivers (negative = better in the wet). Includes the car's wet performance</td></tr>
 </tbody></table>
 ```
 

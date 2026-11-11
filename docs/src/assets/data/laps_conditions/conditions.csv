@@ -1,0 +1,18 @@
+term,group,label,unit,mean,sd
+cond[MEDIUM],compound,MEDIUM against SOFT,% of lap time,0.1567,0.0111
+cond[HARD],compound,HARD against SOFT,% of lap time,0.2351,0.0111
+cond[INTERMEDIATE],compound,INTERMEDIATE against SOFT,% of lap time,7.3193,0.1178
+cond[WET],compound,WET against SOFT,% of lap time,14.1849,0.2499
+cond[stint·MEDIUM],stint,"MEDIUM stint slope, on top of the shared curve",% per 10 laps,-0.0614,0.0082
+cond[stint·HARD],stint,"HARD stint slope, on top of the shared curve",% per 10 laps,-0.0989,0.0081
+cond[stint·INTERMEDIATE],stint,"INTERMEDIATE stint slope, on top of the shared curve",% per 10 laps,-0.9382,0.026
+cond[stint·WET],stint,"WET stint slope, on top of the shared curve",% per 10 laps,-3.5055,0.1653
+cond[track_temp],pace,Track temperature (lap against race mean),% per 10 °C,0.2562,0.0213
+cond[rain],pace,"Rain falling, on the peak",% of lap time,-0.1963,0.0287
+cond[κ_wet_π],shortfall,"Wet tyres, on how often laps fall short",logit,1.2515,0.722
+cond[κ_wet_λ],shortfall,"Wet tyres, on how far laps fall short",log,-0.8209,0.049
+cond[κ_rain_π],shortfall,"Rain falling, on how often laps fall short",logit,2.0199,0.1843
+cond[κ_rain_λ],shortfall,"Rain falling, on how far laps fall short",log,0.4121,0.0345
+τ_wetd,wet skill,Spread of drivers' wet-tyre deviations,% of lap time,0.725,0.1683
+β_fp,field pace,Field-pace slope,per % of field pace,0.1313,0.0026
+σ,noise,Lap noise σ,% of lap time,0.4911,0.002

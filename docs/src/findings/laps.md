@@ -1,7 +1,7 @@
 # Lap times
 
 Results of the lap-time model (see [The lap-time model](@ref)), fitted to
-green-flag laps from 2011 to the 2026 races run so far (Jolpica lap times,
+green-flag laps from 2011 to the 2026 races run when it was fitted (Jolpica lap times,
 recorded pit stops). Besides driver and car effects it has:
 - each driver's **peak pace** and how often and how far their laps fall short of
   it ([#113](https://github.com/aleccrowell/diomedes/issues/113), [below](#Peak-pace-and-consistency));
@@ -22,7 +22,11 @@ recorded pit stops). Besides driver and car effects it has:
   big incident losses, and each team's form as a walk from race to race in place
   of a fixed car-season effect.
 
-It is **in development** ([#113](https://github.com/aleccrowell/diomedes/issues/113)).
+It has no tyre compound or weather terms: those are known only from 2021, and a
+separate 2021–2026 fit with them is [below](#Track-conditions-(2021–2026)).
+
+It is **in development**: per-lap conditions are in progress
+([#116](https://github.com/aleccrowell/diomedes/issues/116), [results so far](#Track-conditions-(2021–2026))).
 Its four chains converge to a single mode ([below](#Convergence)). The previous
 fit, 1996–2025 without the #108 and #113 terms, is described in
 [#66](https://github.com/aleccrowell/diomedes/issues/66) and
@@ -86,7 +90,7 @@ diomedesFigure("fig-laps-cars", {
   encoding: {
     x: { field: "race_mean", type: "quantitative", title: "Race model: car effect (%)" },
     y: { field: "lap_mean", type: "quantitative", title: "Lap model: car effect (%)" },
-    // a gradient legend: 30 seasons as separate entries would run past the plot's height
+    // a gradient legend: 16 seasons as separate entries would run past the plot's height
     color: { field: "season", type: "quantitative", title: "Season", scale: { scheme: "viridis" },
              legend: { format: "d", gradientLength: 300 } },
     tooltip: [{ field: "team", title: "Constructor" }, { field: "season", title: "Season" },
@@ -167,9 +171,10 @@ not how far: the mean size of a shortfall stays between 0.7 % and 1.1 %. Car-sea
 vary more than drivers in both.</p>
 <p>A caveat: a shortfall the driver chose and one they couldn't avoid look the same.
 Beyond the traffic and lead terms, a car managing its pace (holding a position,
-saving tyres or fuel) reads as falling short. And wet and mixed laps still go
-mostly to the shortfall rather than to a slower limit, so drivers with more wet
-laps may look less consistent than they are
+saving tyres or fuel) reads as falling short. And this fit has no tyre or weather terms, so
+wet and mixed laps go mostly to the shortfall rather than to a slower limit, and
+drivers with more wet laps may look less consistent than they are. The 2021–2026
+fit with those terms is <a href="#Track-conditions-(2021–2026)">below</a>
 (<a href="https://github.com/aleccrowell/diomedes/issues/116">#116</a>).</p>
 ```
 
@@ -204,6 +209,127 @@ diomedesFigure("fig-laps-peak", {
 Drivers with at least 2,000 clean laps, at the base rates: a dry race, with a car
 whose own shortfall offsets are zero.
 
+## Track conditions (2021–2026)
+
+From 2021 the F1 timing data says which tyre compound each lap was run on, the
+track temperature and whether rain was falling
+([#116](https://github.com/aleccrowell/diomedes/issues/116)). A second fit adds these
+to the model above, over 2021–2026 only. It has every term of the main fit, plus:
+- an offset for each compound against the SOFT, and a stint slope per compound on
+  top of the shared stint curve;
+- a slope on track temperature, against the race's mean;
+- rain on the peak, and wet tyres and rain on how often and how far laps fall
+  short;
+- each driver's deviation on wet-tyre laps (intermediates and wets) from their dry
+  pace.
+
+Its conditions terms and wet deviations converge (R-hat ≤ 1.015, bulk ESS ≥ 400).
+Its driver and car-season levels don't yet (R-hat up to 1.09). They mix slowly
+along the ridge between a dominant driver and their car: Verstappen against Red Bull
+in 2023, Norris and Piastri against McLaren in 2025. So the rankings on this page
+stay on the 2011–2026 fit, and this section shows only the conditions results.
+
+```@raw html
+<div id="manifest-laps-conditions"></div>
+<script>
+fetch(documenterBaseURL + "/assets/data/laps_conditions/manifest.json").then(r => r.json()).then(m => {
+  const g = m.convergence.groups, w = g["wet drv"], s = g["scalars"];
+  document.getElementById("manifest-laps-conditions").innerHTML =
+    `<p><small>Fit <code>${m.fit}</code>. Data: ${m.data}. Conditions: ${m.conditions}. Convergence: scalars max
+     R-hat ${s.max_rhat} (min bulk ESS ${s.min_ess}), wet deviations ${w.max_rhat} (${w.min_ess}); over every
+     group ${m.convergence.max_rhat} (${m.convergence.min_ess}), ${m.convergence.divergences} divergence(s).
+     Exported ${m.date}.</small></p>`;
+});
+</script>
+```
+
+**Compounds.** Against the SOFT, a MEDIUM lap is 0.16 % slower and a HARD lap
+0.24 % slower, at the same stint age. Both lose less pace through a stint than the
+SOFT, by 0.06 % and 0.10 % per 10 laps. An INTERMEDIATE lap is 7.3 % slower than a
+dry SOFT lap and a WET lap 14.2 % slower. On those tyres laps get faster through
+the stint (−0.9 % and −3.5 % per 10 laps). That is probably mostly the track
+drying or the rain easing, not the tyres.
+
+**Temperature and rain.** A track 10 °C hotter than the race's mean makes the lap
+0.26 % slower. Rain falling doesn't slow the peak beyond the tyres (−0.20 %); it
+goes to the shortfall instead. In rain, laps fall short of the peak about 7.5
+times as often (logit +2.0) and by 1.5 times as much. On wet tyres laps fall short
+by less (×0.44), as the tyres' own offsets already carry the slower limit, and how
+often they fall short is barely identified (logit +1.3 ± 0.7).
+
+**The field's pace.** The slope of a lap on the field's pace that lap stays at
+0.13 with these terms in. Conditions, then, don't explain why the field pace moves
+a driver's limit only weakly. The main fit's slope (0.17) is over 2011–2026, so the
+two aren't like for like.
+
+```@raw html
+<div id="laps-conditions-table"></div>
+<script>
+fetch(documenterBaseURL + "/assets/data/laps_conditions/conditions.csv").then(r => r.text()).then(t => {
+  const rows = t.trim().split("\n").slice(1).map(l => {
+    const c = l.match(/("[^"]*"|[^,]+)/g).map(x => x.replace(/^"|"$/g, ""));
+    return { group: c[1], label: c[2], unit: c[3], mean: Number(c[4]), sd: Number(c[5]) };
+  });
+  let h = "<table><thead><tr><th>Term</th><th>Mean</th><th>sd</th><th>Unit</th></tr></thead><tbody>";
+  for (const r of rows) h += `<tr><td>${r.label}</td><td>${r.mean.toFixed(3)}</td><td>${r.sd.toFixed(3)}</td><td>${r.unit}</td></tr>`;
+  document.getElementById("laps-conditions-table").innerHTML = h + "</tbody></table>";
+});
+</script>
+```
+
+### Wet-weather skill
+
+```@raw html
+<p>The wet deviations are centred across drivers. A negative one means the driver
+loses less pace on wet tyres than the others do, relative to their own dry pace.
+They spread with an sd of 0.73 % (± 0.17). Over the
+<span class="diomedes-stat" data-path="assets/data/laps_conditions/wet_drivers.csv" data-stat="count" data-filter="wet_laps>=100" data-format="int">…</span>
+drivers with at least 100 wet laps, they run from about −0.66 % (Magnussen, Norris, Vettel,
+Verstappen) to +0.85 % (Albon). 15 of the 21 differ from zero by more than
+1.645 sd.</p>
+```
+
+Read them with three caveats:
+- **They include the car.** Car-seasons' own wet deviations couldn't be identified:
+  in both probes, 2023 cars with 30–50 wet laps, all from two mixed races, came out
+  several % faster or slower in the wet. So a driver's deviation also carries how
+  well their car worked in the wet. Norris and Piastri share a McLaren.
+- **Few races.** Wet-tyre laps are 4.7 % of the laps, from 18 races, so
+  one race goes a long way.
+- **Wet tyres, not rain.** The deviation is on intermediate and wet-tyre laps. A
+  damp track on slicks counts as dry.
+
+```@raw html
+<div id="fig-laps-wet" class="diomedes-figure"></div>
+<script>
+diomedesFigure("fig-laps-wet", {
+  data: { url: "assets/data/laps_conditions/wet_drivers.csv",
+          format: { type: "csv", parse: { wet_laps: "number", mean: "number", sd: "number" } } },
+  transform: [{ filter: "datum.wet_laps >= 100" },
+              { calculate: "datum.mean - 1.645 * datum.sd", as: "lo" },
+              { calculate: "datum.mean + 1.645 * datum.sd", as: "hi" }],
+  width: "container", height: { step: 18 },
+  encoding: {
+    y: { field: "name", type: "nominal", title: null, sort: { field: "mean", order: "ascending" } },
+    tooltip: [{ field: "name", title: "Driver" }, { field: "wet_laps", title: "Wet-tyre laps" },
+              { field: "mean", title: "Wet deviation (%)", format: ".2f" },
+              { field: "sd", title: "sd", format: ".2f" }]
+  },
+  layer: [
+    { mark: { type: "rule", opacity: 0.6 },
+      encoding: { x: { field: "lo", type: "quantitative",
+                       title: "Wet-tyre deviation, % of lap time (negative = better in the wet)" },
+                  x2: { field: "hi" } } },
+    { mark: { type: "point", filled: true, size: 50 },
+      encoding: { x: { field: "mean", type: "quantitative" } } }
+  ]
+});
+</script>
+```
+
+Drivers with at least 100 wet-tyre laps, 2021–2026: posterior mean and ±1.645 sd
+(about a 90 % interval).
+
 ## The shape of a career on laps
 
 The population age curve on clean laps: how pace changes with age for the
@@ -211,7 +337,7 @@ average driver, in % of lap time (negative = faster), with a 90% band. As in the
 race model ([Careers](careers.md)), only its **shape** is identified: it has no
 constant or linear part, because those can't be told apart from the drivers'
 career slopes and the car-seasons. Read the bends, not the slope. Pace improves
-steeply through the late teens, by about 0.35 % from 17 to 21, then stays within
+steeply through the late teens, by about 0.40 % from 17 to 21, then stays within
 about ±0.06 % from 21 to 33. From 34 on it jumps from one year to the next:
 each age there rests on a handful of drivers (Alonso, Räikkönen, Hamilton,
 Button), so it mostly follows their seasons, and it shows no clear decline.
@@ -328,5 +454,5 @@ fetch(documenterBaseURL + "/assets/data/laps/manifest.json").then(r => r.json())
 ## Download the data
 
 ```@raw html
-<p><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv"><code>vs_race_cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv"><code>vs_race_drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/drivers.csv"><code>drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/cars.csv"><code>cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/age_curve.csv"><code>age_curve.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/peak.csv"><code>peak.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/incidents.csv"><code>incidents.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/modes.csv"><code>modes.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
+<p><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv"><code>vs_race_cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv"><code>vs_race_drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/drivers.csv"><code>drivers.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/cars.csv"><code>cars.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/age_curve.csv"><code>age_curve.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/peak.csv"><code>peak.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/incidents.csv"><code>incidents.csv</code></a>, <a class="diomedes-data" data-path="assets/data/laps/modes.csv"><code>modes.csv</code></a>; from the conditions fit, <a class="diomedes-data" data-path="assets/data/laps_conditions/conditions.csv"><code>conditions.csv</code></a> and <a class="diomedes-data" data-path="assets/data/laps_conditions/wet_drivers.csv"><code>wet_drivers.csv</code></a>. Columns are described in <a href="../data/">Data downloads</a>.</p>
 ```
