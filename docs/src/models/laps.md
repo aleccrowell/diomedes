@@ -89,7 +89,12 @@ y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁[era]
   - `wetdrv`: each driver's centred deviation on intermediate and wet-tyre laps.
     The car-season deviations (`wetdev`, or `wetwalk` pooled through a wet walk
     per works) are kept for reference: in both probes they weren't identified, with
-    2023 cars of 30–50 wet laps from two mixed races coming out several % off.
+    2023 cars of 30–50 wet laps from two mixed races coming out several % off;
+  - `wetshr`: drivers' deviations as with `wetdrv`, plus car-season deviations for
+    the car-seasons with at least 100 wet-tyre laps only (31 of 61 over 2021–2026),
+    centred within season, spread ~ half-N(0, 0.5). A likelihood profile showed why
+    the few-lap ones failed: towards a faster wet limit the losses absorb the
+    difference, so with ~30 wet laps the likelihood is nearly flat there (#116).
 - Driver and car-season effects are centred as in the race model. Every term is
   centred within its race, so γ is the race's mean lap.
 
