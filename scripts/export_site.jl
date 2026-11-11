@@ -3,6 +3,7 @@
 #   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc] [data=jolpica1950-2026+partial]
 #   julia --project scripts/export_site.jl retire [prefix=retire]
 #   julia --project scripts/export_site.jl laps [tag=laps_2011-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_keepslow] [source=jolpica]
+#   julia --project scripts/export_site.jl laps_conditions [tag=laps_2021-2026_recorded_…_short_cond_wetdrv_keepslow]
 #   julia --project scripts/export_site.jl wrc [model=pl_dur_rw_kappa_cdrv_tdrv_fgam]
 #
 # Run from the repository root with the fits in output/. Each mode writes compact
@@ -675,6 +676,57 @@ function export_laps(tag; source = nothing)
     println("wrote $dir")
 end
 
+# laps_conditions: the per-lap conditions terms (#116) of a 2021-on lap fit with `cond`
+# (scripts/lap_fit.jl … cond wetdrv combine), published beside the main lap fit, whose
+# rankings stay on the site. Writes conditions.csv (the shared condition effects and the
+# scales they are read against, mean and sd from the combine output, saved as
+# output/<tag>_combine.txt) and wet_drivers.csv (drivers' wet-tyre deviations).
+const COND_LABELS = [
+    ("cond[MEDIUM]", "compound", "MEDIUM against SOFT", "% of lap time"),
+    ("cond[HARD]", "compound", "HARD against SOFT", "% of lap time"),
+    ("cond[INTERMEDIATE]", "compound", "INTERMEDIATE against SOFT", "% of lap time"),
+    ("cond[WET]", "compound", "WET against SOFT", "% of lap time"),
+    ("cond[stint·MEDIUM]", "stint", "MEDIUM stint slope, on top of the shared curve", "% per 10 laps"),
+    ("cond[stint·HARD]", "stint", "HARD stint slope, on top of the shared curve", "% per 10 laps"),
+    ("cond[stint·INTERMEDIATE]", "stint", "INTERMEDIATE stint slope, on top of the shared curve", "% per 10 laps"),
+    ("cond[stint·WET]", "stint", "WET stint slope, on top of the shared curve", "% per 10 laps"),
+    ("cond[track_temp]", "pace", "Track temperature (lap against race mean)", "% per 10 °C"),
+    ("cond[rain]", "pace", "Rain falling, on the peak", "% of lap time"),
+    ("cond[κ_wet_π]", "shortfall", "Wet tyres, on how often laps fall short", "logit"),
+    ("cond[κ_wet_λ]", "shortfall", "Wet tyres, on how far laps fall short", "log"),
+    ("cond[κ_rain_π]", "shortfall", "Rain falling, on how often laps fall short", "logit"),
+    ("cond[κ_rain_λ]", "shortfall", "Rain falling, on how far laps fall short", "log"),
+    ("τ_wetd", "wet skill", "Spread of drivers' wet-tyre deviations", "% of lap time"),
+    ("β_fp", "field pace", "Field-pace slope", "per % of field pace"),
+    ("σ", "noise", "Lap noise σ", "% of lap time")]
+function export_laps_conditions(tag)
+    dir = joinpath(OUT, "laps_conditions")
+    mkpath(dir)
+    log = "output/$(tag)_combine.txt"
+    sc = Dict{String,Tuple{Float64,Float64}}()
+    for l in readlines(log)
+        m = match(r"^(\S+?)\s*(-?[\d.]+(?:e-?\d+)?) ± ([\d.]+(?:e-?\d+)?)\s*$", l)
+        m === nothing || (sc[m[1]] = (parse(Float64, m[2]), parse(Float64, m[3])))
+    end
+    missing_terms = [k for (k, _, _, _) in COND_LABELS if !haskey(sc, k)]
+    isempty(missing_terms) || error("not in $log: $(join(missing_terms, ", ")) (a fit with cond, short and wetdrv?)")
+    CSV.write(joinpath(dir, "conditions.csv"),
+              DataFrame([(; term = k, group = g, label = lab, unit = u, mean = round(sc[k][1]; digits = 4),
+                            sd = round(sc[k][2]; digits = 4)) for (k, g, lab, u) in COND_LABELS]))
+    w = round_floats!(CSV.read("output/$(tag)_wet_drivers.csv", DataFrame))
+    CSV.write(joinpath(dir, "wet_drivers.csv"), rename!(w, :driver => :id))
+    m = match(r"^laps_(\d{4})-(\d{4})_(recorded|inferred)", tag)
+    m === nothing && error("not a lap fit tag: $tag")
+    write_manifest(dir, (; model = "lap_effects with per-lap conditions (compound, track temperature, rain) and drivers' wet-tyre deviations",
+                         fit = tag,
+                         data = "F1 $(m[1])–$(m[2]) clean laps (Jolpica lap times, $(m[3]) pit stops), conditions from FastF1 (2021–2022) and OpenF1 (2023 on): " *
+                                inner(first(readlines(log))),
+                         conditions = strip(readlines(log)[2]),
+                         convergence = log_convergence(log),
+                         exported_by = "scripts/export_site.jl laps_conditions"))
+    println("wrote $dir")
+end
+
 function export_wrc(model)
     dir = joinpath(OUT, "wrc")
     mkpath(dir)
@@ -700,8 +752,10 @@ elseif mode == "retire"
     export_retire(get(ARGS, 2, "retire_jolpica1950-2025"))
 elseif mode == "laps"
     export_laps(get(ARGS, 2, "laps_2011-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_keepslow"); source = get(ARGS, 3, "jolpica"))
+elseif mode == "laps_conditions"
+    export_laps_conditions(get(ARGS, 2, "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_cond_wetdrv_keepslow"))
 elseif mode == "wrc"
     export_wrc(get(ARGS, 2, "pl_dur_rw_kappa_cdrv_tdrv_fgam"))
 else
-    error("unknown mode $mode: race, retire, laps or wrc")
+    error("unknown mode $mode: race, retire, laps, laps_conditions or wrc")
 end

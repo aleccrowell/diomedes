@@ -18,8 +18,17 @@ them with `julia --project scripts/<name>.jl ...`.
 | `career_slopes.jl` | Drivers with the largest career slopes |
 | `retire_fit.jl` | Fits the retirement model and writes reliability and incident tables |
 | `selection_check.jl` | Whether dropping retirements biases the pace effects |
-| `lap_fit.jl` | Fits the lap-time model, checkpointed, optionally warm-started |
+| `lap_fit.jl` | Fits the lap-time model, checkpointed, optionally warm-started; flags and `key=value` options in any order, unknown ones are errors ([#114](https://github.com/aleccrowell/diomedes/issues/114)) |
+| `peak_check.jl`, `context_check.jl` | Checks of the peak-pace and lap-context (traffic, field pace) data ([#113](https://github.com/aleccrowell/diomedes/issues/113)) |
+| `conditions/fetch_conditions.py` | Fetches per-lap compound, track temperature and rain (FastF1 2021–22, OpenF1 2023 on) to `data/conditions/` ([#116](https://github.com/aleccrowell/diomedes/issues/116)) |
+| `walk_report.jl` | Chassis and engine walk states of a fit |
+| `pareto_k_rows.jl`, `pareto_k_summary.jl` | Rows with high Pareto k in a PSIS-LOO comparison |
+| `compare_common_rows.jl` | PSIS-LOO on the rows two fits share |
+| `fetch_jolpica.jl`, `gap_data.jl` | Fetch and cache Jolpica data; build the race-model data sets |
+| `cars/`, `circuits/` | Build the car and circuit reference tables |
+| `bench/` | Gradient benchmarks and sampler probes (e.g. `probe_mixing.jl`: per-chain ESS and R-hat of the hardest quantities) |
+| `run_detached.sh` | Starts a long fit detached and records its PID |
 | `lap_compare.jl` | Lap-model fits against each other or the race model |
-| `export_site.jl` | Exports posterior summaries of a fitted race model for the site's Findings pages (`docs/src/assets/data/`) |
+| `export_site.jl` | Exports posterior summaries of the race, lap, lap-conditions, retirement and WRC fits for the site's Findings pages (`docs/src/assets/data/`) |
 
 Model names (`pl_dur_rw_kappa`, ...) are parsed by [`model_spec`](@ref).

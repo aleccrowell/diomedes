@@ -22,6 +22,9 @@ race model. The current fit (2011–2026, recorded pit stops;
 - **traffic**: shared effects of the gap to the car ahead on track (dirty air),
   of lapped cars ahead and blue flags, of a car close behind on the same lap
   (defending), and of leading by over 5 s (cruising), from cumulative lap times;
+- **conditions**, in a separate 2021–2026 fit only
+  ([#116](https://github.com/aleccrowell/diomedes/issues/116)): the tyre compound, track
+  temperature and rain on each lap, and drivers' deviations on wet tyres;
 - **field pace**: the field's median lap, smoothed over neighbouring laps, beyond
   the race's mean and trend, with a slope per car-season, for conditions that change within a race (a drying track, rain
   arriving). It also moves the shortfall's probability and size, but not the edge;
@@ -79,7 +82,7 @@ slope of lap-model driver effects on race-model ones stayed about 0.41 over
 
 ## Status
 
-This model is in development; see [#113](https://github.com/aleccrowell/diomedes/issues/113) for the current state.
+This model is in development. The published fit has the [#108](https://github.com/aleccrowell/diomedes/issues/108) and [#113](https://github.com/aleccrowell/diomedes/issues/113) terms; per-lap conditions are in progress in [#116](https://github.com/aleccrowell/diomedes/issues/116).
 
 - **Pit laps can be inferred from lap times.** Over 2011–2019, excluding
   inferred pit laps instead of Ergast's recorded ones gives the same effects:
@@ -115,3 +118,12 @@ This model is in development; see [#113](https://github.com/aleccrowell/diomedes
   unrelated. The field pace moves the edge only weakly (slope 0.17, where 1 would
   mean conditions slow the limit fully), and wet and mixed laps go mostly to the
   shortfall ([#116](https://github.com/aleccrowell/diomedes/issues/116)).
+- **2021–2026 with per-lap conditions** ([#116](https://github.com/aleccrowell/diomedes/issues/116)).
+  Tyre compound, track temperature and rain from the F1 timing data, and drivers'
+  deviations on wet tyres. INTERMEDIATE laps are 7.3 % and WET laps 14.2 % slower
+  than SOFT ones. Rain goes to the shortfall rather than the peak. Drivers' wet
+  deviations spread with an sd of 0.73 %, but carry their car's wet performance:
+  the cars' own couldn't be identified from so few wet races. The field-pace slope
+  stays at 0.13 with these terms in. The conditions terms converge; the driver and
+  car levels don't yet (R-hat 1.08–1.09), so the rankings stay on the 2011–2026 fit
+  ([results](@ref "Track conditions (2021–2026)")).

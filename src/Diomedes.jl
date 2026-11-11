@@ -61,6 +61,7 @@ include("retirement.jl")
 include("partial.jl")
 include("laps.jl")
 include("lapcontext.jl")
+include("lapconditions.jl")
 
 export RESULT_SCHEMA, empty_results, validate_results, LAP_SCHEMA, PIT_SCHEMA, fetch_laps, fetch_pit_stops
 export DataSource, fetch_results, ErgastCSV, JolpicaF1, WRCTiming, wrc_top_tiers, wrc_tier, wrc_machine_key
@@ -73,7 +74,7 @@ export paceloss_effects, fit_paceloss, LossCovariates, pointwise_loglik, identif
 export kfold_folds, subset_gaps, heldout_loglik, elpd_rows
 export LapData, prepare_laps, infer_pit_stops, lap_effects, fit_laps, lap_warm_start, lap_warm_sampler, circuit_table,
        RaceCircuits, CircuitRows, circuit_slopes, circuit_offsets, car_table, CarWalks, WalkStates, car_walk_states, RaceWalk
-export LapTraffic, field_pace, LapContext
+export LapTraffic, field_pace, LapContext, LapConditions, read_lap_conditions, jolpica_driver_numbers, COMPOUNDS
 export ergast_cumulative_laps, cumulative_laps, partial_gaps, with_partial_rows, partial_mask
 export RETIRE_CAUSES, retirement_cause, RetireData, prepare_retirements, retirement_effects, fit_retirement
 

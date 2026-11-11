@@ -20,8 +20,9 @@
   Pareto k > 0.7, which makes PSIS-LOO less reliable. Grouped K-fold has
   confirmed the era-term ranking, but hasn't been run on the latest terms
   ([#18](https://github.com/aleccrowell/diomedes/issues/18)).
-- **In-season development is linear,** one trend per car-season. A random walk
-  over rounds is not modelled ([#14](https://github.com/aleccrowell/diomedes/issues/14)).
+- **In-season development is linear in the race model,** one trend per
+  car-season ([#14](https://github.com/aleccrowell/diomedes/issues/14)). The lap model replaces it with a walk of each works'
+  chassis form from race to race ([#108](https://github.com/aleccrowell/diomedes/issues/108)).
 - **Car × circuit effects are three linear slopes** (speed, roughness,
   temperature). Other circuit traits, such as altitude, kerbs or the need for
   traction out of slow corners, are not modelled. Before 1979 the race-time
@@ -38,17 +39,26 @@
   finished. A driver whose incidents usually ended in retirement looks less
   prone than they were; the [retirement model](../findings/retirements.md)
   covers those ([#101](https://github.com/aleccrowell/diomedes/issues/101)).
-- **2026 is a partial season,** with the 17 races run so far; its car-season
+- **2026 is a partial season,** with the 17 races run when it was fitted; its car-season
   effects and walk states will move as the season finishes ([#99](https://github.com/aleccrowell/diomedes/issues/99)).
 - **Sparse car-seasons stay imprecise.** A 1950s car with a few races is still
   identified mostly by those races: pooling over a works' seasons cut posterior
   sds by only about 10% ([#91](https://github.com/aleccrowell/diomedes/issues/91), [#95](https://github.com/aleccrowell/diomedes/issues/95)).
-- **The rain flag is per race,** dry, mixed or wet. It doesn't say when in the
+- **The race model's rain flag is per race,** dry, mixed or wet. It doesn't say when in the
   race it rained or how hard, and 48 of the calls are marked uncertain in the
   [reference table](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits).
-- **Tyre compounds aren't in the data.** The lap model can't separate compound
-  choice (for example, the 2014–21 rule that the top 10 qualifiers start on
-  their Q2 tyres) from pace ([#12](https://github.com/aleccrowell/diomedes/issues/12)).
+  The lap model's conditions terms have rain per lap, from 2021 only.
+- **The lap model's shortfall can't tell choice from limits.** A driver managing
+  pace (holding a position, saving tyres or fuel) beyond what the traffic and lead
+  terms capture reads as falling short of their peak. Without the conditions
+  terms, wet and mixed laps also go mostly to the shortfall
+  ([#113](https://github.com/aleccrowell/diomedes/issues/113), [#116](https://github.com/aleccrowell/diomedes/issues/116)).
+- **Tyre compounds are known only from 2021.** Before that the lap model can't
+  separate compound choice (for example, the 2014–21 rule that the top 10
+  qualifiers start on their Q2 tyres) from pace ([#12](https://github.com/aleccrowell/diomedes/issues/12)).
+  From 2021 the timing data gives each lap's compound, track temperature and rain,
+  and a 2021–2026 fit uses them; the published lap rankings, over 2011–2026, don't
+  ([#116](https://github.com/aleccrowell/diomedes/issues/116)).
 - **Rallying lacks covariates.** The WRC fit has no road order or surface
   terms, and its driver effects are relative to a 641-driver field that is
   mostly amateurs ([#33](https://github.com/aleccrowell/diomedes/issues/33), [#28](https://github.com/aleccrowell/diomedes/issues/28)).

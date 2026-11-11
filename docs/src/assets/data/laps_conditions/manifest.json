@@ -1,0 +1,84 @@
+{
+    "model": "lap_effects with per-lap conditions (compound, track temperature, rain) and drivers' wet-tyre deviations",
+    "fit": "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_cond_wetdrv_keepslow",
+    "data": "F1 2021–2026 clean laps (Jolpica lap times, recorded pit stops), conditions from FastF1 (2021–2022) and OpenF1 (2023 on): 124217 laps, 36 drivers, 61 machine-seasons, 130 races; excluded lap1 2580, no_machine 0, pit 6749, slow_race 10865, stoppage 0",
+    "conditions": "LapConditions(124217 laps: matched 0.997, lap time agrees 1.0, compound known 0.996 (240 filled from the stint), wet tyres 0.047, rain 0.027, track temp known 0.997; drivers' wet deviations)",
+    "convergence": {
+        "max_rhat": 1.092,
+        "min_ess": 58,
+        "divergences": 0,
+        "groups": {
+            "race walk": {
+                "max_rhat": 1.086,
+                "min_ess": 62
+            },
+            "tyre (drv)": {
+                "max_rhat": 1.003,
+                "min_ess": 1284
+            },
+            "start (car)": {
+                "max_rhat": 1.005,
+                "min_ess": 1597
+            },
+            "incidents": {
+                "max_rhat": 1.006,
+                "min_ess": 1970
+            },
+            "fpace car": {
+                "max_rhat": 1.004,
+                "min_ess": 4959
+            },
+            "drivers": {
+                "max_rhat": 1.082,
+                "min_ess": 65
+            },
+            "slopes": {
+                "max_rhat": 1.048,
+                "min_ess": 95
+            },
+            "age curve": {
+                "max_rhat": 1.015,
+                "min_ess": 359
+            },
+            "scalars": {
+                "max_rhat": 1.013,
+                "min_ess": 402
+            },
+            "tyre (car)": {
+                "max_rhat": 1.003,
+                "min_ess": 1288
+            },
+            "wet drv": {
+                "max_rhat": 1.012,
+                "min_ess": 516
+            },
+            "cars": {
+                "max_rhat": 1.092,
+                "min_ess": 58
+            },
+            "circuits": {
+                "max_rhat": 1.004,
+                "min_ess": 1279
+            },
+            "peak": {
+                "max_rhat": 1.081,
+                "min_ess": 66
+            },
+            "short q": {
+                "max_rhat": 1.003,
+                "min_ess": 1810
+            },
+            "short λ": {
+                "max_rhat": 1.002,
+                "min_ess": 2282
+            },
+            "short car": {
+                "max_rhat": 1.003,
+                "min_ess": 2096
+            }
+        }
+    },
+    "exported_by": "scripts/export_site.jl laps_conditions",
+    "export_commit": "ff6a4e6",
+    "date": "2026-11-11"
+}

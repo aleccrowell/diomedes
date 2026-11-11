@@ -43,6 +43,12 @@ and step size to continue from (see [`run_nuts_checkpointed`](@ref Diomedes.run_
 - Block `j` uses its own seeded RNG, so a resumed run gives the same draws as
   an uninterrupted one.
 - A kill loses at most the block in progress. Block 1 holds the warm-up.
+- Resume with the block size the chain was saved with: blocks are numbered by
+  position, so another `block` is an error.
+- Every iteration, warm-up included, is also appended to `<prefix>_trace.tsv`
+  as it is drawn, so a block in progress can be inspected.
+- Launch fits that run for hours detached, with `scripts/run_detached.sh <log>
+  <pidfile> <command>`, which records the job's real PID for watching it.
 
 Saved chains must be passed through [`rehash_chain!`](@ref) after
 `deserialize`, or parameter lookups fail with a `KeyError` and `hcat` silently
@@ -80,6 +86,6 @@ no divergences.
 |---|---|
 | z-score model, all F1 | under 2 min |
 | pace + loss `pl_rw`, all F1, 4 chains in parallel | 40–70 min |
-| pace + loss with every term, all F1 | about 5 h |
-| lap model, 2011–19 (175k laps) | about 3.5 h warm-up, then 13.5 s per draw |
-| lap model, 1996–2019 (410k laps), warm-started | about 10 h for 500 draws per chain |
+| pace + loss, the published model (`…_walk1_works_dinc`), 1950–2026, 4 chains in parallel | about 10.4 h per chain |
+| lap model, 2011–2026 (316k laps) with every #108 and #113 term, warm-started | about 9 h per chain (1,000 draws) |
+| lap model, 2021–2026 (124k laps) with the conditions terms (#116), warm-started | 6–23 h per chain (1,000 draws), depending on the step size the chain adapts |

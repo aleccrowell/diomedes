@@ -2,7 +2,7 @@
 
 [`lap_effects`](@ref) / [`fit_laps`](@ref): per-lap pace instead of whole-race
 times (#12). It uses partial races before a retirement and has far more data
-per driver–car pair. It is **in development**: see #113 for the current state.
+per driver–car pair. It is **in development**: the published fit has the #108 and #113 terms, and per-lap conditions are in progress in #116.
 
 ## Outcome and clean laps
 
@@ -78,6 +78,18 @@ y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁[era]
     expected shortfall from the race, driver and car offsets. The field pace
     shapes the losses but doesn't move the edge, which would make a very stiff
     direction (#113: the fit then diverged on nearly every iteration).
+- Per-lap conditions (#116, 2021 on), through a [`LapConditions`](@ref) built from
+  [`read_lap_conditions`](@ref) (the table of `scripts/conditions/fetch_conditions.py`:
+  FastF1 for 2021–22, OpenF1 from 2023) and [`jolpica_driver_numbers`](@ref):
+  - `cond`: offsets for each compound against the SOFT ([`COMPOUNDS`](@ref)), a stint
+    slope per compound on top of the shared curve, track temperature against the
+    race's mean (per 10 °C) and rain falling, on the mean pace. With `short` also
+    wet tyres and rain on the shortfall's logit π and log λ, left out of the edge
+    as the field pace is;
+  - `wetdrv`: each driver's centred deviation on intermediate and wet-tyre laps.
+    The car-season deviations (`wetdev`, or `wetwalk` pooled through a wet walk
+    per works) are kept for reference: in both probes they weren't identified, with
+    2023 cars of 30–50 wet laps from two mixed races coming out several % off.
 - Driver and car-season effects are centred as in the race model. Every term is
   centred within its race, so γ is the race's mean lap.
 
@@ -112,4 +124,10 @@ chain = fit_laps(d; checkpoint = "output/laps_2011-2019_chain1", seed = 1000)
   Short careers at the edges of the data trade slope against level.
 - **Conditions go to the shortfall:** in the 2011–2026 fit the field pace moves the
   edge with a slope of only 0.17, and wet and mixed laps are read mostly as
-  shortfall rather than a slower limit (#116).
+  shortfall rather than a slower limit. The conditions terms (#116) cover 2021 on
+  only. With them, over 2021–2026, the slope is 0.13, so they don't explain it; a
+  2021–2026 fit without them, to compare like for like, hasn't been run.
+- **Driver and car levels mix slowly with the conditions terms:** the 2021–2026 fit
+  with `cond wetdrv` reached R-hat 1.08–1.09 on drivers, car-seasons and the race
+  walk after 4 × 1,000 draws, along the ridge between a dominant driver and their
+  car. Its conditions and wet-skill terms converged (R-hat ≤ 1.015).
