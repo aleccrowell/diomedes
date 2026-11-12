@@ -1839,10 +1839,26 @@ end
                 @test Turing.DynamicPPL.loglikelihood(mrel, θb) ≈ Turing.DynamicPPL.loglikelihood(mr, θa)
             end
             @test_throws ArgumentError lap_effects(d9; rwrel = true, cars = fc)
+            # `rwrels`: the career-slope term too, x̃ = x + W·a + W_s·sl
+            Ws = Diomedes.walk_driver_shares(d9, rwk; age = true)
+            @test all(isapprox(sum(Ws[rwk.lap[j], :]),
+                               mean(d9.agec[rwk.lap .== rwk.lap[j]])) for j in eachindex(d9.y))
+            let xs = 0.3 .* randn(rng, length(rwk.prev)), ac = 0.4 .* randn(rng, length(d9.competitors)),
+                us = randn(rng, length(d9.competitors))
+                θa = merge(θr, (; a_comp = ac, xs_cr = xs, τ_slope = 0.7, u_slope = us))
+                sl = Diomedes.career_slopes(0.7, us)
+                θb = merge((; (k => v for (k, v) in pairs(θa) if k !== :xs_cr)...),
+                           (; xt_cr = xs .+ Wr * Diomedes.sum_to_zero(ac) .+ Ws * sl))
+                ms = lap_effects(d9; rwalk = true, slopes = true, cars = fc)
+                mrels = lap_effects(d9; rwalk = true, slopes = true, rwrel = true, rwrels = true, cars = fc)
+                @test Turing.DynamicPPL.logjoint(mrels, θb) ≈ Turing.DynamicPPL.logjoint(ms, θa)
+            end
+            @test_throws ArgumentError lap_effects(d9; rwalk = true, rwrels = true, cars = fc)
             for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true, big = true),
                           (; rwalk = true), (; rwalk = true, track = true, dinc = true, starts = true, big = true, sdrv = false),
                           (; rwalk = true, dinc = true, starts = true, dinc1 = true),
-                          (; rwalk = true, rwrel = true, starts = true, big = true, sdrv = false))
+                          (; rwalk = true, rwrel = true, starts = true, big = true, sdrv = false),
+                          (; rwalk = true, rwrel = true, rwrels = true, slopes = true, starts = true))
                 m = lap_effects(d9; flags..., cars = fc)
                 rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                 rg = NamedTuple(getfield(rdm, :_varname_ranges))
@@ -1933,11 +1949,12 @@ end
                 cpool = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, true, (;))
                 wcw9 = CarWalks(d9, fc)
                 cdrv = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, false, false, (;))
-                # `wetshr`: deviations only for the car-seasons with at least the median count of wet laps
+                # `wetshr`: deviations only for the car-seasons with the most wet laps (the random compounds
+                # decide how many; a strict subset unless every car-season has the same count)
                 nwet = [count(j -> d9.mach[j] == m && wet[j] > 0, 1:n) for m in 1:nm9]
-                wmin = max(1, round(Int, median(nwet)))
+                wmin = max(1, maximum(nwet))
                 wcs = Diomedes.wet_cars(d9.mach, wet, nm9, wmin)
-                @test wcs == findall(>=(wmin), nwet) && 0 < length(wcs) < nm9
+                @test wcs == findall(>=(wmin), nwet) && !isempty(wcs) && (length(wcs) < nm9 || allequal(nwet))
                 cshr = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, false, true,
                                      wmin, wcs, (;))
                 @test Diomedes.wet_scatter([1.0, 2.0], [3, 1], 4) == [2.0, 0.0, 1.0, 0.0]

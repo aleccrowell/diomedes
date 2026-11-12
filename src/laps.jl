@@ -158,17 +158,20 @@ so `W * a` is that car's lap-weighted mean driver effect there (rows of states w
 are 0). With `rwrel` the sampler draws x̃ = x + W·a in place of the states x (#116, the
 driver/car ridge): a shear, so the model is unchanged and its Jacobian is 1.
 """
-function walk_driver_shares(d::LapData, rwk::RaceWalk)
+function walk_driver_shares(d::LapData, rwk::RaceWalk; age::Bool = false)
     W = zeros(length(rwk.prev), length(d.competitors))
+    n = zeros(length(rwk.prev))
     for j in eachindex(d.y)
-        W[rwk.lap[j], d.comp[j]] += 1.0
+        W[rwk.lap[j], d.comp[j]] += age ? d.agec[j] : 1.0
+        n[rwk.lap[j]] += 1
     end
     for s in axes(W, 1)
-        t = sum(@view W[s, :])
-        t > 0 && (W[s, :] ./= t)
+        n[s] > 0 && (W[s, :] ./= n[s])
     end
     return W
 end
+# With `age = true`, W_s: each driver's summed centred age (`agec`) over a state's laps, over its laps, so
+# W_s·sl is the car's lap-weighted mean career-slope term there (`rwrels`: x̃ = x + W·a + W_s·sl).
 
 function Base.show(io::IO, d::LapData)
     print(io, "LapData($(length(d.y)) laps, $(length(d.competitors)) drivers, $(length(d.machines)) ",
@@ -995,7 +998,7 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
             xs = xs_cr
         else                # `rwrel`: x̃ = x + W·a sampled, the car's drivers' mean added (the driver/car ridge, #116)
             xt_cr ~ FlatVec(length(rwk.prev))
-            xs = xt_cr .- rw.W * a
+            xs = rw.Ws === nothing ? xt_cr .- rw.W * a : xt_cr .- rw.W * a .- rw.Ws * sl
         end
         δ_own ~ truncated(Normal(0, 1); lower = 0)            # larger off-season steps: ownership, regulations
         δ_reg ~ truncated(Normal(0, 1); lower = 0)
@@ -1174,8 +1177,9 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
                      track::Bool = false, dinc::Bool = false, walk::Bool = false, works::Bool = false,
                      big::Bool = false, rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
                      cars = walk || rwalk ? car_table() : nothing, ctx = LapContext(), cond = LapConditions(),
-                     rwrel::Bool = false)
+                     rwrel::Bool = false, rwrels::Bool = false)
     rwrel && !rwalk && throw(ArgumentError("rwrel reparametrises the race walk: it needs rwalk"))
+    rwrels && !(rwrel && slopes) && throw(ArgumentError("rwrels adds the career slopes to rwrel: it needs rwrel and slopes"))
     (ctx.traffic || ctx.fpace) && size(ctx.tbin, 1) != length(d.y) &&
         throw(ArgumentError("ctx was not built from these laps (LapContext(d, laps; …))"))
     cond.on && length(cond.comp) != length(d.y) &&
@@ -1191,7 +1195,8 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
     basis = age ? AgeCurveBasis(d.age_years, d.age_rows) : nothing
     return lap_effects(d, lap_mach_counts(d), basis, tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc,
                        walk ? CarWalks(d, cars) : nothing, works, big,
-                       rwalk ? (rwk = RaceWalk(d, cars); (; rwk, cw = CarWalks(d, cars), W = rwrel ? walk_driver_shares(d, rwk) : nothing)) :
+                       rwalk ? (rwk = RaceWalk(d, cars); (; rwk, cw = CarWalks(d, cars), W = rwrel ? walk_driver_shares(d, rwk) : nothing,
+                                                         Ws = rwrels ? walk_driver_shares(d, rwk; age = true) : nothing)) :
                                nothing, sdrv, dinc1, ctx, cond,
                        pool ? CarWalks(d, cars) : nothing)
 end
@@ -1218,12 +1223,12 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                   age::Bool = false, circuits::Bool = false, track::Bool = false, dinc::Bool = false,
                   walk::Bool = false, works::Bool = false, big::Bool = false, rwalk::Bool = false, sdrv::Bool = true,
                   dinc1::Bool = false, cars = walk || rwalk ? car_table() : nothing, ctx = LapContext(),
-                  cond = LapConditions(), rwrel::Bool = false, δ::Real = 0.8, kwargs...)
+                  cond = LapConditions(), rwrel::Bool = false, rwrels::Bool = false, δ::Real = 0.8, kwargs...)
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     warm_start === nothing || checkpoint !== nothing ||
         throw(ArgumentError("warm_start is implemented for checkpointed fits"))
     model = lap_effects(d; tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk,
-                        sdrv, dinc1, cars, ctx, cond, rwrel)
+                        sdrv, dinc1, cars, ctx, cond, rwrel, rwrels)
     cw = model.args.cw
     rwm = model.args.rw
     wcw = model.args.wcw
@@ -1338,7 +1343,8 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
            track::Bool = false, dinc::Bool = false, walk::Bool = false, works::Bool = false, big::Bool = false,
            rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
            cw = walk || rwalk ? CarWalks(d) : nothing, rwk = rwalk ? RaceWalk(d) : nothing, ctx = LapContext(),
-           cond = LapConditions(), wcw = cond.on && cond.wetdev && cond.wetpool ? CarWalks(d) : nothing, rwrel::Bool = false) =
+           cond = LapConditions(), wcw = cond.on && cond.wetdev && cond.wetpool ? CarWalks(d) : nothing, rwrel::Bool = false,
+           rwrels::Bool = false) =
     filter(p -> (tyres || first(p) !== :β) && (slopes || first(p) ∉ (:τ_slope, :u_slope)) &&
                 (dev || first(p) ∉ (:τ_dev, :u_dev)) && (lead || first(p) !== :η) &&
                 (tyre_mgmt || first(p) ∉ (:τ_td, :u_td, :τ_tm, :u_tm)) &&
