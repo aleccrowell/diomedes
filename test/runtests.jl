@@ -1824,9 +1824,25 @@ end
             zr = randn(rng, length(rwk.prev))
             @test Diomedes.walk_states_logpdf(Diomedes.walk_path(zr .* sdr, rwk.prev), sdr, rwk.prev) ≈
                   sum(Diomedes.normlogpdf.(zr)) - sum(log.(sdr))
+            # `rwrel` (#116, the driver/car ridge): x̃ = x + W·a sampled, W each driver's share of a state's laps.
+            # A shear with Jacobian 1: the same log joint at the matching point
+            Wr = Diomedes.walk_driver_shares(d9, rwk)
+            @test size(Wr) == (length(rwk.prev), length(d9.competitors)) &&
+                  all(s -> isapprox(sum(Wr[s, :]), 1) || iszero(sum(Wr[s, :])), axes(Wr, 1))
+            @test all(Wr[rwk.lap[j], d9.comp[j]] > 0 for j in eachindex(d9.y))
+            let xs = 0.3 .* randn(rng, length(rwk.prev)), ac = 0.4 .* randn(rng, length(d9.competitors))
+                θa = merge(θr, (; a_comp = ac, xs_cr = xs))
+                θb = merge((; (k => v for (k, v) in pairs(θa) if k !== :xs_cr)...),
+                           (; xt_cr = xs .+ Wr * Diomedes.sum_to_zero(ac)))
+                mrel = lap_effects(d9; rwalk = true, rwrel = true, cars = fc)
+                @test Turing.DynamicPPL.logjoint(mrel, θb) ≈ Turing.DynamicPPL.logjoint(mr, θa)
+                @test Turing.DynamicPPL.loglikelihood(mrel, θb) ≈ Turing.DynamicPPL.loglikelihood(mr, θa)
+            end
+            @test_throws ArgumentError lap_effects(d9; rwrel = true, cars = fc)
             for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true, big = true),
                           (; rwalk = true), (; rwalk = true, track = true, dinc = true, starts = true, big = true, sdrv = false),
-                          (; rwalk = true, dinc = true, starts = true, dinc1 = true))
+                          (; rwalk = true, dinc = true, starts = true, dinc1 = true),
+                          (; rwalk = true, rwrel = true, starts = true, big = true, sdrv = false))
                 m = lap_effects(d9; flags..., cars = fc)
                 rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                 rg = NamedTuple(getfield(rdm, :_varname_ranges))
