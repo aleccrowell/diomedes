@@ -699,6 +699,8 @@ const COND_LABELS = [
     ("τ_wetd", "wet skill", "Spread of drivers' wet-tyre deviations", "% of lap time"),
     ("β_fp", "field pace", "Field-pace slope", "per % of field pace"),
     ("σ", "noise", "Lap noise σ", "% of lap time")]
+# in some fits only: the car-seasons' wet spread (`wetshr`)
+const COND_LABELS_OPT = [("τ_wetc", "wet skill", "Spread of car-seasons' wet-tyre deviations (≥ 100 wet laps)", "% of lap time")]
 function export_laps_conditions(tag)
     dir = joinpath(OUT, "laps_conditions")
     mkpath(dir)
@@ -709,12 +711,22 @@ function export_laps_conditions(tag)
         m === nothing || (sc[m[1]] = (parse(Float64, m[2]), parse(Float64, m[3])))
     end
     missing_terms = [k for (k, _, _, _) in COND_LABELS if !haskey(sc, k)]
-    isempty(missing_terms) || error("not in $log: $(join(missing_terms, ", ")) (a fit with cond, short and wetdrv?)")
+    isempty(missing_terms) || error("not in $log: $(join(missing_terms, ", ")) (a fit with cond, short and wetdrv or wetshr?)")
+    labels = vcat(COND_LABELS, filter(l -> haskey(sc, l[1]), COND_LABELS_OPT))
     CSV.write(joinpath(dir, "conditions.csv"),
               DataFrame([(; term = k, group = g, label = lab, unit = u, mean = round(sc[k][1]; digits = 4),
-                            sd = round(sc[k][2]; digits = 4)) for (k, g, lab, u) in COND_LABELS]))
+                            sd = round(sc[k][2]; digits = 4)) for (k, g, lab, u) in labels]))
     w = round_floats!(CSV.read("output/$(tag)_wet_drivers.csv", DataFrame))
     CSV.write(joinpath(dir, "wet_drivers.csv"), rename!(w, :driver => :id))
+    # car-seasons' wet deviations, when the fit has them (`wetshr`: only those it fitted, the rest are 0 by design)
+    wc = "output/$(tag)_wet_cars.csv"
+    if isfile(wc)
+        c = round_floats!(CSV.read(wc, DataFrame))
+        "fitted" in names(c) && (c = c[c.fitted, Not(:fitted)])
+        CSV.write(joinpath(dir, "wet_cars.csv"), rename!(c, :machine => :id))
+    else
+        rm(joinpath(dir, "wet_cars.csv"); force = true)
+    end
     m = match(r"^laps_(\d{4})-(\d{4})_(recorded|inferred)", tag)
     m === nothing && error("not a lap fit tag: $tag")
     write_manifest(dir, (; model = "lap_effects with per-lap conditions (compound, track temperature, rain) and drivers' wet-tyre deviations",
