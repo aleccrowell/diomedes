@@ -39,7 +39,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 CACHE = os.path.join(ROOT, "data", "cache")
 OUT = os.path.join(ROOT, "data", "conditions", "lap_conditions.csv")
 FIELDS = ["season", "round", "event_id", "driver_number", "lap", "compound", "tyre_age", "lap_time_ms",
-          "track_temp", "air_temp", "rainfall", "weather_n", "source"]
+          "track_temp", "air_temp", "rainfall", "weather_n", "source", "neutral"]
 FASTF1_SEASONS = range(2021, 2023)      # the FastF1 mirror's seasons; OpenF1 from 2023
 
 
@@ -128,9 +128,16 @@ def fastf1_race(season, rnd):
         t1 = t0 + lt if t0 is not None and lt is not None else (r["Time"].total_seconds() if r["Time"] == r["Time"] else None)
         tt, at, rain, n = lap_weather(t0, t1, wt, wrows)
         comp = r["Compound"] if isinstance(r["Compound"], str) else ""
+        # track status during the lap: 4 safety car, 5 red flag, 6 VSC deployed, 7 VSC ending
+        status = r["TrackStatus"] if isinstance(r["TrackStatus"], str) else ""
         out.append(dict(driver_number=int(r["DriverNumber"]), lap=int(r["LapNumber"]), compound=comp,
                         tyre_age=fnum(r["TyreLife"]), lap_time_ms=lt * 1000 if lt is not None else math.nan,
-                        track_temp=tt, air_temp=at, rainfall=rain, weather_n=n, source="fastf1"))
+                        track_temp=tt, air_temp=at, rainfall=rain, weather_n=n, source="fastf1",
+                        neutral=int(any(c in status for c in "4567"))))
+    # a lap neutralised for any car is neutralised for the race (each car's lap covers a different time)
+    neutral = {x["lap"] for x in out if x["neutral"]}
+    for x in out:
+        x["neutral"] = int(x["lap"] in neutral)
     return out
 
 
@@ -151,8 +158,29 @@ def openf1_sessions(season):
     return [x for x in s if not x.get("is_cancelled")]
 
 
+def neutral_laps(msgs):
+    """Race laps under a safety car, VSC or red flag, from OpenF1 race-control messages: each from its
+    deployment to its end message (SAFETY CAR IN THIS LAP, VSC ENDING), and a red flag's lap."""
+    laps, open_ = set(), None
+    for m in sorted(msgs, key=lambda x: x["date"]):
+        L, msg = m.get("lap_number"), (m.get("message") or "").upper()
+        if L is None:
+            continue
+        if m.get("flag") == "RED" or "RED FLAG" in msg:
+            laps.add(L)
+        if m.get("category") == "SafetyCar":
+            if "DEPLOYED" in msg:
+                open_ = L if open_ is None else open_
+            elif ("IN THIS LAP" in msg or "ENDING" in msg) and open_ is not None:
+                laps.update(range(open_, L + 1)); open_ = None
+    if open_ is not None:        # no end message: to the end of the race
+        laps.update(range(open_, 1000))
+    return laps
+
+
 def openf1_race(key):
     laps = openf1("laps", f"session_key={key}", f"laps_{key}") or []
+    neutral = neutral_laps(openf1("race_control", f"session_key={key}", f"race_control_{key}") or [])
     stints = openf1("stints", f"session_key={key}", f"stints_{key}") or []
     weather = sorted(openf1("weather", f"session_key={key}", f"weather_{key}") or [], key=lambda w: w["date"])
     wt = [ts(w["date"]) for w in weather]
@@ -173,7 +201,7 @@ def openf1_race(key):
         comp, age = tyre.get((r["driver_number"], r["lap_number"]), ("", math.nan))
         out.append(dict(driver_number=int(r["driver_number"]), lap=int(r["lap_number"]), compound=comp, tyre_age=age,
                         lap_time_ms=lt * 1000 if lt is not None else math.nan, track_temp=tt, air_temp=at,
-                        rainfall=rain, weather_n=n, source="openf1"))
+                        rainfall=rain, weather_n=n, source="openf1", neutral=int(r["lap_number"] in neutral)))
     return out
 
 

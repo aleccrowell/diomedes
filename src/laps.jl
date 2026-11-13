@@ -200,7 +200,7 @@ Every race must be in the table.
 """
 function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits::Symbol = :recorded,
                       pit_stops = nothing, machine_key = r -> string(r.machine_id, "_", r.season),
-                      circuits = nothing, stoppage::Bool = true)
+                      circuits = nothing, stoppage::Bool = true, keep_laps = nothing)
     pits in (:recorded, :inferred) || throw(ArgumentError("pits must be :recorded or :inferred"))
     pits === :recorded && pit_stops === nothing && throw(ArgumentError("pits = :recorded needs pit_stops"))
     mkey = Dict((r.event_id, r.competitor_id) => machine_key(r) for r in eachrow(results))
@@ -228,6 +228,8 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
         bylap = Dict{Int,Vector{Float64}}()
         for r in eachrow(ev); push!(get!(bylap, r.lap, Float64[]), r.time_ms); end
         slow = Set(l for (l, v) in bylap if median(v) > SLOW_RACE * base)
+        # race laps exempt from the slow-lap cut (`keep_laps`, e.g. green-flag wet laps, #116)
+        keep_laps === nothing || filter!(l -> (first(ev.event_id), l) ∉ keep_laps, slow)
         skip = union(slow, Set(l + 1 for l in slow))           # restart laps too
         for car in groupby(ev, :competitor_id)
             k = (first(car.event_id), first(car.competitor_id))

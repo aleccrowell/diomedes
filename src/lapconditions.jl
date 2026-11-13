@@ -85,6 +85,27 @@ function read_lap_conditions(path::AbstractString = joinpath(dirname(@__DIR__), 
                     missingstring = "")
 end
 
+"""
+    wet_green_laps(cond; share = 0.5) -> Set{Tuple{String,Int}}
+
+Race laps `(event_id, lap)` of the conditions table run in the wet under green flag: at least
+`share` of the cars with a known compound on intermediates or wets, and neither the lap nor the one
+before it neutralised (safety car, VSC or red flag; `neutral`, from the timing data's track status
+or race-control messages). `prepare_laps(…; keep_laps)` exempts them from the slow-lap cut, which
+otherwise drops them with the neutralisations (2021–2026: Monaco 2023 laps 54–63, Zandvoort 2023
+laps 3, 61 and 63, Suzuka 2022 laps 4–5, #116).
+"""
+function wet_green_laps(cond::AbstractDataFrame; share::Real = 0.5)
+    hasproperty(cond, :neutral) || throw(ArgumentError("no `neutral` column: re-run scripts/conditions/fetch_conditions.py"))
+    ok = filter(r -> !ismissing(r.compound) && r.compound in COMPOUNDS, cond)
+    wet = Dict{Tuple{String,Int},Vector{Bool}}()
+    for r in eachrow(ok)
+        push!(get!(wet, (r.event_id, r.lap), Bool[]), r.compound in ("INTERMEDIATE", "WET"))
+    end
+    neutral = Set((r.event_id, r.lap) for r in eachrow(cond) if coalesce(r.neutral, 0) == 1)
+    return Set(k for (k, v) in wet if mean(v) >= share && k ∉ neutral && (k[1], k[2] - 1) ∉ neutral)
+end
+
 function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDict; wetdev::Bool = false,
                        wetpool::Bool = false, wetcar::Bool = true, wetmin::Int = 0)
     wetpool && !wetdev && throw(ArgumentError("wetpool pools the wet deviations: it needs wetdev"))

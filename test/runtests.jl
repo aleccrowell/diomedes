@@ -1323,6 +1323,18 @@ end
             @test d.y ≈ 100 .* log.(d.rows.time_ms ./ 91_000)      # median clean lap: 5 laps of a at 90 s, 7 of b at 91 s
         end
         @test_throws ArgumentError prepare_laps(lt, rows; pits = :recorded)
+        # `keep_laps` (#116): a slow lap run in the wet under green flag stays in, and so does the lap after it
+        let d = prepare_laps(lt, rows; pits = :recorded, pit_stops = ps, keep_laps = Set([("2019-01", 7)]))
+            @test d.excluded[:slow_race] == 0 && 7 in d.rows.lap && 8 in d.rows.lap
+        end
+        # wet_green_laps: ≥ half the field on wet tyres, and neither the lap nor the one before neutralised
+        let c = DataFrame(event_id = "e", lap = repeat(1:5; inner = 2),
+                          compound = ["SOFT", "SOFT", "WET", "INTERMEDIATE", "WET", "SOFT", "WET", "WET", "INTERMEDIATE", "SOFT"],
+                          neutral = [0, 0, 0, 0, 0, 0, 1, 1, 0, 0])
+            @test Diomedes.wet_green_laps(c) == Set([("e", 2), ("e", 3)])    # 4 neutralised, 5 its restart
+            @test Diomedes.wet_green_laps(c; share = 0.75) == Set([("e", 2)])
+            @test_throws ArgumentError Diomedes.wet_green_laps(select(c, Not(:neutral)))
+        end
         # lap conditions (#116): joined by car number; a lap without a compound takes its stint's
         let d = prepare_laps(lt, rows; pits = :recorded, pit_stops = ps)
             ca = Dict(2 => missing, 3 => "SOFT", 6 => "INTERMEDIATE", 9 => missing, 10 => "INTERMEDIATE")
