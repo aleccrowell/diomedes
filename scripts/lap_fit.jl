@@ -84,7 +84,7 @@ works = "works" ∈ ARGS            # works-team term (with walk, #108)
 big = "big" ∈ ARGS                # big incident losses (#108, as the race model's #16)
 keepslow = "keepslow" ∈ ARGS      # keep a car's laps over STOPPAGE × its median lap (no per-car size cut, #108)
 rwalk = "rwalk" ∈ ARGS            # race-level chassis walk, no residual, dev or engine walk (#108)
-rwrels = "rwrels" ∈ ARGS          # the same with the drivers' career slopes too, x̃ = x + W·a + W_s·sl
+rwrels = "rwrels" ∈ ARGS          # the same with the drivers' career slopes too, x̃ = x + W·a + W_s·sl (worse: age curve, #116)
 rwrel = "rwrel" ∈ ARGS || rwrels  # the race walk sampled relative to each car's drivers, x̃ = x + W·a (#116, driver/car ridge)
 rwrels && !slopes && error("rwrels needs slopes")
 rwrel && !rwalk && error("rwrel reparametrises the race walk: it needs rwalk")

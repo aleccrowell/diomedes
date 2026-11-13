@@ -172,6 +172,8 @@ function walk_driver_shares(d::LapData, rwk::RaceWalk; age::Bool = false)
 end
 # With `age = true`, W_s: each driver's summed centred age (`agec`) over a state's laps, over its laps, so
 # W_s·sl is the car's lap-weighted mean career-slope term there (`rwrels`: x̃ = x + W·a + W_s·sl).
+# Kept for reference: in probe 116e it helped the walk and slopes but moved the slow direction onto the
+# drivers' levels against the age curve (age curve R-hat 1.184, ESS 17 over 4 × 200), so `rwrel` is the one to use.
 
 function Base.show(io::IO, d::LapData)
     print(io, "LapData($(length(d.y)) laps, $(length(d.competitors)) drivers, $(length(d.machines)) ",
