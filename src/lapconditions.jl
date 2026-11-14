@@ -52,6 +52,7 @@ struct LapConditions
     wetcar::Bool
     wetmin::Int                 # with `wetdev`: car-seasons need this many wet-tyre laps for a deviation (0: all, no `wetshr`)
     wetcars::Vector{Int}        # those car-seasons (indices into d.machines), with wetmin > 0
+    wetglobal::Bool             # their deviations centred over all of them, not within each season (`wetall`)
     check::NamedTuple
 end
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, check::NamedTuple) =
@@ -59,7 +60,9 @@ LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, check::NamedTuple) =
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, check::NamedTuple) =
     LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, true, check)
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, wetcar::Bool, check::NamedTuple) =
-    LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, 0, Int[], check)
+    LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, 0, Int[], false, check)
+LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, wetcar::Bool, wetmin::Int, wetcars::Vector{Int},
+              check::NamedTuple) = LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, wetmin, wetcars, false, check)
 LapConditions() = LapConditions(Int[], Float64[], Float64[], Float64[], false, false, false, true, (;))
 
 # `wetshr` (#116 option 2): the minimum wet-tyre laps for a car-season's deviation, and the prior sd of their spread
@@ -85,12 +88,34 @@ function read_lap_conditions(path::AbstractString = joinpath(dirname(@__DIR__), 
                     missingstring = "")
 end
 
+"""
+    wet_green_laps(cond; share = 0.5) -> Set{Tuple{String,Int}}
+
+Race laps `(event_id, lap)` of the conditions table run in the wet under green flag: at least
+`share` of the cars with a known compound on intermediates or wets, and neither the lap nor the one
+before it neutralised (safety car, VSC or red flag; `neutral`, from the timing data's track status
+or race-control messages). `prepare_laps(…; keep_laps)` exempts them from the slow-lap cut, which
+otherwise drops them with the neutralisations (2021–2026: Monaco 2023 laps 54–63, Zandvoort 2023
+laps 3, 61 and 63, Suzuka 2022 laps 4–5, #116).
+"""
+function wet_green_laps(cond::AbstractDataFrame; share::Real = 0.5)
+    hasproperty(cond, :neutral) || throw(ArgumentError("no `neutral` column: re-run scripts/conditions/fetch_conditions.py"))
+    ok = filter(r -> !ismissing(r.compound) && r.compound in COMPOUNDS, cond)
+    wet = Dict{Tuple{String,Int},Vector{Bool}}()
+    for r in eachrow(ok)
+        push!(get!(wet, (r.event_id, r.lap), Bool[]), r.compound in ("INTERMEDIATE", "WET"))
+    end
+    neutral = Set((r.event_id, r.lap) for r in eachrow(cond) if coalesce(r.neutral, 0) == 1)
+    return Set(k for (k, v) in wet if mean(v) >= share && k ∉ neutral && (k[1], k[2] - 1) ∉ neutral)
+end
+
 function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDict; wetdev::Bool = false,
-                       wetpool::Bool = false, wetcar::Bool = true, wetmin::Int = 0)
+                       wetpool::Bool = false, wetcar::Bool = true, wetmin::Int = 0, wetglobal::Bool = false)
     wetpool && !wetdev && throw(ArgumentError("wetpool pools the wet deviations: it needs wetdev"))
     wetpool && !wetcar && throw(ArgumentError("wetpool pools the car-seasons' wet deviations: it needs wetcar"))
     wetmin > 0 && !(wetdev && wetcar && !wetpool) &&
         throw(ArgumentError("wetmin selects car-seasons for independent wet deviations: it needs wetdev, without wetpool or wetcar = false"))
+    wetglobal && wetmin == 0 && throw(ArgumentError("wetglobal centres the wetmin car-seasons' deviations: it needs wetmin > 0"))
     ci = Dict(c => k for (k, c) in enumerate(COMPOUNDS))
     have = Set(cond.event_id)
     nod = filter(e -> e ∉ have, d.races)
@@ -152,7 +177,7 @@ function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDic
              compounds = Dict((k == 0 ? "unknown" : COMPOUNDS[k]) => count(==(k), comp) for k in 0:length(COMPOUNDS)))
     wcs = wetmin > 0 ? wet_cars(d.mach, wet, length(d.machines), wetmin) : Int[]
     wetmin > 0 && isempty(wcs) && throw(ArgumentError("no car-season has $wetmin wet-tyre laps"))
-    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, wetcar, wetmin, wcs, check)
+    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, wetcar, wetmin, wcs, wetglobal, check)
 end
 
 function Base.show(io::IO, c::LapConditions)
@@ -163,7 +188,8 @@ function Base.show(io::IO, c::LapConditions)
           "($(k.compound_filled) filled from the stint), wet tyres $(round(k.wet; digits = 3)), rain ",
           "$(round(k.rain; digits = 3)), track temp known $(round(k.track_temp_known; digits = 3))",
           c.wetdev ? (!c.wetcar ? "; drivers' wet deviations" : c.wetpool ? "; wet deviations, cars pooled by works" :
-                      c.wetmin > 0 ? "; wet deviations, $(length(c.wetcars)) car-seasons with ≥ $(c.wetmin) wet laps" :
+                      c.wetmin > 0 ? "; wet deviations, $(length(c.wetcars)) car-seasons with ≥ $(c.wetmin) wet laps" *
+                                     (c.wetglobal ? ", centred over all" : ", centred within season") :
                       "; wet deviations") : "", ")")
 end
 
@@ -213,6 +239,10 @@ ReverseDiff.@grad_from_chainrules wet_scatter(x::ReverseDiff.TrackedArray, idx::
 
 # Season group and group sizes of the `wetshr` car-seasons, for centring them within season
 wet_car_groups(d::LapData, wcs::Vector{Int}) = (g = d.mach_season[wcs]; (g, [count(==(k), g) for k in eachindex(d.seasons)]))
+# … or one group of all of them with `wetglobal` (`wetallg`; with `wetall`, centring within a season of two car-seasons with 1 and 4 wet
+# laps pinned them to ±0.44 %, and in 2023 four few-lap cars drifting fast forced Williams to +2.6 %, probe 116f, #116)
+wet_car_groups(d::LapData, c::LapConditions) =
+    c.wetglobal ? (fill(1, length(c.wetcars)), [length(c.wetcars)]) : wet_car_groups(d, c.wetcars)
 
 # Pooled car-season wet deviations (#116 step 1): a walk per works over its seasons on the
 # chassis walk's states, each works' first season N(0, σ0), a season's step N(0, τ·√gap),

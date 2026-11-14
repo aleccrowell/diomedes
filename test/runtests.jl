@@ -1323,6 +1323,18 @@ end
             @test d.y ≈ 100 .* log.(d.rows.time_ms ./ 91_000)      # median clean lap: 5 laps of a at 90 s, 7 of b at 91 s
         end
         @test_throws ArgumentError prepare_laps(lt, rows; pits = :recorded)
+        # `keep_laps` (#116): a slow lap run in the wet under green flag stays in, and so does the lap after it
+        let d = prepare_laps(lt, rows; pits = :recorded, pit_stops = ps, keep_laps = Set([("2019-01", 7)]))
+            @test d.excluded[:slow_race] == 0 && 7 in d.rows.lap && 8 in d.rows.lap
+        end
+        # wet_green_laps: ≥ half the field on wet tyres, and neither the lap nor the one before neutralised
+        let c = DataFrame(event_id = "e", lap = repeat(1:5; inner = 2),
+                          compound = ["SOFT", "SOFT", "WET", "INTERMEDIATE", "WET", "SOFT", "WET", "WET", "INTERMEDIATE", "SOFT"],
+                          neutral = [0, 0, 0, 0, 0, 0, 1, 1, 0, 0])
+            @test Diomedes.wet_green_laps(c) == Set([("e", 2), ("e", 3)])    # 4 neutralised, 5 its restart
+            @test Diomedes.wet_green_laps(c; share = 0.75) == Set([("e", 2)])
+            @test_throws ArgumentError Diomedes.wet_green_laps(select(c, Not(:neutral)))
+        end
         # lap conditions (#116): joined by car number; a lap without a compound takes its stint's
         let d = prepare_laps(lt, rows; pits = :recorded, pit_stops = ps)
             ca = Dict(2 => missing, 3 => "SOFT", 6 => "INTERMEDIATE", 9 => missing, 10 => "INTERMEDIATE")
@@ -1824,9 +1836,41 @@ end
             zr = randn(rng, length(rwk.prev))
             @test Diomedes.walk_states_logpdf(Diomedes.walk_path(zr .* sdr, rwk.prev), sdr, rwk.prev) ≈
                   sum(Diomedes.normlogpdf.(zr)) - sum(log.(sdr))
+            # `rwrel` (#116, the driver/car ridge): x̃ = x + W·a sampled, W each driver's share of a state's laps.
+            # A shear with Jacobian 1: the same log joint at the matching point
+            Wr = Diomedes.walk_driver_shares(d9, rwk)
+            @test size(Wr) == (length(rwk.prev), length(d9.competitors)) &&
+                  all(s -> isapprox(sum(Wr[s, :]), 1) || iszero(sum(Wr[s, :])), axes(Wr, 1))
+            @test all(Wr[rwk.lap[j], d9.comp[j]] > 0 for j in eachindex(d9.y))
+            let xs = 0.3 .* randn(rng, length(rwk.prev)), ac = 0.4 .* randn(rng, length(d9.competitors))
+                θa = merge(θr, (; a_comp = ac, xs_cr = xs))
+                θb = merge((; (k => v for (k, v) in pairs(θa) if k !== :xs_cr)...),
+                           (; xt_cr = xs .+ Wr * Diomedes.sum_to_zero(ac)))
+                mrel = lap_effects(d9; rwalk = true, rwrel = true, cars = fc)
+                @test Turing.DynamicPPL.logjoint(mrel, θb) ≈ Turing.DynamicPPL.logjoint(mr, θa)
+                @test Turing.DynamicPPL.loglikelihood(mrel, θb) ≈ Turing.DynamicPPL.loglikelihood(mr, θa)
+            end
+            @test_throws ArgumentError lap_effects(d9; rwrel = true, cars = fc)
+            # `rwrels`: the career-slope term too, x̃ = x + W·a + W_s·sl
+            Ws = Diomedes.walk_driver_shares(d9, rwk; age = true)
+            @test all(isapprox(sum(Ws[rwk.lap[j], :]),
+                               mean(d9.agec[rwk.lap .== rwk.lap[j]])) for j in eachindex(d9.y))
+            let xs = 0.3 .* randn(rng, length(rwk.prev)), ac = 0.4 .* randn(rng, length(d9.competitors)),
+                us = randn(rng, length(d9.competitors))
+                θa = merge(θr, (; a_comp = ac, xs_cr = xs, τ_slope = 0.7, u_slope = us))
+                sl = Diomedes.career_slopes(0.7, us)
+                θb = merge((; (k => v for (k, v) in pairs(θa) if k !== :xs_cr)...),
+                           (; xt_cr = xs .+ Wr * Diomedes.sum_to_zero(ac) .+ Ws * sl))
+                ms = lap_effects(d9; rwalk = true, slopes = true, cars = fc)
+                mrels = lap_effects(d9; rwalk = true, slopes = true, rwrel = true, rwrels = true, cars = fc)
+                @test Turing.DynamicPPL.logjoint(mrels, θb) ≈ Turing.DynamicPPL.logjoint(ms, θa)
+            end
+            @test_throws ArgumentError lap_effects(d9; rwalk = true, rwrels = true, cars = fc)
             for flags in ((; walk = true), (; walk = true, works = true, track = true, dinc = true, starts = true, big = true),
                           (; rwalk = true), (; rwalk = true, track = true, dinc = true, starts = true, big = true, sdrv = false),
-                          (; rwalk = true, dinc = true, starts = true, dinc1 = true))
+                          (; rwalk = true, dinc = true, starts = true, dinc1 = true),
+                          (; rwalk = true, rwrel = true, starts = true, big = true, sdrv = false),
+                          (; rwalk = true, rwrel = true, rwrels = true, slopes = true, starts = true))
                 m = lap_effects(d9; flags..., cars = fc)
                 rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                 rg = NamedTuple(getfield(rdm, :_varname_ranges))
@@ -1917,17 +1961,22 @@ end
                 cpool = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, true, (;))
                 wcw9 = CarWalks(d9, fc)
                 cdrv = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, false, false, (;))
-                # `wetshr`: deviations only for the car-seasons with at least the median count of wet laps
+                # `wetshr`: deviations only for the car-seasons with the most wet laps (the random compounds
+                # decide how many; a strict subset unless every car-season has the same count)
                 nwet = [count(j -> d9.mach[j] == m && wet[j] > 0, 1:n) for m in 1:nm9]
-                wmin = max(1, round(Int, median(nwet)))
+                wmin = max(1, maximum(nwet))
                 wcs = Diomedes.wet_cars(d9.mach, wet, nm9, wmin)
-                @test wcs == findall(>=(wmin), nwet) && 0 < length(wcs) < nm9
+                @test wcs == findall(>=(wmin), nwet) && !isempty(wcs) && (length(wcs) < nm9 || allequal(nwet))
                 cshr = LapConditions(comp, wet, 0.5 .* randn(rng, n), Float64.(rand(rng, n) .< 0.2), true, true, false, true,
                                      wmin, wcs, (;))
                 @test Diomedes.wet_scatter([1.0, 2.0], [3, 1], 4) == [2.0, 0.0, 1.0, 0.0]
+                # `wetallg`: the same car-seasons, centred over all of them rather than within season
+                cglob = LapConditions(cshr.comp, cshr.wet, cshr.tt, cshr.rain, true, true, false, true, wmin, wcs, true, (;))
+                @test Diomedes.wet_car_groups(d9, cglob) == (fill(1, length(wcs)), [length(wcs)]) &&
+                      Diomedes.wet_car_groups(d9, cshr) == Diomedes.wet_car_groups(d9, wcs)
                 # zero condition effects: the model without them
                 m0 = lap_effects(d9)
-                for c in (conds..., cpool, cdrv, cshr)
+                for c in (conds..., cpool, cdrv, cshr, cglob)
                     mc = lap_effects(d9; cond = c, cars = fc)
                     θc = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))),
                                c.wetpool ? (; σ0_wet = 0.5, τ_wws = 0.2, z_wet = zeros(length(wcw9.chassis.prev)), τ_wetd = 0.3,
@@ -1948,6 +1997,13 @@ end
                     cdev = LapConditions(cshr.comp, cshr.wet, cshr.tt, cshr.rain, true, true, (;))
                     @test Turing.DynamicPPL.loglikelihood(lap_effects(d9; cond = cshr), merge(θ0, (; τ_wetc = 0.2, u_wetc = uc, τ_wetd = 0.3, u_wetd = ud))) ≈
                           Turing.DynamicPPL.loglikelihood(lap_effects(d9; cond = cdev), merge(θ0, (; τ_wet = [1.0, 1.0], u_wet = vcat(wvc, wvd))))
+                    # globally centred: a shift of one season's car-seasons only is invisible within season, but not globally;
+                    # a shift of all of them is invisible to both
+                    g1, _ = Diomedes.wet_car_groups(d9, wcs)
+                    one = Float64.(g1 .== g1[1])
+                    ll(c, u) = Turing.DynamicPPL.loglikelihood(lap_effects(d9; cond = c), merge(θ0, (; τ_wetc = 0.2, u_wetc = u, τ_wetd = 0.3, u_wetd = ud)))
+                    @test ll(cshr, uc) ≈ ll(cshr, uc .+ one) && ll(cglob, uc) ≈ ll(cglob, uc .+ 1)
+                    @test all(==(g1[1]), g1) || !(ll(cglob, uc) ≈ ll(cglob, uc .+ one))
                 end
                 # h against a direct sum
                 cv, wv, c = randn(rng, 10), randn(rng, nm9 + nc9), conds[2]
@@ -1964,7 +2020,7 @@ end
                     xc = Diomedes.center_by(x, wcw9.chassis.season, wcw9.chassis.counts)
                     @test Diomedes.wet_car_walk(0.5, 0.2, z, wcw9) == xc[wcw9.row_ch]
                 end
-                for c in (conds..., cpool, cdrv, cshr), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
+                for c in (conds..., cpool, cdrv, cshr, cglob), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
                     m = lap_effects(d9; flags..., cars = fc, ctx = cx, cond = c)
                     rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                     rg = NamedTuple(getfield(rdm, :_varname_ranges))
