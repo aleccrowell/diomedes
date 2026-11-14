@@ -98,11 +98,12 @@ probe = "probe" ∈ ARGS            # a short test fit saved under its own tag (
 condf = "cond" ∈ ARGS             # per-lap compound, track temperature, rain (#116)
 wetwalk = "wetwalk" ∈ ARGS        # the same, the car-seasons' pooled by works (#116 step 1)
 wetdrv = "wetdrv" ∈ ARGS          # drivers' wet deviations only (#116)
-wetall = "wetall" ∈ ARGS          # as wetshr, every car-season with a wet lap: the prior alone shrinks them (#116)
+wetallg = "wetallg" ∈ ARGS        # as wetall, the car-seasons' deviations centred over all of them, not within season (#116)
+wetall = "wetall" ∈ ARGS || wetallg   # as wetshr, every car-season with a wet lap: the prior alone shrinks them (#116)
 wetshr = "wetshr" ∈ ARGS || wetall   # drivers', and car-seasons' with ≥ WETSHR_MIN wet laps, spread shrunk (#116 option 2)
 wetdev = "wetdev" ∈ ARGS || wetwalk || wetdrv || wetshr   # car-season and driver deviations on wet-tyre laps (#116, with cond)
-count((("wetdev" ∈ ARGS), wetwalk, wetdrv, "wetshr" ∈ ARGS, wetall)) <= 1 ||
-    error("wetdev, wetwalk, wetdrv, wetshr and wetall are alternatives")
+count((("wetdev" ∈ ARGS), wetwalk, wetdrv, "wetshr" ∈ ARGS, "wetall" ∈ ARGS, wetallg)) <= 1 ||
+    error("wetdev, wetwalk, wetdrv, wetshr, wetall and wetallg are alternatives")
 wetdev && !condf && error("wetdev / wetwalk need cond")
 δarg = findfirst(a -> startswith(a, "delta="), ARGS)
 δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
@@ -117,7 +118,7 @@ n_block = blockarg === nothing ? (probe ? 25 : 100) : parse(Int, split(ARGS[bloc
 # missing from this list was read as the chain count, and warm= had to be 5th).
 FLAGS = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
          "walk", "works", "big", "keepslow", "keepwet", "rwalk", "rwrel", "rwrels", "nostartdrv", "dinc1", "notune", "probe",
-         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall")
+         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg")
 KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "n")
 optkey(a) = (i = findfirst('=', a); i === nothing ? nothing : a[1:prevind(a, i)])
 badkeys = [a for a in ARGS if optkey(a) !== nothing && optkey(a) ∉ KEYS]
@@ -142,7 +143,7 @@ flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev
               (f[13] ? "_big" : "") * (f[14] ? "_rwalk" : "") * (f[15] ? "" : "_nostartdrv") * (f[16] ? "_dinc1" : "")
 flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1)
 ctx_sfx = (traffic ? "_traffic" : "") * (fpace ? "_fpace" : "") * (short ? "_short" : "") *   # #113, after the others
-          (condf ? "_cond" : "") * (wetwalk ? "_wetwalk" : wetdrv ? "_wetdrv" : wetall ? "_wetall" : wetshr ? "_wetshr" : wetdev ? "_wetdev" : "")                                       # #116, after those
+          (condf ? "_cond" : "") * (wetwalk ? "_wetwalk" : wetdrv ? "_wetdrv" : wetallg ? "_wetallg" : wetall ? "_wetall" : wetshr ? "_wetshr" : wetdev ? "_wetdev" : "")                                       # #116, after those
 tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (rwrels ? "_rwrels" : rwrel ? "_rwrel" : "") * ctx_sfx * (keepslow ? "_keepslow" : "") * (keepwet ? "_keepwet" : "") * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
@@ -160,7 +161,7 @@ d = prepare_laps(sd.laps, res; pits, pit_stops = sd.pits, circuits = circ, stopp
 println(d); flush(stdout)
 ctx = traffic || fpace || short ? LapContext(d, sd.laps; traffic, fpace, short) : LapContext()
 cnd = condf ? LapConditions(d, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons)); wetdev,
-                                   wetpool = wetwalk, wetcar = !wetdrv, wetmin = wetall ? 1 : wetshr ? Diomedes.WETSHR_MIN : 0) :
+                                   wetpool = wetwalk, wetcar = !wetdrv, wetmin = wetall ? 1 : wetshr ? Diomedes.WETSHR_MIN : 0, wetglobal = wetallg) :
       LapConditions()
 condf && (println(cnd); flush(stdout))
 mkpath("output")
@@ -193,7 +194,8 @@ if action == "chain"
                    LapConditions(d_old, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(wseasons));
                                  wetdev = occursin(r"_wet(dev|walk|drv|shr|all)", wtag), wetpool = occursin("_wetwalk", wtag),
                                  wetcar = !occursin("_wetdrv", wtag),
-                                 wetmin = occursin("_wetall", wtag) ? 1 : occursin("_wetshr", wtag) ? Diomedes.WETSHR_MIN : 0) :
+                                 wetmin = occursin("_wetall", wtag) ? 1 : occursin("_wetshr", wtag) ? Diomedes.WETSHR_MIN : 0,
+                                 wetglobal = occursin("_wetallg", wtag)) :
                    LapConditions()
         # blocks the old fit predates: κ_fp (#113's field pace on the shortfall) came after probe 113b
         wst = deserialize(wfile)
@@ -396,7 +398,7 @@ wetv = wetwalk ? collect3((i, c) -> vcat(Diomedes.wet_car_walk(chain[:σ0_wet][i
                                          chain[:τ_wetd][i, c] .* (chain[:u_wetd][i, c] .- mean(chain[:u_wetd][i, c])))) :
        wetdrv ? collect3((i, c) -> vcat(zeros(length(d.machines)), chain[:τ_wetd][i, c] .* (chain[:u_wetd][i, c] .- mean(chain[:u_wetd][i, c])))) :
        wetshr ? collect3((i, c) -> vcat(Diomedes.wet_scatter(chain[:τ_wetc][i, c] .*
-                                                             Diomedes.center_by(chain[:u_wetc][i, c], Diomedes.wet_car_groups(d, cnd.wetcars)...),
+                                                             Diomedes.center_by(chain[:u_wetc][i, c], Diomedes.wet_car_groups(d, cnd)...),
                                                              cnd.wetcars, length(d.machines)),
                                         chain[:τ_wetd][i, c] .* (chain[:u_wetd][i, c] .- mean(chain[:u_wetd][i, c])))) :
        wetdev ? collect3((i, c) -> chain[:τ_wet][i, c][Diomedes.wet_blocks(d)] .*

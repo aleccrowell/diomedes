@@ -1091,7 +1091,7 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         u_wetc ~ StdNormalVec(length(cond.wetcars))
         τ_wetd ~ truncated(Normal(0, 1); lower = 0)
         u_wetd ~ StdNormalVec(nc)
-        gw, cw_n = wet_car_groups(d, cond.wetcars)
+        gw, cw_n = wet_car_groups(d, cond)
         wv = wet_join(wet_scatter(τ_wetc .* center_by(u_wetc, gw, cw_n), cond.wetcars, nm), τ_wetd .* (u_wetd .- mean(u_wetd)))
     elseif cond.on && cond.wetdev   # car-season and driver deviations on wet-tyre laps, centred (#116)
         τ_wet ~ filldist(truncated(Normal(0, 1); lower = 0), 2)
