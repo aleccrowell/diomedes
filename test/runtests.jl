@@ -1972,17 +1972,21 @@ end
                 @test Diomedes.wet_scatter([1.0, 2.0], [3, 1], 4) == [2.0, 0.0, 1.0, 0.0]
                 # `wetallg`: the same car-seasons, centred over all of them rather than within season
                 cglob = LapConditions(cshr.comp, cshr.wet, cshr.tt, cshr.rain, true, true, false, true, wmin, wcs, true, (;))
+                # `wetrace`: also a wet-lap offset for each race with wet laps
+                wrs = sort(unique(d9.race[wet .> 0]))
+                cwr = LapConditions(cshr.comp, cshr.wet, cshr.tt, cshr.rain, true, true, false, true, wmin, wcs, true, wrs, (;))
                 @test Diomedes.wet_car_groups(d9, cglob) == (fill(1, length(wcs)), [length(wcs)]) &&
                       Diomedes.wet_car_groups(d9, cshr) == Diomedes.wet_car_groups(d9, wcs)
                 # zero condition effects: the model without them
                 m0 = lap_effects(d9)
-                for c in (conds..., cpool, cdrv, cshr, cglob)
+                for c in (conds..., cpool, cdrv, cshr, cglob, cwr)
                     mc = lap_effects(d9; cond = c, cars = fc)
                     θc = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))),
                                c.wetpool ? (; σ0_wet = 0.5, τ_wws = 0.2, z_wet = zeros(length(wcw9.chassis.prev)), τ_wetd = 0.3,
                                               u_wetd = zeros(nc9)) :
                                !c.wetcar ? (; τ_wetd = 0.3, u_wetd = zeros(nc9)) :
-                               c.wetmin > 0 ? (; τ_wetc = 0.2, u_wetc = zeros(length(c.wetcars)), τ_wetd = 0.3, u_wetd = zeros(nc9)) :
+                               c.wetmin > 0 ? merge((; τ_wetc = 0.2, u_wetc = zeros(length(c.wetcars)), τ_wetd = 0.3, u_wetd = zeros(nc9)),
+                                                    isempty(c.wetraces) ? (;) : (; τ_wr = 0.5, u_wr = zeros(length(c.wetraces)))) :
                                c.wetdev ? (; τ_wet = [0.3, 0.4], u_wet = zeros(nm9 + nc9)) : (;))
                     @test Turing.DynamicPPL.loglikelihood(mc, θc) ≈ Turing.DynamicPPL.loglikelihood(m0, θ)
                 end
@@ -2013,6 +2017,14 @@ end
                                        RaceWalk(), LapContext(), c, d9)
                 @test h0 ≈ [(c.comp[j] > 1 ? cv[c.comp[j] - 1] + cv[c.comp[j] + 3] * d9.stint[j] / 10 : 0.0) + cv[9] * c.tt[j] +
                             cv[10] * c.rain[j] + (wv[d9.mach[j]] + wv[nm9 + d9.comp[j]]) * c.wet[j] for j in 1:n]
+                # with race offsets (`wetrace`) the wet deviations have a third block, one per race
+                let wv3 = randn(rng, nm9 + nc9 + nr9)
+                    h3, _ = Diomedes.lap_h(z(nc9), z(nm9), z(2length(d9.eras)), z(nc9), z(nm9), z(1), z(nc9), z(nm9),
+                                           z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), z(1), z(1), cv, wv3,
+                                           RaceWalk(), LapContext(), c, d9)
+                    @test h3 ≈ h0 .+ [(wv3[d9.mach[j]] + wv3[nm9 + d9.comp[j]] + wv3[nm9 + nc9 + d9.race[j]] -
+                                       wv[d9.mach[j]] - wv[nm9 + d9.comp[j]]) * c.wet[j] for j in 1:n]
+                end
                 # gradients against ForwardDiff, with and without the shortfall terms; layout
                 # pooled: each car-season takes its works' centred walk state
                 let z = randn(rng, length(wcw9.chassis.prev))
@@ -2020,7 +2032,7 @@ end
                     xc = Diomedes.center_by(x, wcw9.chassis.season, wcw9.chassis.counts)
                     @test Diomedes.wet_car_walk(0.5, 0.2, z, wcw9) == xc[wcw9.row_ch]
                 end
-                for c in (conds..., cpool, cdrv, cshr, cglob), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
+                for c in (conds..., cpool, cdrv, cshr, cglob, cwr), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
                     m = lap_effects(d9; flags..., cars = fc, ctx = cx, cond = c)
                     rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                     rg = NamedTuple(getfield(rdm, :_varname_ranges))
@@ -2029,7 +2041,7 @@ end
                           haskey(rg, :z_wet) == c.wetpool && haskey(rg, :u_wetd) == (c.wetpool || !c.wetcar || c.wetmin > 0) &&
                           haskey(rg, :u_wetc) == (c.wetmin > 0) && (c.wetmin == 0 || length(rg.u_wetc.range) == length(c.wetcars))
                     xw = 0.5 .* randn(rng, LDP.dimension(rdm))
-                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd, :τ_wetc)
+                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd, :τ_wetc, :τ_wr)
                         haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
                     end
                     @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]
