@@ -92,3 +92,54 @@ well determined by the data. Non-centred effects ``a = \sigma z`` then tie
   and ESS 37. Centring raised the scalars' min ESS from 106 to 1,168 in a trial
   ([#28](https://github.com/aleccrowell/diomedes/issues/28)). One outlier driver, about 29% off the pace on almost every stage,
   stayed bimodal until drivers got a Student-t(3) prior ([#28](https://github.com/aleccrowell/diomedes/issues/28)).
+
+## Ridges between a team's drivers and its car
+
+Centring removes the directions no data can see, but some directions are seen only
+weakly. In the lap model over 2021–2026, the slowest directions in the posterior were
+driver–team clusters: Norris and Piastri against McLaren's race walk, Verstappen and
+Pérez against Red Bull's. The data fix each car's form plus its drivers' levels, and
+the split rests on few links (team moves, team-mates).
+
+To find such directions, take each chain's posterior means, standardised by each
+quantity's posterior sd, and run an SVD of their differences between chains. The
+leading vectors name the quantities the chains disagree on together. For McLaren's
+cluster it held 65 % of the between-chain spread
+([#116](https://github.com/aleccrowell/diomedes/issues/116)).
+
+The fix was to sample along the ridge rather than across it. `rwrel` samples each
+walk state relative to its drivers, ``\tilde x = x + W a``, with ``W`` each
+driver's share of the state's laps. This shear has Jacobian 1, so the model is
+unchanged. Moving a team's drivers no longer drags its states with them, and the
+minimum ESS of the drivers rose from 81 to 219 in the full fit. Adding the career
+slopes to the shear (`rwrels`) moved the slow direction onto the age curve
+instead, so it isn't used.
+
+## Effects that rest on a few races
+
+Effects measured on a small part of the data, such as wet-weather skill (about 5 %
+of laps, from 16 races), can go wrong in three ways the well-measured effects don't
+([#116](https://github.com/aleccrowell/diomedes/issues/116)):
+
+- **They absorb what the races have in common.** Wet races differ: the lap model's
+  per-race wet offsets spread with an sd of 2.4 % of lap time. Without them, a
+  car-season with wet laps from one or two races took those races' severity:
+  Williams 2023 came out at +2.6 % to +3.2 % against about −0.2 % in a raw same-lap
+  comparison. Give such an effect a per-race term, partially pooled, so units are
+  compared within a race.
+- **Losses absorb weak signals.** In a pace + loss model a slower lap can be read as
+  a slower limit or as a loss. A likelihood profile along a car's wet effect showed
+  that with about 30 wet laps the losses take up a faster wet limit and the
+  likelihood is nearly flat. Before trusting such an effect, profile the likelihood
+  along it, and check that its posterior widens as its data shrink.
+- **Centring a subset forces counterweights.** If only some units have the effect,
+  centring within season makes the rest of the season's units balance one outlier.
+  Centring over all units instead lets anything shared, such as a race's
+  severity, load onto them. Choose the centring together with the terms that take up
+  the shared part, and test it: the `wetallg` test checks that shifting every unit
+  by a constant leaves the likelihood unchanged.
+
+The lap model's wet-skill terms follow all three: per-race wet offsets (`wetrace`),
+car-season effects for every car-season shrunk by a shared spread and centred
+globally (`wetallg`), and a check that few-lap effects stay near zero with wide
+intervals.

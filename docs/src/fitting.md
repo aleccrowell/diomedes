@@ -80,6 +80,42 @@ block-buffers.
 Rules of thumb: R-hat below 1.01 and bulk ESS above about 400 over 4 chains, and
 no divergences.
 
+## Probes
+
+Before a full fit, a change is tested with a short **probe**: the same model and
+data, 4 chains of 300 warm-up and 200 draws, warm-started where possible, under its
+own tag (`lap_fit.jl … probe`). The design work on wet conditions (#116) used about
+eight probes before one full fit. What made that work:
+
+- **Set the criteria before the run**, on the issue: what each quantity should do
+  and what counts as a failure. Judging against them afterwards is then quick and
+  honest. A criterion can still be overridden, but say so and why.
+- **Include a check that doesn't depend on a model.** A criterion like "agrees with
+  the previous full fit" penalises a fix when the previous fit shares the flaw being
+  fixed. In #116 the previous fit had no per-race wet offsets, so its car effects
+  carried race severity, and the fix "failed" agreement with it (0.87 against 0.9). A
+  raw same-lap comparison showed the fix tracked the data better (0.67 against 0.59).
+- **Report mixing, not just speed.** Give each chain's ESS and R-hat for the
+  quantities that mix slowest (drivers, walks, any new term), as well as tree
+  depth, step size and divergences.
+- **Set a hard stop from the worst case.** At maximum tree depth an iteration takes
+  1023 gradients. If a chain hasn't reached iteration 100 by 100 × 1023 × the
+  gradient time, plus 5 %, it is stuck, whatever the typical times suggest.
+- **A probe that misses is evidence, not waste.** Keep its code and its tag. Two of
+  #116's failed probes (season and global centring) showed which term was missing.
+
+A criteria comment can follow this template:
+
+```
+**Probe <name>: <design>, 4 × (300 + 200), warm-started from <tag>.**
+Criteria, set before the run:
+1. <quantity> within <range> (why)
+2. R-hat ≤ 1.05 on every group; no divergences
+3. <a model-free check>, e.g. correlation with raw estimates ≥ <x>
+4. agreement with <the previous fit> where the change shouldn't matter
+Hard stop: iteration 100 by <time> (100 × 1023 × <gradient time> + 5 %).
+```
+
 ## Typical run times (Raspberry Pi 5)
 
 | Fit | Time |
@@ -89,3 +125,4 @@ no divergences.
 | pace + loss, the published model (`…_walk1_works_dinc`), 1950–2026, 4 chains in parallel | about 10.4 h per chain |
 | lap model, 2011–2026 (316k laps) with every #108 and #113 term, warm-started | about 9 h per chain (1,000 draws) |
 | lap model, 2021–2026 (124k laps) with the conditions terms (#116), warm-started | 6–23 h per chain (1,000 draws), depending on the step size the chain adapts |
+| lap model, 2021–2026 with conditions, car and race wet terms and `rwrel` (#116), warm-started, fixed step | 13.5–14 h per chain (1,000 draws) |
