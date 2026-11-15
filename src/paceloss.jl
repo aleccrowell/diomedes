@@ -1237,6 +1237,10 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     dinc && !big_loss && throw(ArgumentError("per-driver incident proneness is implemented for big-loss models (big_loss = true)"))
     ncres && !pace_scale && throw(ArgumentError("non-centred car effects (ncres) are for pace-scale models (pace_scale = true)"))
     age && length(g.age_years) < 3 && throw(ArgumentError("the age curve needs ages spanning at least 3 years"))
+    # without ages every career offset is zero and the slopes are fitted to nothing (#143: a source
+    # without `event_date` or `competitor_birth` gives no ages)
+    slopes && isempty(g.age_years) &&
+        throw(ArgumentError("career slopes need driver ages: the results have no `event_date` or `competitor_birth`"))
     career_rows = (age || slopes) ? (; rows = CareerRows(g), slopes) : nothing
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
                             age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, dev ? DevRows(g) : nothing,
