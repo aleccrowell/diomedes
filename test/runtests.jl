@@ -2140,6 +2140,41 @@ end
         ic = identified_convergence(chain, g, "pl")
         @test Set(keys(ic)) ⊇ Set((:overall, :drivers, :cars, :races, :scalars))
         @test ic.overall.max_rhat < 1.1 && ic.drivers.min_ess > 20
+        # the draws behind it, and the slow directions over them (#132)
+        cols, lab = identified_draws(chain, g, "pl")
+        @test size(cols[:drivers]) == (300, 2, length(g.competitors)) && lab(:drivers, 1) == g.competitors[1]
+        @test length(slow_directions(cols[:drivers], [lab(:drivers, i) for i in axes(cols[:drivers], 3)])) == 1
+        let rng = MersenneTwister(2), A = randn(rng, 400, 4, 5)
+            # chains 1 and 2 sit along +(p1 - p2), chains 3 and 4 along -(p1 - p2): one slow direction
+            for (c, s) in enumerate((1.0, 1.0, -1.0, -1.0))
+                A[:, c, 1] .+= s; A[:, c, 2] .-= s
+            end
+            sd = slow_directions(A, ["p$i" for i in 1:5]; k = 2, top = 2)
+            @test length(sd) == 2 && sd[1].share > 0.9 && sd[1].rhat > 1.2
+            @test Set(first.(sd[1].loadings)) == Set(["p1", "p2"]) && sign(last(sd[1].loadings[1])) != sign(last(sd[1].loadings[2]))
+            @test_throws ArgumentError slow_directions(A, ["p1"])
+            # pure noise in many quantities: chosen on the same draws its R-hat looks high, held out it doesn't
+            B = randn(rng, 400, 4, 500)
+            @test slow_directions(B, string.(1:500); k = 1, holdout = false)[1].rhat > slow_directions(B, string.(1:500); k = 1)[1].rhat
+            @test slow_directions(B, string.(1:500); k = 1)[1].rhat < 1.02
+            # slow_trends (LIMBR-style permutation test): nothing in noise; a planted ridge between
+            # chains and a planted drift within them, each with all 20 members; one slow quantity alone isn't a trend
+            N = randn(rng, 1000, 4, 300)
+            @test isempty(slow_trends(N, string.(1:300); nperm = 40))
+            Cr, Dr, Er = (randn(rng, 1000, 4, 300) for _ in 1:3)
+            for q in 1:20, (c, s) in enumerate((0.3, 0.3, -0.3, -0.3)); Cr[:, c, q] .+= (q <= 10 ? s : -s); end
+            for q in 1:20, c in 1:4; Dr[:, c, q] .+= range(-0.4, 0.4; length = 1000); end
+            for c in 1:4; x = 0.0; for i in 1:1000; x = 0.99x + sqrt(1 - 0.99^2) * randn(rng); Er[i, c, 1] = x; end; end
+            tr, td = slow_trends(Cr, string.(1:300); nperm = 40), slow_trends(Dr, string.(1:300); nperm = 40)
+            @test length(tr) >= 1 && tr[1].between > 0.9 && tr[1].p_between < 0.05 && issubset(string.(1:20), first.(tr[1].members))
+            @test length(td) >= 1 && td[1].between < 0.1 && td[1].p_drift < 0.05 && issubset(string.(1:20), first.(td[1].members))
+            @test isempty(slow_trends(Er, string.(1:300); nperm = 40))
+            # correlated but well mixed (a shared factor per draw): a trend, but neither between chains nor drifting
+            Gr = randn(rng, 1000, 4, 300); fr = randn(rng, 1000, 4)
+            for q in 1:20; Gr[:, :, q] .+= 2 .* fr; end
+            tg = slow_trends(Gr, string.(1:300); nperm = 100)
+            @test length(tg) >= 1 && tg[1].p_between > 0.01 && tg[1].p_drift > 0.01
+        end
         # one mode for a converged fit; two when chains sit in different places (#64)
         @test chain_modes(chain, [:σ, :a_π, :a_λ]) == ["A", "A"]
         let x = randn(MersenneTwister(1), 500, 4)

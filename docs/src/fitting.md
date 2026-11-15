@@ -80,6 +80,11 @@ block-buffers.
   for the gap models.
 - [`chain_modes`](@ref): groups the chains into modes when they settle in
   different solutions, so results can be reported by mode (#64).
+- [`slow_directions`](@ref): when something mixes slowly, which combination of
+  quantities the chains disagree on, over [`identified_draws`](@ref)
+  (`scripts/slow_directions.jl`, #132). A direction loading a team's drivers
+  against its car is a ridge a reparametrisation can remove (see
+  [Identification](methodology/identification.md)).
 
 Rules of thumb: R-hat below 1.01 and bulk ESS above about 400 over 4 chains, and
 no divergences.
