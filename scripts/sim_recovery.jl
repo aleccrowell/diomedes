@@ -120,7 +120,7 @@ g = prepare_gaps(rows)
 cars = spec.walk ? sim_cars(rows, truth) : nothing
 fit(; kw...) = fit_paceloss(g; pace_scale = spec.pace_scale, slopes = spec.slopes, dev = spec.dev, age = spec.age,
                             big_loss = spec.big_loss, loss_duration = spec.loss_duration, walk = spec.walk, walk1 = spec.walk1,
-                            works = spec.works, crel = get(spec, :crel, false), cars, kw...)
+                            works = spec.works, ncres = get(spec, :ncres, false), crel = get(spec, :crel, false), cars, kw...)
 
 if get(args, 1, "") == "chain"
     k = parse(Int, args[2])
