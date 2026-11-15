@@ -280,7 +280,7 @@ function identified_convergence(chain, g::GapData, model::AbstractString)
 end
 
 """
-    slow_directions(A, labels; k = 3, top = 8) -> Vector{NamedTuple}
+    slow_directions(A, labels; k = 3, top = 8, holdout = true) -> Vector{NamedTuple}
 
 The combinations of quantities on which the chains disagree most (#132). `A` is a
 draws × chains × quantities array (as for MCMCDiagnosticTools) and `labels` names the
@@ -290,23 +290,31 @@ of its centred rows are the slow directions.
 
 Returns up to `k` directions (at most chains − 1), each `(; share, rhat, ess,
 loadings)`: its share of the between-chain spread, the R-hat and bulk ESS of the draws
-projected onto it, and the `top` largest loadings as `label => weight`. A slow
-direction whose loadings group a team's drivers with its car is a ridge that a
+projected onto it, and the `top` largest loadings as `label => weight`.
+
+With many quantities and few chains, some direction always shows disagreement by
+chance, and measuring it on the draws it was chosen from overstates its R-hat. With
+`holdout` (the default) the directions are found on the first half of the draws and
+their R-hat and ESS measured on the second half, so a direction that is only noise
+comes out near R-hat 1. A direction that keeps a high held-out R-hat and whose
+loadings group, say, a team's drivers with its car is a real ridge, which a
 reparametrisation can remove (`rwrel` on the lap model, #116).
 """
-function slow_directions(A::AbstractArray{<:Real,3}, labels::AbstractVector; k::Integer = 3, top::Integer = 8)
+function slow_directions(A::AbstractArray{<:Real,3}, labels::AbstractVector; k::Integer = 3, top::Integer = 8,
+                         holdout::Bool = true)
     ni, nc, p = size(A)
     length(labels) == p || throw(ArgumentError("$(length(labels)) labels for $p quantities"))
     sdv = vec(std(reshape(A, ni * nc, p); dims = 1))
     keep = findall(>(0), sdv)
     Z = A[:, :, keep] ./ reshape(sdv[keep], 1, 1, :)
-    M = dropdims(mean(Z; dims = 1); dims = 1)                     # chains × quantities
+    fit_i, test_i = holdout ? (1:(ni ÷ 2), (ni ÷ 2 + 1):ni) : (1:ni, 1:ni)
+    M = dropdims(mean(Z[fit_i, :, :]; dims = 1); dims = 1)        # chains × quantities
     F = svd(M .- mean(M; dims = 1))
     tot = sum(abs2, F.S)
     out = NamedTuple[]
     for j in 1:min(k, nc - 1, length(F.S))
         v = F.V[:, j]
-        pr = reshape(reduce(+, (Z[:, :, q] .* v[q] for q in eachindex(v))), ni, nc, 1)
+        pr = reshape(reduce(+, (Z[test_i, :, q] .* v[q] for q in eachindex(v))), length(test_i), nc, 1)
         ord = sortperm(abs.(v); rev = true)[1:min(top, length(v))]
         push!(out, (; share = F.S[j]^2 / tot, rhat = MCMCDiagnosticTools.rhat(pr)[1], ess = MCMCDiagnosticTools.ess(pr)[1],
                     loadings = [labels[keep[q]] => v[q] for q in ord]))

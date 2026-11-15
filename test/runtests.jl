@@ -2141,6 +2141,10 @@ end
             @test length(sd) == 2 && sd[1].share > 0.9 && sd[1].rhat > 1.2
             @test Set(first.(sd[1].loadings)) == Set(["p1", "p2"]) && sign(last(sd[1].loadings[1])) != sign(last(sd[1].loadings[2]))
             @test_throws ArgumentError slow_directions(A, ["p1"])
+            # pure noise in many quantities: chosen on the same draws its R-hat looks high, held out it doesn't
+            B = randn(rng, 400, 4, 500)
+            @test slow_directions(B, string.(1:500); k = 1, holdout = false)[1].rhat > slow_directions(B, string.(1:500); k = 1)[1].rhat
+            @test slow_directions(B, string.(1:500); k = 1)[1].rhat < 1.02
         end
         # one mode for a converged fit; two when chains sit in different places (#64)
         @test chain_modes(chain, [:σ, :a_π, :a_λ]) == ["A", "A"]
