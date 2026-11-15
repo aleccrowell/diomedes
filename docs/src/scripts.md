@@ -18,6 +18,7 @@ them with `julia --project scripts/<name>.jl ...`.
 | `career_slopes.jl` | Drivers with the largest career slopes |
 | `retire_fit.jl` | Fits the retirement model and writes reliability and incident tables |
 | `selection_check.jl` | Whether dropping retirements biases the pace effects |
+| `exclusion_audit.jl` | Which rows the race and retirement models leave out, by race condition, decade, driver and car ([#133](https://github.com/aleccrowell/diomedes/issues/133)) |
 | `lap_fit.jl` | Fits the lap-time model, checkpointed, optionally warm-started; flags and `key=value` options in any order, unknown ones are errors ([#114](https://github.com/aleccrowell/diomedes/issues/114)) |
 | `peak_check.jl`, `context_check.jl` | Checks of the peak-pace and lap-context (traffic, field pace) data ([#113](https://github.com/aleccrowell/diomedes/issues/113)) |
 | `conditions/fetch_conditions.py` | Fetches per-lap compound, track temperature and rain (FastF1 2021–22, OpenF1 2023 on) to `data/conditions/` ([#116](https://github.com/aleccrowell/diomedes/issues/116)) |
