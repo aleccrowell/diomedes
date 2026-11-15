@@ -323,6 +323,133 @@ function slow_directions(A::AbstractArray{<:Real,3}, labels::AbstractVector; k::
 end
 
 """
+    slow_trends(A, labels; segments = 10, nperm = 100, alpha = 0.05, lam = 0.5, kmax = 10,
+                rng = Xoshiro(1)) -> Vector{NamedTuple}
+
+Coherent slow movements across many quantities, with a permutation test for each
+(#132), after the batch-effect step of LIMBR (github.com/aleccrowell/LIMBR, itself
+after Leek and Storey's surrogate variable analysis). `A` is draws × chains ×
+quantities, as for [`slow_directions`](@ref).
+
+1. Each chain is cut into `segments` blocks. The matrix `R` has a row per quantity
+   and a column per chain-segment: the segment's mean, minus the quantity's
+   posterior mean, over its posterior sd.
+2. The SVD of `R` (columns centred) gives *trends* over the chain-segments, each
+   with its share of the variance.
+3. Permuting each row of `R` independently keeps every quantity's own spread but
+   breaks any movement shared between quantities. Trend k is significant when the
+   permuted matrices' k-th share beats the observed one in under `alpha` of `nperm`
+   permutations; trends are taken in order until one isn't (at most `kmax` are reported).
+4. Each quantity is regressed on each significant trend. Its members are the
+   quantities with Storey q-value below `alpha`, π₀ (the share unrelated to the
+   trend, capped at 1) estimated from the p-values above `lam`. LIMBR instead keeps
+   the (1 − π₀)·n smallest p-values and stops when π₀ ≥ 1, which on 300 quantities
+   with 20 members dropped a clear trend (π₀ = 1.02 by chance). An SVD of the
+   members' rows refines the trend.
+
+5. Whether the trend *mixes slowly*. Posterior correlation alone makes coherent
+   trends (a team's walk states move together however well the chains mix), so step
+   3 finds structure, not slowness. Permuting the order of the chain-segments, the
+   same way for every quantity, keeps that correlation but breaks any order. Against
+   it, `between` (the trend's share of variance between chains: the chains sit in
+   different places, a ridge) and `lag1` (its autocorrelation from one segment to
+   the next within a chain: it drifts) get p-values `p_between` and `p_drift`.
+
+Returns per significant trend `(; p, share, between, p_between, lag1, p_drift, members,
+trend)`: the structure p-value, the variance share, the two mixing statistics and their
+p-values, the members as `label => correlation` from strongest, and the refined trend
+over the columns (chain 1's segments first). A trend with neither mixing p-value small
+is posterior correlation that the chains explore well.
+
+On the lap fits of #116 it did *not* flag the known driver/car ridge (best p_between
+0.14 before `rwrel`), which `slow_directions` found (held-out R-hat 1.033, ESS 70;
+after `rwrel` 1.006, 264). The trends with most variance are posterior correlation,
+not the directions the chains disagree on, and 10 segments per chain give the mixing
+test little power. Use `slow_directions` to find ridges; this shows which groups of
+quantities move together and whether any of them drift.
+
+A single slowly mixing quantity is not a trend: permuting keeps most of its
+variance, and a trend with fewer than two members is skipped (its R-hat shows it).
+Segments should be long against the autocorrelation time (e.g. 100 draws), or
+smoothness alone, shared by independent quantities, can look like a trend.
+"""
+# share of a trend's variance between chains, and its lag-1 autocorrelation over each chain's segments
+function trend_mixing(t::AbstractVector, chain_of::AbstractVector, segments::Integer)
+    m = mean(t); d = t .- m; tot = sum(abs2, d)
+    nc = maximum(chain_of)
+    cm = [mean(t[chain_of .== c]) for c in 1:nc]
+    between = sum(abs2, cm[chain_of] .- m) / tot
+    lag = sum(d[i] * d[i + 1] for i in 1:(length(t) - 1) if chain_of[i] == chain_of[i + 1]) / tot
+    return between, lag
+end
+
+function slow_trends(A::AbstractArray{<:Real,3}, labels::AbstractVector; segments::Integer = 10, nperm::Integer = 100,
+                     alpha::Real = 0.05, lam::Real = 0.5, kmax::Integer = 10, rng::AbstractRNG = Xoshiro(1))
+    ni, nc, p = size(A)
+    length(labels) == p || throw(ArgumentError("$(length(labels)) labels for $p quantities"))
+    L = ni ÷ segments
+    L >= 1 || throw(ArgumentError("$ni draws can't be cut into $segments segments"))
+    sdv = vec(std(reshape(A, ni * nc, p); dims = 1))
+    keep = findall(>(0), sdv)
+    R = Matrix{Float64}(undef, length(keep), nc * segments)
+    for (r, q) in enumerate(keep), c in 1:nc, sgm in 1:segments
+        R[r, (c - 1) * segments + sgm] = mean(@view A[((sgm - 1) * L + 1):(sgm * L), c, q])
+    end
+    R .= (R .- mean(R; dims = 2)) ./ sdv[keep]
+    shares(X) = (sv = svdvals(X .- mean(X; dims = 1)); sv .^ 2 ./ sum(abs2, sv))
+    tk = shares(R)
+    beat = zeros(length(tk))
+    for _ in 1:nperm
+        Rs = similar(R)
+        for r in axes(R, 1)
+            Rs[r, :] = R[r, randperm(rng, size(R, 2))]
+        end
+        ts = shares(Rs)
+        n = min(length(ts), length(tk))
+        beat[1:n] .+= ts[1:n] .> tk[1:n]
+    end
+    pk = beat ./ nperm
+    nsig = something(findfirst(>=(alpha), pk), length(pk) + 1) - 1
+    F = svd(R .- mean(R; dims = 1))
+    chain_of = repeat(1:nc; inner = segments)
+    out = NamedTuple[]
+    for j in 1:min(nsig, kmax)
+        v = F.V[:, j]
+        ν = length(v) - 2
+        rs = [cor(view(R, r, :), v) for r in axes(R, 1)]
+        ps = [2exp(tdistlogccdf(ν, abs(r) * sqrt(ν / max(1 - r^2, eps())))) for r in rs]
+        π0 = min(1.0, count(>(lam), ps) / (length(ps) * (1 - lam)))
+        o = sortperm(ps); n = length(ps)
+        q = similar(ps); m = 1.0
+        for i in n:-1:1                       # Storey q-values, monotone from the largest p
+            m = min(m, π0 * n * ps[o[i]] / i); q[o[i]] = m
+        end
+        mem = findall(<(alpha), q)
+        length(mem) < 2 && continue           # one quantity alone: its own R-hat shows it
+        trend = v
+        if length(mem) > 1
+            Fs = svd(R[mem, :] .- mean(R[mem, :]; dims = 1))
+            cs = [abs(cor(Fs.V[:, i], v)) for i in axes(Fs.V, 2)]
+            trend = Fs.V[:, argmax(cs)]
+            trend = sign(cor(trend, v)) * trend
+        end
+        between, lag1 = trend_mixing(trend, chain_of, segments)
+        # mixing test: permuting the segments' order, jointly for every quantity, keeps the
+        # posterior correlation that made the trend but breaks any chain or time structure
+        bp = lp = 0
+        for _ in 1:nperm
+            perm = trend[randperm(rng, length(trend))]
+            b, l = trend_mixing(perm, chain_of, segments)
+            bp += b >= between; lp += l >= lag1
+        end
+        ord = mem[sortperm(abs.(rs[mem]); rev = true)]
+        push!(out, (; p = pk[j], share = tk[j], between, p_between = bp / nperm, lag1, p_drift = lp / nperm,
+                    members = [labels[keep[r]] => rs[r] for r in ord], trend))
+    end
+    return out
+end
+
+"""
     chain_modes(chain, names; threshold = 1.1) -> Vector{String}
 
 Group the chains of `chain` into modes: two chains are in the same mode when the
