@@ -63,11 +63,14 @@ println("\nraces dropped whole ($(nrow(dropped))): ", join(["$(r.event_id) $(r.e
 
 # per driver and car-season: dropped share against the published effects
 dropped_share(gdf) = mean(.!in.(gdf.class, Ref((:timed, :lapped, :partial))))
-for (col, file, lab) in ((:competitor_id, "competitor_effects", "drivers"), (:machine_key, "machine_effects", "car-seasons"))
+# (car-seasons: the site's total effects; gap_fit.jl's machine_effects.csv is only the residual
+# part in a fit with walks, #141)
+for (col, f, lab) in ((:competitor_id, "output/gap_$(mode)_pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc_competitor_effects.csv", "drivers"),
+                      (:machine_key, "docs/src/assets/data/race/cars.csv", "car-seasons"))
     col === :machine_key && (df.machine_key = [string(r.machine_id, "_", r.season) for r in eachrow(df)])
-    f = "output/gap_$(mode)_pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc_$(file).csv"
     isfile(f) || (println("\n(no $f: skipping $lab)"); continue)
     eff = CSV.read(f, DataFrame; stringtype = String)
+    hasproperty(eff, :id) && rename!(eff, :id => :label)
     s = combine(groupby(df, col), nrow => :starts, AsTable(:) => (t -> dropped_share(DataFrame(t))) => :dropped)
     j = innerjoin(s, select(eff, :label => col, :mean); on = col)
     j = j[j.starts .>= 20, :]

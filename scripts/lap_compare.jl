@@ -51,6 +51,8 @@ else
     race_tag = get(ARGS, 3, "gap_jolpica1950-2025+partial_pl_dur_rw_kappa_age_big_slope_dev")
     da, ca = read2(tagA)
     rd = CSV.read("output/$(race_tag)_competitor_effects.csv", DataFrame)
+    # the car-season effect only for a race fit without chassis/engine walks: with walks this file
+    # holds the residual part, and the total is in the site's cars.csv (export_site.jl race, #141)
     rc = CSV.read("output/$(race_tag)_machine_effects.csv", DataFrame)
     println("A = $race_tag (race-time model, career effects), B = $tagA (lap model)")
     dj = innerjoin(rename(rd[:, [:label, :mean, :sd]], :label => :driver, :mean => :race, :sd => :race_sd),
