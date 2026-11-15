@@ -135,9 +135,13 @@ at the base rates (a dry race, a car with zero shortfall offsets)</td></tr>
 <thead><tr><th>File</th><th>One row per</th><th>Columns</th></tr></thead>
 <tbody>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps_conditions/conditions.csv">conditions.csv</a></td><td>term</td>
-<td><code>term</code> (the fit's parameter name), <code>group</code>, <code>label</code>, <code>unit</code>; <code>mean</code>, <code>sd</code>: the compound offsets against SOFT, compound stint slopes, track temperature and rain on the pace, wet tyres and rain on the shortfall, and for reference the spread of the wet deviations, the field-pace slope and the lap noise</td></tr>
+<td><code>term</code> (the fit's parameter name), <code>group</code>, <code>label</code>, <code>unit</code>; <code>mean</code>, <code>sd</code>: the compound offsets against SOFT, compound stint slopes, track temperature and rain on the pace, wet tyres and rain on the shortfall, and for reference the spreads of the wet deviations (drivers, car-seasons, races), the field-pace slope and the lap noise</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps_conditions/wet_drivers.csv">wet_drivers.csv</a></td><td>driver</td>
-<td><code>id</code>, <code>name</code>, <code>wet_laps</code>: clean laps on intermediate or wet tyres; <code>mean</code>, <code>sd</code>: deviation on those laps from the driver's dry pace, % of lap time, centred across drivers (negative = better in the wet). Includes the car's wet performance</td></tr>
+<td><code>id</code>, <code>name</code>, <code>wet_laps</code>: clean laps on intermediate or wet tyres; <code>mean</code>, <code>sd</code>: deviation on those laps from the driver's dry pace, % of lap time, centred across drivers (negative = better in the wet), with the car's wet performance taken out</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/laps_conditions/wet_cars.csv">wet_cars.csv</a></td><td>car-season with a wet-tyre lap</td>
+<td><code>id</code> (constructor_season), <code>wet_laps</code>; <code>mean</code>, <code>sd</code>: the car's deviation on wet-tyre laps from its dry pace, % of lap time, centred over all car-seasons (negative = better in the wet)</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/laps_conditions/wet_races.csv">wet_races.csv</a></td><td>race with a wet-tyre lap</td>
+<td><code>id</code> (season-round), <code>name</code>, <code>wet_laps</code>; <code>mean</code>, <code>sd</code>: how much slower that race's wet-tyre laps were than the average wet race's, % of lap time, centred over these races. Races run entirely on wet tyres stay near 0 with a wide sd: their offset can't be told apart from the race's mean lap</td></tr>
 </tbody></table>
 ```
 

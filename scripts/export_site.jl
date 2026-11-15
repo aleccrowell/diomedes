@@ -3,7 +3,7 @@
 #   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc] [data=jolpica1950-2026+partial]
 #   julia --project scripts/export_site.jl retire [prefix=retire]
 #   julia --project scripts/export_site.jl laps [tag=laps_2011-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_keepslow] [source=jolpica]
-#   julia --project scripts/export_site.jl laps_conditions [tag=laps_2021-2026_recorded_…_short_cond_wetdrv_keepslow]
+#   julia --project scripts/export_site.jl laps_conditions [tag=laps_2021-2026_recorded_…_short_cond_wetallg_wetrace_keepslow_keepwet]
 #   julia --project scripts/export_site.jl wrc [model=pl_dur_rw_kappa_cdrv_tdrv_fgam]
 #
 # Run from the repository root with the fits in output/. Each mode writes compact
@@ -680,7 +680,8 @@ end
 # (scripts/lap_fit.jl … cond wetdrv combine), published beside the main lap fit, whose
 # rankings stay on the site. Writes conditions.csv (the shared condition effects and the
 # scales they are read against, mean and sd from the combine output, saved as
-# output/<tag>_combine.txt) and wet_drivers.csv (drivers' wet-tyre deviations).
+# output/<tag>_combine.txt) and wet_drivers.csv (drivers' wet-tyre deviations), plus
+# wet_cars.csv (car-seasons') and wet_races.csv (races' wet-tyre offsets) when the fit has them.
 const COND_LABELS = [
     ("cond[MEDIUM]", "compound", "MEDIUM against SOFT", "% of lap time"),
     ("cond[HARD]", "compound", "HARD against SOFT", "% of lap time"),
@@ -699,8 +700,9 @@ const COND_LABELS = [
     ("τ_wetd", "wet skill", "Spread of drivers' wet-tyre deviations", "% of lap time"),
     ("β_fp", "field pace", "Field-pace slope", "per % of field pace"),
     ("σ", "noise", "Lap noise σ", "% of lap time")]
-# in some fits only: the car-seasons' wet spread (`wetshr`)
-const COND_LABELS_OPT = [("τ_wetc", "wet skill", "Spread of car-seasons' wet-tyre deviations (≥ 100 wet laps)", "% of lap time")]
+# in some fits only: the car-seasons' wet spread (`wetshr`, `wetall`, `wetallg`) and the races' (`wetrace`)
+const COND_LABELS_OPT = [("τ_wetc", "wet skill", "Spread of car-seasons' wet-tyre deviations", "% of lap time"),
+                         ("τ_wr", "wet skill", "Spread of races' wet-tyre offsets", "% of lap time")]
 function export_laps_conditions(tag)
     dir = joinpath(OUT, "laps_conditions")
     mkpath(dir)
@@ -727,9 +729,20 @@ function export_laps_conditions(tag)
     else
         rm(joinpath(dir, "wet_cars.csv"); force = true)
     end
+    # races' wet-tyre offsets (`wetrace`), with each race's name
+    wr = "output/$(tag)_wet_races.csv"
+    if isfile(wr)
+        r = round_floats!(CSV.read(wr, DataFrame; types = Dict(:race => String)))
+        ss = parse.(Int, unique(first.(r.race, 4)))
+        ev = unique(select(fetch_results(JolpicaF1(), ss), :event_id => :race, :event_name => :name))
+        CSV.write(joinpath(dir, "wet_races.csv"), rename!(select(leftjoin(r, ev; on = :race), :race, :name, Not(:race, :name)), :race => :id))
+    else
+        rm(joinpath(dir, "wet_races.csv"); force = true)
+    end
     m = match(r"^laps_(\d{4})-(\d{4})_(recorded|inferred)", tag)
     m === nothing && error("not a lap fit tag: $tag")
-    write_manifest(dir, (; model = "lap_effects with per-lap conditions (compound, track temperature, rain) and drivers' wet-tyre deviations",
+    write_manifest(dir, (; model = "lap_effects with per-lap conditions (compound, track temperature, rain) and wet-tyre deviations" *
+                                 (isfile(wc) ? " of drivers and car-seasons" : " of drivers") * (isfile(wr) ? ", with each wet race's offset" : ""),
                          fit = tag,
                          data = "F1 $(m[1])–$(m[2]) clean laps (Jolpica lap times, $(m[3]) pit stops), conditions from FastF1 (2021–2022) and OpenF1 (2023 on): " *
                                 inner(first(readlines(log))),
@@ -765,7 +778,7 @@ elseif mode == "retire"
 elseif mode == "laps"
     export_laps(get(ARGS, 2, "laps_2011-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_keepslow"); source = get(ARGS, 3, "jolpica"))
 elseif mode == "laps_conditions"
-    export_laps_conditions(get(ARGS, 2, "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_cond_wetdrv_keepslow"))
+    export_laps_conditions(get(ARGS, 2, "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_rwrel_traffic_fpace_short_cond_wetallg_wetrace_keepslow_keepwet"))
 elseif mode == "wrc"
     export_wrc(get(ARGS, 2, "pl_dur_rw_kappa_cdrv_tdrv_fgam"))
 else
