@@ -910,8 +910,25 @@ end
         @test sum(Diomedes.paceloss_rows(θn, g; loss_duration = true, era = :rw, cov)) ≈
               sum(Diomedes.paceloss_rows(merge(θ, (; b_mach = Diomedes.car_residuals(θn, cov))), g;
                                          loss_duration = true, era = :rw, cov))
+        # the car total sampled over the walks (`_crel`, #142): b_tot = b_mach + κ·(walk part), a shift with
+        # Jacobian 1, so the log joint at the mapped point equals the original's; residuals recovered
+        Wc, We = Diomedes.car_state_shares(g, cw)
+        @test all(sum(Wc; dims = 2) .≈ 1) && all(sum(We; dims = 2) .≈ 1)
+        κm = Diomedes.season_pace_scale(θ)[cov.mach_season]
+        θt = NamedTuple(k === :b_mach ? (:b_tot => θ.b_mach .+ κm .* (Wc * xc .+ We * xe)) : (k => v) for (k, v) in pairs(θ))
+        @test Diomedes.car_residuals(θt, cov, g) ≈ θ.b_mach
+        @test_throws ArgumentError Diomedes.car_residuals(θt, cov)
+        let kw = (; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars, big_loss = true, walk1 = true,
+                  works = true, dinc = true)
+            @test logjoint(paceloss_effects(g; kw..., crel = true), θt) ≈ logjoint(paceloss_effects(g; kw...), θ)
+            @test_throws ArgumentError paceloss_effects(g; kw..., crel = true, ncres = true)
+            @test_throws ArgumentError paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, crel = true)
+        end
+        @test model_spec("pl_dur_rw_kappa_walk_walk1_crel").crel &&
+              :b_tot in Diomedes.model_param_names(model_spec("pl_dur_rw_kappa_walk_walk1_crel"))
         for (θm, kw) in ((θ, (; big_loss = true, walk1 = true, works = true, dinc = true)), (θ3, (;)),
-                         (θn, (; big_loss = true, walk1 = true, works = true, dinc = true, ncres = true)))
+                         (θn, (; big_loss = true, walk1 = true, works = true, dinc = true, ncres = true)),
+                         (θt, (; big_loss = true, walk1 = true, works = true, dinc = true, crel = true)))
             model = paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, walk = true, cars, kw...)
             rd = LDF(model; adtype = Diomedes.gap_sampler().adtype)
             fd = LDF(model; adtype = AutoForwardDiff())

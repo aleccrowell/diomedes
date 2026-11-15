@@ -15,8 +15,8 @@
 # the training data), so a held-out row's mean is what the fitted model predicts.
 function _row_means(θ, g::GapData, sc, cov = LossCovariates(g); train = nothing, age_basis = nothing)
     a = haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp)   # centred drivers (#28)
-    centred = haskey(θ, :b_mach) || haskey(θ, :z_res)   # pace-scale model (#15): cars in % units, κ on drivers
-    b = centred ? sum_to_zero_by(car_residuals(θ, cov), g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
+    centred = haskey(θ, :b_mach) || haskey(θ, :z_res) || haskey(θ, :b_tot)   # pace-scale model (#15): cars in % units, κ on drivers
+    b = centred ? sum_to_zero_by(car_residuals(θ, cov, g), g.mach_season, sc) : θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc)
     κ = haskey(θ, :τ_κ) ? race_pace_scale(θ, cov) : ones(length(θ.γ))
     kb = centred ? ones(length(θ.γ)) : κ
     at, ac = a[g.t_comp], a[g.c_comp]
@@ -131,7 +131,7 @@ function model_spec(name::AbstractString)
     name == "t4" && return (; family = :t4, loss_duration = false, era = :none, pace_scale = false, age = false,
                             big_loss = false, slopes = false, dev = false, centred_drivers = false,
                             driver_ν = nothing, race_hier = false, race_mean = false, circ = false, track = false, walk = false,
-                            walk1 = false, works = false, dinc = false, ncres = false, wlev = false,
+                            walk1 = false, works = false, dinc = false, ncres = false, crel = false, wlev = false,
                             kc = false, kst = false, wst = false, wstc = false, wstl = false, wlevn = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
@@ -142,6 +142,7 @@ function model_spec(name::AbstractString)
     walk = "walk" in parts || walk1 # chassis and engine walks (#95)
     works, dinc = "works" in parts, "dinc" in parts     # works term (#100), driver incidents (#101)
     ncres = "ncres" in parts        # non-centred car effects (#102)
+    crel = "crel" in parts          # the car-season total sampled over the walks (#142)
     wlev = "wlev" in parts          # walk levels as coordinates (#102)
     wlevn = "wlevn" in parts        # walk levels, the engine's non-centred (#102)
     kc = "kc" in parts              # centred pace-scale steps (#102)
@@ -155,11 +156,11 @@ function model_spec(name::AbstractString)
     fgam = "fgam" in parts          # fixed race-intercept prior; the learned common level is the default (#36)
     count(in(parts), ("hgam", "mgam", "fgam")) <= 1 || throw(ArgumentError("_hgam, _mgam and _fgam are alternatives: $name"))
     eras = [Symbol(p) for p in parts[2:end]
-            if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "circ", "track", "walk", "walk1", "works", "dinc", "ncres", "wlev", "wlevn", "kc", "kst", "wst", "wstc", "wstl", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
+            if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "circ", "track", "walk", "walk1", "works", "dinc", "ncres", "crel", "wlev", "wlevn", "kc", "kst", "wst", "wstc", "wstl", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
             pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
-            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn)
+            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam, circ, track, walk, walk1, works, dinc, ncres, crel, wlev, kc, kst, wst, wstc, wstl, wlevn)
 end
 
 """
@@ -189,7 +190,7 @@ function model_param_names(spec)
     comp = spec.centred_drivers ? :a_comp : :z_comp        # centred drivers (#28)
     races = spec.race_hier ? (:μ_γ, :τ_γ, :γ) : spec.race_mean ? (:μ_γ, :γ) : (:γ,)   # race intercepts (#32)
     return (:σ_comp, :σ_mach, :σ, comp, cars..., races..., loss_param_names(spec.loss_duration, spec.era, spec.track)...,
-            pace_param_names(spec.pace_scale, get(spec, :ncres, false), get(spec, :kc, false), get(spec, :kst, false))..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
+            pace_param_names(spec.pace_scale, get(spec, :ncres, false), get(spec, :kc, false), get(spec, :kst, false), get(spec, :crel, false))..., age_param_names(spec.age)..., big_param_names(spec.big_loss)...,
             slope_param_names(spec.slopes)..., dev_param_names(spec.dev)..., circ_param_names(spec.circ)...,
             walk_param_names(spec.walk, get(spec, :walk1, false), get(spec, :wlev, false), get(spec, :wst, false), get(spec, :wstc, false),
                              get(spec, :wstl, false), get(spec, :wlevn, false))..., works_param_names(get(spec, :works, false))...,
@@ -221,7 +222,7 @@ function identified_draws(chain, g::GapData, model::AbstractString)
     for c in 1:nc, i in 1:ni
         θ = draw(chain, names, i, c)
         put!(:drivers, i, c, haskey(θ, :a_comp) ? sum_to_zero(θ.a_comp) : θ.σ_comp .* sum_to_zero(θ.z_comp))
-        put!(:cars, i, c, haskey(θ, :b_mach) || haskey(θ, :z_res) ? sum_to_zero_by(car_residuals(θ, cov), g.mach_season, sc) :
+        put!(:cars, i, c, haskey(θ, :b_mach) || haskey(θ, :z_res) || haskey(θ, :b_tot) ? sum_to_zero_by(car_residuals(θ, cov, g), g.mach_season, sc) :
                           θ.σ_mach .* sum_to_zero_by(θ.z_mach, g.mach_season, sc))
         haskey(θ, :τ_slope) && put!(:slopes, i, c, career_slopes(θ.τ_slope, θ.u_slope))
         haskey(θ, :τ_dev) && put!(:dev, i, c, dev_trends(θ.τ_dev, θ.u_dev, g, sc))

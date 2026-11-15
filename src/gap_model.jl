@@ -328,15 +328,19 @@ effects (sum to zero within season), in % of race time; negative = faster.
 With a pace scale (#15), competitor effects are in average-season units and
 machine effects in their own season's units.
 """
-function gap_effects_table(chain, g::GapData)
+function gap_effects_table(chain, g::GapData; cov = nothing)
     draws(sym) = stack(vec(chain[sym]); dims = 1)
     centred_drivers = any(vn -> string(vn) == "a_comp", Turing.FlexiChains.parameters(chain))   # #28
     comp = centred_drivers ? mapslices(sum_to_zero, draws(:a_comp); dims = 2) :
         mapslices(sum_to_zero, draws(:z_comp); dims = 2) .* vec(chain[:σ_comp])
     counts = season_counts(g)
     pnames = string.(Turing.FlexiChains.parameters(chain))
-    centred = "b_mach" in pnames || "z_res" in pnames   # #15 models (z_res: non-centred, #102)
-    if "z_res" in pnames
+    centred = "b_mach" in pnames || "z_res" in pnames || "b_tot" in pnames   # #15 models (z_res: non-centred, #102)
+    if "b_tot" in pnames            # `_crel` (#142): the residual is the total minus the walks, per draw
+        cov === nothing && throw(ArgumentError("gap_effects_table: a `_crel` fit needs `cov` (its LossCovariates with the car tables)"))
+        bdraws = reduce(vcat, [car_residuals(draw(chain, Tuple(Symbol.(pnames)), i, c), cov, g)'
+                               for c in 1:size(chain[:σ_mach], 2) for i in 1:size(chain[:σ_mach], 1)])
+    elseif "z_res" in pnames
         ms = LossCovariates(g).mach_season
         steps = "l_κ" in pnames ? [diff(l) for l in vec(chain[:l_κ])] :
                 "s_κ" in pnames ? vec(chain[:s_κ]) : [t .* e for (t, e) in zip(vec(chain[:τ_κ]), vec(chain[:e_κ]))]
