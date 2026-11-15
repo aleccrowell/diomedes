@@ -717,6 +717,10 @@ end
         @test !paceloss_effects(g; race_mean = false).args.race_mean
         @test_throws ArgumentError paceloss_effects(g; dev = true)             # needs pace_scale
         @test_throws ArgumentError paceloss_effects(g; slopes = true)          # needs pace_scale
+        # career slopes with no driver ages (no event dates) are an error, not slopes fitted to nothing (#143)
+        let nodate = select(vcat(res, res2), Not(:event_date))
+            @test_throws ArgumentError paceloss_effects(prepare_gaps(nodate); pace_scale = true, slopes = true)
+        end
         @test model_spec("pl_dur_rw_kappa_age").age
         @test model_spec("pl_dur_rw_kappa_big").big_loss
         @test_throws ArgumentError paceloss_effects(g; big_loss = true)        # needs pace_scale
