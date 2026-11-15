@@ -20,6 +20,10 @@ keeps clean green-flag laps and excludes:
   unless `stoppage = false` (`lap_fit.jl … keepslow`, #108). With recorded stops
   no lap is then dropped for its own size, so a car's largest incidents stay in
   for the big-loss component;
+  green-flag wet laps are kept too with `keep_laps` (`lap_fit.jl … keepwet`, #116):
+  laps with at least half the field on wet tyres where neither the lap nor the one
+  before is neutralised (safety car, VSC or red flag, from the conditions table's
+  `neutral` column; [`Diomedes.wet_green_laps`](@ref)). Over 2021–2026 they add 263 laps;
 - pit in- and out-laps, either **recorded** (Ergast's pit stops, 2011 on) or
   **inferred** from the lap times ([`infer_pit_stops`](@ref)).
 
@@ -63,6 +67,12 @@ y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁[era]
   works' chassis form from race to race ([`RaceWalk`](@ref)), pooled across
   off-seasons with steps for changes of ownership and major rule changes;
   `sdrv = false` drops the per-driver start effects (barely identified).
+  With `rwrel = true` (`lap_fit.jl … rwrel`, #116) the sampler draws the walk
+  states relative to each car's drivers, x̃ = x + W·a, with W each driver's share
+  of a state's laps: a shear with Jacobian 1, so the model is unchanged. Over
+  2021–2026 it lifts the minimum ESS of drivers from 81 to 219 and of the walk
+  from 85 to 334; `rwrels` also subtracts the career slopes, but moves the slow
+  direction onto the age curve.
 - Maximum pace and consistency (#113), through a [`LapContext`](@ref) built by
   `LapContext(d, laps; traffic, fpace, short)`:
   - `traffic`: shared effects of binned gaps from [`LapTraffic`](@ref): to the car
@@ -95,6 +105,15 @@ y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁[era]
     centred within season, spread ~ half-N(0, 0.5). A likelihood profile showed why
     the few-lap ones failed: towards a faster wet limit the losses absorb the
     difference, so with ~30 wet laps the likelihood is nearly flat there (#116).
+  - `wetall`: car-season deviations for every car-season with a wet lap, centred
+    within season; `wetallg` centres them over all car-seasons. Alone, either lets
+    the few-lap car-seasons take up a race's wetness (2023's Williams at +2.6 %);
+  - `wetrace`: a wet-lap offset per race with wet laps, spread ~ half-N(0, 2),
+    centred over those races. It takes up how wet each race was, so with
+    `wetallg wetrace keepwet` every car-season's deviation stays within ±1 % and
+    its uncertainty grows as its wet laps fall (2021–2026 full fit, #116). Races
+    run entirely on wet tyres stay at the prior, their offset not told apart from
+    the race's mean lap.
 - Driver and car-season effects are centred as in the race model. Every term is
   centred within its race, so γ is the race's mean lap.
 
@@ -136,3 +155,5 @@ chain = fit_laps(d; checkpoint = "output/laps_2011-2019_chain1", seed = 1000)
   with `cond wetdrv` reached R-hat 1.08–1.09 on drivers, car-seasons and the race
   walk after 4 × 1,000 draws, along the ridge between a dominant driver and their
   car. Its conditions and wet-skill terms converged (R-hat ≤ 1.015).
+  `rwrel` removes most of this: with `cond wetallg wetrace keepwet rwrel` the
+  maximum R-hat is 1.019, with the age curve now the slowest (minimum ESS 188).
