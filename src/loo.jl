@@ -197,24 +197,13 @@ function model_param_names(spec)
 end
 
 """
-    identified_convergence(chain, g::GapData, model) -> NamedTuple
+    identified_draws(chain, g::GapData, model) -> (cols, label)
 
-R-hat and bulk ESS of the quantities the likelihood identifies, grouped:
-`drivers` (centred driver effects σ_comp·(z - z̄)), `cars` (centred within
-season), `slopes` (centred career slopes), `dev` (in-season development trends, #14),
-`age` (the career curve), `races`
-(per-race incident probability, mean loss and pace scale), and `scalars` (every
-scalar parameter: scales, loss intercepts and slopes, step scales). Each group
-is `(; max_rhat, min_ess, worst)`, with `worst` naming the level with the
-lowest ESS; `overall` is the worst over groups.
-
-Unlike `convergence_summary`, which reports the raw sampled coordinates, this
-leaves out directions only the prior sees (the mean of z, of each season's car
-effects, of the slopes) and the standardised coordinates behind scaled effects
-(z = a/σ_comp inherits σ_comp's mixing), so it measures convergence of what the
-results use (#25).
+The draws behind [`identified_convergence`](@ref): `cols[group]` is a draws ×
+chains × levels array of that group's identified quantities, and `label(group, k)`
+names level `k`. Used by [`slow_directions`](@ref) too.
 """
-function identified_convergence(chain, g::GapData, model::AbstractString)
+function identified_draws(chain, g::GapData, model::AbstractString)
     spec = model_spec(model)
     sc, cov = season_counts(g), LossCovariates(g, spec)
     names = model_param_names(spec)
@@ -256,6 +245,29 @@ function identified_convergence(chain, g::GapData, model::AbstractString)
         group === :chassis ? cov.cars.chassis.names[k] : group === :engine ? cov.cars.engine.names[k] :
         group === :dinc ? g.competitors[k] :
         (nr = length(g.races); k <= nr ? "π $(g.races[k])" : k <= 2nr ? "λ $(g.races[k - nr])" : "κ $(g.races[k - 2nr])")
+    return cols, label
+end
+
+"""
+    identified_convergence(chain, g::GapData, model) -> NamedTuple
+
+R-hat and bulk ESS of the quantities the likelihood identifies, grouped:
+`drivers` (centred driver effects σ_comp·(z - z̄)), `cars` (centred within
+season), `slopes` (centred career slopes), `dev` (in-season development trends, #14),
+`age` (the career curve), `races`
+(per-race incident probability, mean loss and pace scale), and `scalars` (every
+scalar parameter: scales, loss intercepts and slopes, step scales). Each group
+is `(; max_rhat, min_ess, worst)`, with `worst` naming the level with the
+lowest ESS; `overall` is the worst over groups.
+
+Unlike `convergence_summary`, which reports the raw sampled coordinates, this
+leaves out directions only the prior sees (the mean of z, of each season's car
+effects, of the slopes) and the standardised coordinates behind scaled effects
+(z = a/σ_comp inherits σ_comp's mixing), so it measures convergence of what the
+results use (#25).
+"""
+function identified_convergence(chain, g::GapData, model::AbstractString)
+    cols, label = identified_draws(chain, g, model)
     groups = Dict{Symbol,Any}()
     for (group, A) in cols
         e, r = MCMCDiagnosticTools.ess(A), MCMCDiagnosticTools.rhat(A)
@@ -265,6 +277,41 @@ function identified_convergence(chain, g::GapData, model::AbstractString)
     overall = (; max_rhat = maximum(v.max_rhat for v in values(groups)),
                min_ess = minimum(v.min_ess for v in values(groups)))
     return (; overall, NamedTuple(groups)...)
+end
+
+"""
+    slow_directions(A, labels; k = 3, top = 8) -> Vector{NamedTuple}
+
+The combinations of quantities on which the chains disagree most (#132). `A` is a
+draws × chains × quantities array (as for MCMCDiagnosticTools) and `labels` names the
+quantities. Each quantity is standardised by its pooled posterior sd; the chains'
+means then form a chains × quantities matrix, and the leading right singular vectors
+of its centred rows are the slow directions.
+
+Returns up to `k` directions (at most chains − 1), each `(; share, rhat, ess,
+loadings)`: its share of the between-chain spread, the R-hat and bulk ESS of the draws
+projected onto it, and the `top` largest loadings as `label => weight`. A slow
+direction whose loadings group a team's drivers with its car is a ridge that a
+reparametrisation can remove (`rwrel` on the lap model, #116).
+"""
+function slow_directions(A::AbstractArray{<:Real,3}, labels::AbstractVector; k::Integer = 3, top::Integer = 8)
+    ni, nc, p = size(A)
+    length(labels) == p || throw(ArgumentError("$(length(labels)) labels for $p quantities"))
+    sdv = vec(std(reshape(A, ni * nc, p); dims = 1))
+    keep = findall(>(0), sdv)
+    Z = A[:, :, keep] ./ reshape(sdv[keep], 1, 1, :)
+    M = dropdims(mean(Z; dims = 1); dims = 1)                     # chains × quantities
+    F = svd(M .- mean(M; dims = 1))
+    tot = sum(abs2, F.S)
+    out = NamedTuple[]
+    for j in 1:min(k, nc - 1, length(F.S))
+        v = F.V[:, j]
+        pr = reshape(reduce(+, (Z[:, :, q] .* v[q] for q in eachindex(v))), ni, nc, 1)
+        ord = sortperm(abs.(v); rev = true)[1:min(top, length(v))]
+        push!(out, (; share = F.S[j]^2 / tot, rhat = MCMCDiagnosticTools.rhat(pr)[1], ess = MCMCDiagnosticTools.ess(pr)[1],
+                    loadings = [labels[keep[q]] => v[q] for q in ord]))
+    end
+    return out
 end
 
 """

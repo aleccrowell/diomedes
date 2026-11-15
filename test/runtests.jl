@@ -2128,6 +2128,20 @@ end
         ic = identified_convergence(chain, g, "pl")
         @test Set(keys(ic)) ⊇ Set((:overall, :drivers, :cars, :races, :scalars))
         @test ic.overall.max_rhat < 1.1 && ic.drivers.min_ess > 20
+        # the draws behind it, and the slow directions over them (#132)
+        cols, lab = identified_draws(chain, g, "pl")
+        @test size(cols[:drivers]) == (300, 2, length(g.competitors)) && lab(:drivers, 1) == g.competitors[1]
+        @test length(slow_directions(cols[:drivers], [lab(:drivers, i) for i in axes(cols[:drivers], 3)])) == 1
+        let rng = MersenneTwister(2), A = randn(rng, 400, 4, 5)
+            # chains 1 and 2 sit along +(p1 - p2), chains 3 and 4 along -(p1 - p2): one slow direction
+            for (c, s) in enumerate((1.0, 1.0, -1.0, -1.0))
+                A[:, c, 1] .+= s; A[:, c, 2] .-= s
+            end
+            sd = slow_directions(A, ["p$i" for i in 1:5]; k = 2, top = 2)
+            @test length(sd) == 2 && sd[1].share > 0.9 && sd[1].rhat > 1.2
+            @test Set(first.(sd[1].loadings)) == Set(["p1", "p2"]) && sign(last(sd[1].loadings[1])) != sign(last(sd[1].loadings[2]))
+            @test_throws ArgumentError slow_directions(A, ["p1"])
+        end
         # one mode for a converged fit; two when chains sit in different places (#64)
         @test chain_modes(chain, [:σ, :a_π, :a_λ]) == ["A", "A"]
         let x = randn(MersenneTwister(1), 500, 4)
