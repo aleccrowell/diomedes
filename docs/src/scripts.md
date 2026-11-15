@@ -12,6 +12,7 @@ them with `julia --project scripts/<name>.jl ...`.
 | `loo_compare.jl` | PSIS-LOO comparison of fitted gap models |
 | `kfold.jl` | Grouped K-fold CV: `fold` runs, then `compare` |
 | `mode_check.jl` | Whether a fit depends on where its chains start |
+| `slow_directions.jl` | The combinations of quantities a fit's chains disagree on most, from its saved chains ([#132](https://github.com/aleccrowell/diomedes/issues/132)) |
 | `era_paths.jl` | Per-season incident rate, loss size and pace scale |
 | `incident_diagnostic.jl` | Posterior incident probabilities per result, by season |
 | `age_curve.jl` | The population career curve |
