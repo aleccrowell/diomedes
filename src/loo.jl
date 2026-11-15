@@ -197,15 +197,17 @@ function model_param_names(spec)
 end
 
 """
-    identified_draws(chain, g::GapData, model) -> (cols, label)
+    identified_draws(chain, g::GapData, model; cov) -> (cols, label)
 
 The draws behind [`identified_convergence`](@ref): `cols[group]` is a draws ×
 chains × levels array of that group's identified quantities, and `label(group, k)`
-names level `k`. Used by [`slow_directions`](@ref) too.
+names level `k`. Used by [`slow_directions`](@ref) too. `cov` defaults to the model's
+covariates from the reference tables; pass it for other car tables (e.g. simulated ones).
+For walk models the `cars` group is each car-season's residual, not its total.
 """
-function identified_draws(chain, g::GapData, model::AbstractString)
+function identified_draws(chain, g::GapData, model::AbstractString; cov = LossCovariates(g, model_spec(model)))
     spec = model_spec(model)
-    sc, cov = season_counts(g), LossCovariates(g, spec)
+    sc = season_counts(g)
     names = model_param_names(spec)
     basis = spec.age ? AgeCurveBasis(g) : nothing
     ni, nc = size(chain[:σ_comp])
@@ -266,8 +268,8 @@ effects, of the slopes) and the standardised coordinates behind scaled effects
 (z = a/σ_comp inherits σ_comp's mixing), so it measures convergence of what the
 results use (#25).
 """
-function identified_convergence(chain, g::GapData, model::AbstractString)
-    cols, label = identified_draws(chain, g, model)
+function identified_convergence(chain, g::GapData, model::AbstractString; cov = LossCovariates(g, model_spec(model)))
+    cols, label = identified_draws(chain, g, model; cov)
     groups = Dict{Symbol,Any}()
     for (group, A) in cols
         e, r = MCMCDiagnosticTools.ess(A), MCMCDiagnosticTools.rhat(A)
