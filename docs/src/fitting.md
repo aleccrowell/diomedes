@@ -47,6 +47,10 @@ and step size to continue from (see [`run_nuts_checkpointed`](@ref Diomedes.run_
   position, so another `block` is an error.
 - Every iteration, warm-up included, is also appended to `<prefix>_trace.tsv`
   as it is drawn, so a block in progress can be inspected.
+- `gap_fit.jl` (race and WRC fits) and `lap_fit.jl` take `block=<n>` in `chain`
+  mode for this, with `step=<x>` (a fixed step size after block 1) and
+  `warm=<tag>` (the adapted metric and step size of an earlier run, e.g. the
+  probe). For `gap_fit.jl` the earlier run must have the same model and data (#131).
 - Launch fits that run for hours detached, with `scripts/run_detached.sh <log>
   <pidfile> <command>`, which records the job's real PID for watching it.
 

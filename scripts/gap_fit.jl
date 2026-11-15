@@ -2,6 +2,7 @@
 #
 #   julia --project scripts/gap_fit.jl <data> <model>                  # 4 chains, one after another
 #   julia --project scripts/gap_fit.jl <data> <model> chain <k>        # one chain (seed k), saved to output/
+#   julia --project scripts/gap_fit.jl <data> <model> chain <k> block=25 [step=<x>] [warm=<tag>] [probe]
 #   julia --project scripts/gap_fit.jl <data> <model> combine [n=4]    # combine saved chains 1..n
 #
 # Data modes (built by scripts/gap_data.jl):
@@ -28,16 +29,38 @@
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics
 using Turing: FlexiChains, NUTS
 
-# `delta=<x>` (anywhere) sets NUTS's target acceptance rate (default 0.8, #62)
-δarg = findfirst(a -> startswith(a, "delta="), ARGS)
-δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
-args = filter(a -> !startswith(a, "delta="), ARGS)
+# key=value options, anywhere (#131):
+#   delta=<x>    NUTS's target acceptance rate (default 0.8, #62)
+#   block=<n>    `chain`: sample in saved, resumable blocks of n draws, with a per-iteration
+#                trace in output/gap_<data>_<model>[_probe]_chain<k>_trace.tsv. Rerun the same
+#                command to resume after a kill. Combine reads blocks or whole-chain files.
+#   step=<x>     with block=: a fixed step size after block 1 (some chains adapt one that
+#                puts them at tree depth 9-10, several times slower)
+#   draws=<n>, warmup=<n>  draws per chain (default 1000) and warm-up iterations (500; 300 warm)
+#   warm=<tag>   with block=: start from chain k's adapted metric and step size, read from the
+#                last block of output/<tag>_chain<k> (a fit of the same model and data, e.g. its
+#                probe; the parameter count must match)
+# The flag `probe` adds _probe to the output names, so a short test run never mixes with a fit.
+KEYS = ("delta", "block", "step", "draws", "warmup", "warm")
+opt(key) = (i = findfirst(a -> startswith(a, key * "="), ARGS); i === nothing ? nothing : split(ARGS[i], "="; limit = 2)[2])
+for a in ARGS
+    occursin('=', a) && split(a, "=")[1] ∉ KEYS && error("unknown option $a (known: $(join(KEYS, ", ")))")
+end
+δ = something(tryparse(Float64, something(opt("delta"), "")), 0.8)
+args = filter(a -> !occursin('=', a) && a != "probe", ARGS)
+probe = "probe" in ARGS
 mode = get(args, 1, "jolpica1950-2025+partial")
 model = get(args, 2, "t4")
 action = get(args, 3, "serial")
-chain_path(k) = "output/gap_$(mode)_$(model)_chain$(k).jls"
+tag = "gap_$(mode)_$(model)" * (probe ? "_probe" : "")
+chain_path(k) = "output/$(tag)_chain$(k).jls"
+block_files(k) = sort(filter(f -> occursin(Regex("^\\Q$(tag)_chain$(k)_block\\E\\d+\\.jls\$"), f), readdir("output")),
+                      by = f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]))
+load_chain(k) = (fs = block_files(k); isempty(fs) ? rehash_chain!(deserialize(chain_path(k))) :
+                 reduce(vcat, [Diomedes.block_chain(joinpath("output", f)) for f in fs]))
 spec = model_spec(model)
-sampler = NUTS(δ; adtype = Diomedes.gap_sampler().adtype)
+sampler = opt("warmup") === nothing ? NUTS(δ; adtype = Diomedes.gap_sampler().adtype) :
+          NUTS(parse(Int, opt("warmup")), δ; adtype = Diomedes.gap_sampler().adtype)
 fit(; kw...) = spec.family === :t4 ? fit_gaps(g; sampler, kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
@@ -49,18 +72,35 @@ res, g = gap_data(mode)
 println(g); flush(stdout)
 mkpath("output")
 
+n_samples = parse(Int, something(opt("draws"), "1000"))
 if action == "chain"
     k = parse(Int, args[4])
-    t = @elapsed chain = fit(; rng = Xoshiro(k), progress = false, progress_log = stdout)
-    serialize(chain_path(k), chain)
+    t = if opt("block") === nothing
+        opt("step") === nothing && opt("warm") === nothing || error("step= and warm= need block=")
+        @elapsed chain = fit(; rng = Xoshiro(k), progress = false, progress_log = stdout, n_samples)
+    else
+        kw = (; checkpoint = "output/$(tag)_chain$(k)", seed = k, block = parse(Int, opt("block")), n_samples, δ,
+              fixed_step = opt("step") === nothing ? nothing : parse(Float64, opt("step")))
+        if opt("warm") === nothing
+            kw = (; kw..., n_adapts = parse(Int, something(opt("warmup"), "500")))
+        else
+            wa = Diomedes.checkpoint_adapted("output/$(opt("warm"))_chain$(k)")
+            println("warm start from output/$(opt("warm"))_chain$(k): step size $(round(wa.ϵ; digits = 4))"); flush(stdout)
+            kw = (; kw..., n_adapts = parse(Int, something(opt("warmup"), "300")), external = lap_warm_sampler(wa.Minv, wa.ϵ; δ))
+        end
+        @elapsed chain = fit(; progress_log = stdout, kw...)
+    end
+    opt("block") === nothing && serialize(chain_path(k), chain)
     println("chain $k: $(round(t / 60; digits = 1)) min, mean leapfrog steps per draw ",
             round(mean(chain[:n_steps]); digits = 1), ", step size ", round(mean(chain[:step_size]); digits = 4))
     exit()
 elseif action == "combine"
     n = parse(Int, get(args, 4, "4"))
-    chain = reduce(hcat, [rehash_chain!(deserialize(chain_path(k))) for k in 1:n])
+    chs = [load_chain(k) for k in 1:n]
+    m = minimum(size(c, 1) for c in chs)          # chains still sampling contribute their saved blocks
+    chain = reduce(hcat, [c[iter = 1:m] for c in chs])
 else
-    t = @elapsed chain = fit(; n_chains = 4, progress = false, progress_log = stdout)
+    t = @elapsed chain = fit(; n_chains = 4, progress = false, progress_log = stdout, n_samples)
     println("fit: $(round(t / 60; digits = 1)) min")
 end
 
@@ -101,8 +141,8 @@ for (k, v) in pairs(ic)
 end
 
 eff = gap_effects_table(chain, g)
-CSV.write("output/gap_$(mode)_$(model)_competitor_effects.csv", eff.competitors)
-CSV.write("output/gap_$(mode)_$(model)_machine_effects.csv", eff.machines)
+CSV.write("output/$(tag)_competitor_effects.csv", eff.competitors)
+CSV.write("output/$(tag)_machine_effects.csv", eff.machines)
 println("\nFastest 10 drivers (% of race time vs the average driver; negative = faster):")
 show(first(eff.competitors, 10); allcols = true)
 println()
