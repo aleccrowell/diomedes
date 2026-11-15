@@ -31,6 +31,7 @@ them with `julia --project scripts/<name>.jl ...`.
 | `bench/` | Gradient benchmarks and sampler probes (e.g. `probe_mixing.jl`: per-chain ESS and R-hat of the hardest quantities) |
 | `run_detached.sh` | Starts a long fit detached and records its PID |
 | `lap_compare.jl` | Lap-model fits against each other or the race model |
+| `external_check.jl` | Car effects of the race and lap models against the constructors' championship ([#120](https://github.com/aleccrowell/diomedes/issues/120)) |
 | `export_site.jl` | Exports posterior summaries of the race, lap, lap-conditions, retirement and WRC fits for the site's Findings pages (`docs/src/assets/data/`) |
 
 Model names (`pl_dur_rw_kappa`, ...) are parsed by [`model_spec`](@ref).
