@@ -22,7 +22,9 @@ cover how to run them.
 6. [The lap-time model](@ref): per-lap pace, peak pace and consistency, traffic
    and field pace, per-lap conditions, inferred pit laps, and agreement with the
    race model.
-7. [Limitations](@ref).
+7. [Checks against known answers](@ref): simulation recovery and the constructors'
+   championship.
+8. [Limitations](@ref).
 
 Links of the form [#15](https://github.com/aleccrowell/diomedes/issues/15)
 point to the GitHub issues and pull requests where each choice was designed and
