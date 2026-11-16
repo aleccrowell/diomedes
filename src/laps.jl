@@ -1438,6 +1438,8 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                                     vcat("π|" .* d.competitors, "π|" .* d.machines, "λ|" .* d.competitors, "λ|" .* d.machines)),
                           # #116 terms, sampled after the #113 ones
                           :z_cond => (length(cond_names(ctx.short)), cond_names(ctx.short)),
+                          :τ_rc => (2, ["MEDIUM", "HARD"]),       # `comprace` (#124), sampled with z_cond
+                          :u_rc => (2length(cond.compraces), vec([string(d.races[r], " ", c) for c in ("MEDIUM", "HARD"), r in cond.compraces])),
                           :τ_wet => (2, ["car", "drv"]),
                           :u_wet => (length(d.machines) + length(d.competitors), vcat(d.machines, d.competitors)),
                           :σ0_wet => (1, nothing), :τ_wws => (1, nothing),
@@ -1445,8 +1447,6 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :τ_wetc => (1, nothing), :u_wetc => (length(cond.wetcars), d.machines[cond.wetcars]),
                           :τ_wetd => (1, nothing), :u_wetd => (length(d.competitors), d.competitors),
                           :τ_wr => (1, nothing), :u_wr => (length(cond.wetraces), d.races[cond.wetraces]),
-                          :τ_rc => (2, ["MEDIUM", "HARD"]),
-                          :u_rc => (2length(cond.compraces), vec([string(d.races[r], " ", c) for c in ("MEDIUM", "HARD"), r in cond.compraces])),
                           :τ_dinc1 => (1, nothing), :u_dinc1 => (length(d.competitors), d.competitors)])
 
 # Inverse-metric entries for blocks a warm start's old fit doesn't have (career
