@@ -37,7 +37,9 @@ walk, each the works supplier of one team; there is a residual per car-season. F
 - **Sampling** struggles as in the published fit: depth 9–10, and a slow split of car
   form between the per-season residual and the chassis walk. Sampling that residual
   non-centred (`_ncres`) mixed the split about three times better per unit of compute on
-  this data ([#142](https://github.com/aleccrowell/diomedes/issues/142)).
+  this data. On the real data it didn't: a 4 × 200-draw probe mixed the split no better than
+  the published fit (ESS 17 against 23), so the synthetic test bed missed what makes the real
+  posterior slow ([#142](https://github.com/aleccrowell/diomedes/issues/142)).
 
 Both use data generated from the fitted model's own assumptions, which is the best case.
 
