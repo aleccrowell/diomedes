@@ -481,6 +481,7 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
     h = Vector{T}(undef, length(d.y))
     hbar = zeros(T, length(d.races))
     nm, nc = length(d.machines), length(d.competitors)
+    ncv = cond.on ? length(cond_names(ctx.short)) : 0
     for j in eachindex(d.y)
         st = d.stint[j] / 10
         h[j] = a[d.comp[j]] + sl[d.comp[j]] * d.agec[j] + b[d.mach[j]] + dv[d.mach[j]] * d.posc[j] +
@@ -498,6 +499,8 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
         if cond.on          # compound offsets and stint slopes, track temperature, rain (#116)
             k = cond.comp[j]
             k > 1 && (h[j] += cv[COND_OFFSET[k - 1]] + cv[COND_SLOPE[k - 1]] * st)
+            # `comprace` (#124): the race's own MEDIUM / HARD offset, after the shared terms in cv
+            (k == 2 || k == 3) && length(cv) > ncv && (h[j] += cv[ncv + 2(d.race[j] - 1) + k - 1])
             h[j] += cv[COND_TT] * cond.tt[j] + cv[COND_RAIN] * cond.rain[j]
             cond.wetdev && (h[j] += (wv[d.mach[j]] + wv[nm + d.comp[j]] +
                                      (length(wv) > nm + nc ? wv[nm + nc + d.race[j]] : zero(eltype(wv)))) * cond.wet[j])
@@ -513,6 +516,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk, ctx, cond, d)
     gcv, gwv = zeros(length(cv)), zeros(length(wv))
     cshort = cond.on && ctx.short && length(cv) >= last(COND_KAPPA)
+    ncv = cond.on ? length(cond_names(ctx.short)) : 0
     gxr, rw = zeros(length(xr)), !isempty(rwk.lap)
     gηt, gφ, gsh, gκ = zeros(length(ηt)), zeros(length(φ)), zeros(length(sh)), zeros(length(κ))
     κπ, κλ = ctx.fpace ? (κ[1], κ[end]) : (0.0, 0.0)
@@ -644,6 +648,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
         if cond.on
             k = cond.comp[j]
             k > 1 && (gcv[COND_OFFSET[k - 1]] += gh; gcv[COND_SLOPE[k - 1]] += gh * st)
+            (k == 2 || k == 3) && length(gcv) > ncv && (gcv[ncv + 2(d.race[j] - 1) + k - 1] += gh)   # `comprace`
             gcv[COND_TT] += gh * cond.tt[j]; gcv[COND_RAIN] += gh * cond.rain[j]
             if cond.wetdev
                 gw = gh * cond.wet[j]
@@ -1074,6 +1079,12 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     if cond.on              # shared condition effects (#116): z scaled by fixed prior sds, see cond_names
         z_cond ~ StdNormalVec(length(cond_names(ctx.short)))
         cv = cond_sd(ctx.short) .* z_cond
+        if !isempty(cond.compraces)     # `comprace` (#124): each race's MEDIUM and HARD offsets, pooled, centred over races
+            τ_rc ~ filldist(truncated(Normal(0, COMPRACE_SD); lower = 0), 2)
+            u_rc ~ StdNormalVec(2length(cond.compraces))
+            U = reshape(u_rc, 2, :)
+            cv = vcat(cv, wet_scatter(vec(τ_rc .* (U .- mean(U; dims = 2))), comprace_index(cond), 2length(d.races)))
+        end
     else
         cv = 0 .* a_π .+ zeros(1)
     end
@@ -1305,6 +1316,8 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                             ctx.short ? (; τ_sh = 0.05 .+ 0.05 .* rand(rng, 4),
                                            u_sh = 0.1 .* randn(rng, 2length(d.competitors) + 2length(d.machines))) : (;),
                             cond.on ? (; z_cond = 0.01 .* randn(rng, length(cond_names(ctx.short)))) : (;),
+                            cond.on && !isempty(cond.compraces) ?
+                                (; τ_rc = 0.05 .+ 0.05 .* rand(rng, 2), u_rc = 0.1 .* randn(rng, 2length(cond.compraces))) : (;),
                             cond.on && cond.wetdev && cond.wetpool ?
                                 (; σ0_wet = 0.2 + 0.2 * rand(rng), τ_wws = 0.1 + 0.1 * rand(rng),
                                    z_wet = 0.1 .* randn(rng, length(wcw.chassis.prev)), τ_wetd = 0.2 + 0.2 * rand(rng),
@@ -1348,6 +1361,10 @@ const WETPOOL_PARAMS = (:σ0_wet, :τ_wws, :z_wet)     # the pooled car part (`w
 const WETDRV_PARAMS = (:τ_wetd, :u_wetd)             # drivers, with `wetwalk`, `wetdrv` or `wetshr`
 const WETSHR_PARAMS = (:τ_wetc, :u_wetc)             # car-seasons with enough wet laps (`wetshr`)
 const WETRACE_PARAMS = (:τ_wr, :u_wr)                # each wet race's wet-lap offset (`wetrace`)
+const COMPRACE_PARAMS = (:τ_rc, :u_rc)               # each race's MEDIUM and HARD offsets (`comprace`, #124)
+const COMPRACE_SD = 0.5                               # prior scale of their spread across races, %
+"Positions in the per-race block of cv of the `comprace` races' MEDIUM and HARD offsets, in u_rc's order."
+comprace_index(cond) = vec([2(r - 1) + k for k in 1:2, r in cond.compraces])
 # block of each shortfall offset (#113): drivers' logit π, car-seasons' logit π, drivers' log λ, car-seasons' log λ
 short_blocks(nc, nm) = vcat(fill(1, nc), fill(2, nm), fill(3, nc), fill(4, nm))
 
@@ -1376,6 +1393,7 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                 (cond.on && cond.wetdev && cond.wetpool || first(p) ∉ WETPOOL_PARAMS) &&
                 (cond.on && cond.wetdev && cond.wetmin > 0 || first(p) ∉ WETSHR_PARAMS) &&
                 (cond.on && cond.wetdev && !isempty(cond.wetraces) || first(p) ∉ WETRACE_PARAMS) &&
+                (cond.on && !isempty(cond.compraces) || first(p) ∉ COMPRACE_PARAMS) &&
                 (cond.on && cond.wetdev && (cond.wetpool || !cond.wetcar || cond.wetmin > 0) || first(p) ∉ WETDRV_PARAMS),
                          [:σ_comp => (1, nothing), :σ_mach => (1, nothing), :σ => (1, nothing),
                           :a_comp => (length(d.competitors), d.competitors), :b_mach => (length(d.machines), d.machines),
@@ -1427,6 +1445,8 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :τ_wetc => (1, nothing), :u_wetc => (length(cond.wetcars), d.machines[cond.wetcars]),
                           :τ_wetd => (1, nothing), :u_wetd => (length(d.competitors), d.competitors),
                           :τ_wr => (1, nothing), :u_wr => (length(cond.wetraces), d.races[cond.wetraces]),
+                          :τ_rc => (2, ["MEDIUM", "HARD"]),
+                          :u_rc => (2length(cond.compraces), vec([string(d.races[r], " ", c) for c in ("MEDIUM", "HARD"), r in cond.compraces])),
                           :τ_dinc1 => (1, nothing), :u_dinc1 => (length(d.competitors), d.competitors)])
 
 # Inverse-metric entries for blocks a warm start's old fit doesn't have (career
@@ -1448,7 +1468,7 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                               :z_cond => 1e-3, :τ_wet => 0.01, :u_wet => 0.01,
                               :σ0_wet => 0.01, :τ_wws => 0.01, :z_wet => 0.01, :τ_wetd => 0.01, :u_wetd => 0.01,
                               :τ_wetc => 0.01, :u_wetc => 0.01,
-                              :τ_wr => 0.01, :u_wr => 0.01)
+                              :τ_wr => 0.01, :u_wr => 0.01, :τ_rc => 0.01, :u_rc => 0.01)
 
 """
     lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old = true, tyres_new = tyres_old,

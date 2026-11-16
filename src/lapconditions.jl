@@ -54,8 +54,12 @@ struct LapConditions
     wetcars::Vector{Int}        # those car-seasons (indices into d.machines), with wetmin > 0
     wetglobal::Bool             # their deviations centred over all of them, not within each season (`wetallg`)
     wetraces::Vector{Int}       # races (indices into d.races) with a wet-lap offset each (`wetrace`), else empty
+    compraces::Vector{Int}      # races with their own MEDIUM and HARD offsets against SOFT (`comprace`, #124), else empty
     check::NamedTuple
 end
+LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, wetcar::Bool, wetmin::Int, wetcars::Vector{Int},
+              wetglobal::Bool, wetraces::Vector{Int}, check::NamedTuple) =
+    LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, wetmin, wetcars, wetglobal, wetraces, Int[], check)
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, check::NamedTuple) =
     LapConditions(comp, wet, tt, rain, on, wetdev, false, true, check)
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, check::NamedTuple) =
@@ -115,7 +119,7 @@ end
 
 function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDict; wetdev::Bool = false,
                        wetpool::Bool = false, wetcar::Bool = true, wetmin::Int = 0, wetglobal::Bool = false,
-                       wetrace::Bool = false)
+                       wetrace::Bool = false, comprace::Bool = false)
     wetpool && !wetdev && throw(ArgumentError("wetpool pools the wet deviations: it needs wetdev"))
     wetpool && !wetcar && throw(ArgumentError("wetpool pools the car-seasons' wet deviations: it needs wetcar"))
     wetmin > 0 && !(wetdev && wetcar && !wetpool) &&
@@ -184,7 +188,9 @@ function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDic
     wcs = wetmin > 0 ? wet_cars(d.mach, wet, length(d.machines), wetmin) : Int[]
     wetmin > 0 && isempty(wcs) && throw(ArgumentError("no car-season has $wetmin wet-tyre laps"))
     wrs = wetrace ? sort(unique(d.race[wet .> 0])) : Int[]
-    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, wetcar, wetmin, wcs, wetglobal, wrs, check)
+    # `comprace` (#124): races with laps on MEDIUM or HARD get their own offsets for them against SOFT
+    crs = comprace ? sort(unique(d.race[(comp .== 2) .| (comp .== 3)])) : Int[]
+    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, wetcar, wetmin, wcs, wetglobal, wrs, crs, check)
 end
 
 function Base.show(io::IO, c::LapConditions)
