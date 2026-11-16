@@ -11,6 +11,14 @@
 - **Separating a driver from their car** relies on team-mates and team changes.
   It is the main remaining source of slow mixing ([#20](https://github.com/aleccrowell/diomedes/issues/20)), and it is weakest
   for drivers who spent their careers with one team.
+- **A dominant car can pass some of its advantage to its star driver.** In simulations
+  without walks, a car about 2 % ahead gave 0.15–0.21 % of it to the star who drove it
+  ([#143](https://github.com/aleccrowell/diomedes/pull/143)). With walks it was 0.08 %
+  ([#145](https://github.com/aleccrowell/diomedes/pull/145)). See
+  [Checks against known answers](@ref).
+- **Career slopes are conservative.** In simulations they are shrunk towards zero (slope
+  of estimate on truth 0.2–0.8), so a fast improver is likely understated
+  ([#143](https://github.com/aleccrowell/diomedes/pull/143)).
 - **The age curve's peak isn't identified,** only its shape; career slopes are
   relative to the average driver ([#22](https://github.com/aleccrowell/diomedes/issues/22), [#24](https://github.com/aleccrowell/diomedes/issues/24)).
 - **Pace noise against routine losses** (σ against π, λ) is weakly identified
