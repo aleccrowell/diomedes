@@ -1,0 +1,136 @@
+season,round,event_id,race,circuit_id,hard,medium,soft,era,sources,notes
+2021,1,2021-01,Bahrain Grand Prix,bahrain,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,2,2021-02,Emilia Romagna Grand Prix,imola,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,3,2021-03,Portuguese Grand Prix,portimao,C1,C2,C3,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,4,2021-04,Spanish Grand Prix,catalunya,C1,C2,C3,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,5,2021-05,Monaco Grand Prix,monaco,C3,C4,C5,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,6,2021-06,Azerbaijan Grand Prix,baku,C3,C4,C5,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,7,2021-07,French Grand Prix,ricard,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,8,2021-08,Styrian Grand Prix,red_bull_ring,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,9,2021-09,Austrian Grand Prix,red_bull_ring,C3,C4,C5,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",later change from the pre-season plan (C2-C4): softer selection for the second Spielberg race; fia-doc only
+2021,10,2021-10,British Grand Prix,silverstone,C1,C2,C3,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,11,2021-11,Hungarian Grand Prix,hungaroring,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,12,2021-12,Belgian Grand Prix,spa,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,13,2021-13,Dutch Grand Prix,zandvoort,C1,C2,C3,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2021-dutch-grand-prix--preview/","two sources agree; agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,14,2021-14,Italian Grand Prix,monza,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,15,2021-15,Russian Grand Prix,sochi,C3,C4,C5,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,16,2021-16,Turkish Grand Prix,istanbul,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,17,2021-17,United States Grand Prix,americas,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,18,2021-18,Mexico City Grand Prix,rodriguez,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,19,2021-19,São Paulo Grand Prix,interlagos,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,20,2021-20,Qatar Grand Prix,losail,C1,C2,C3,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",race added to the calendar after the pre-season plan; fia-doc only
+2021,21,2021-21,Saudi Arabian Grand Prix,jeddah,C2,C3,C4,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2021,22,2021-22,Abu Dhabi Grand Prix,yas_marina,C3,C4,C5,2019-2021,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)","agrees with Pirelli's pre-season 2021 plan (Motorsport Week, 2021-02-19)"
+2022,1,2022-01,Bahrain Grand Prix,bahrain,C1,C2,C3,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-bahrain-grand-prix---preview/",two sources agree
+2022,2,2022-02,Saudi Arabian Grand Prix,jeddah,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-saudi-arabia-grand-prix---preview/",two sources agree
+2022,3,2022-03,Australian Grand Prix,albert_park,C2,C3,C5,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-australian-grand-prix---preview/",two sources agree
+2022,4,2022-04,Emilia Romagna Grand Prix,imola,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/formula-1-returns-to-europe-for-an-appointment-with-history/",two sources agree
+2022,5,2022-05,Miami Grand Prix,miami,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-miami-grand-prix---preview/",two sources agree
+2022,6,2022-06,Spanish Grand Prix,catalunya,C1,C2,C3,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-spanish-grand-prix---preview/",two sources agree
+2022,7,2022-07,Monaco Grand Prix,monaco,C3,C4,C5,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-monaco-grand-prix--preview/",two sources agree
+2022,8,2022-08,Azerbaijan Grand Prix,baku,C3,C4,C5,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-azerbaijan-grand-prix--preview/",two sources agree
+2022,9,2022-09,Canadian Grand Prix,villeneuve,C3,C4,C5,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-canada-grand-prix---preview/",two sources agree
+2022,10,2022-10,British Grand Prix,silverstone,C1,C2,C3,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-british-grand-prix--preview/",two sources agree
+2022,11,2022-11,Austrian Grand Prix,red_bull_ring,C3,C4,C5,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",
+2022,12,2022-12,French Grand Prix,ricard,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-french-grand-prix--preview/",two sources agree
+2022,13,2022-13,Hungarian Grand Prix,hungaroring,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",spot-checked: formula1.com and Pirelli preview
+2022,14,2022-14,Belgian Grand Prix,spa,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",
+2022,15,2022-15,Dutch Grand Prix,zandvoort,C1,C2,C3,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/2022-dutch-grand-prix--preview/",two sources agree
+2022,16,2022-16,Italian Grand Prix,monza,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/news-and-tyre-choices-for-zandvoort-and-monza/",two sources agree
+2022,17,2022-17,Singapore Grand Prix,marina_bay,C3,C4,C5,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",
+2022,18,2022-18,Japanese Grand Prix,suzuka,C1,C2,C3,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",spot-checked: formula1.com and Pirelli preview
+2022,19,2022-19,United States Grand Prix,americas,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",
+2022,20,2022-20,Mexico City Grand Prix,rodriguez,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",
+2022,21,2022-21,São Paulo Grand Prix,interlagos,C2,C3,C4,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",
+2022,22,2022-22,Abu Dhabi Grand Prix,yas_marina,C3,C4,C5,2022,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview)",
+2023,1,2023-01,Bahrain Grand Prix,bahrain,C1,C2,C3,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,2,2023-02,Saudi Arabian Grand Prix,jeddah,C2,C3,C4,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,3,2023-03,Australian Grand Prix,albert_park,C2,C3,C4,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,4,2023-04,Azerbaijan Grand Prix,baku,C3,C4,C5,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,5,2023-05,Miami Grand Prix,miami,C2,C3,C4,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,6,2023-06,Monaco Grand Prix,monaco,C3,C4,C5,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,7,2023-07,Spanish Grand Prix,catalunya,C1,C2,C3,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,8,2023-08,Canadian Grand Prix,villeneuve,C3,C4,C5,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,9,2023-09,Austrian Grand Prix,red_bull_ring,C3,C4,C5,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,10,2023-10,British Grand Prix,silverstone,C1,C2,C3,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,11,2023-11,Hungarian Grand Prix,hungaroring,C3,C4,C5,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,12,2023-12,Belgian Grand Prix,spa,C2,C3,C4,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season",two sources agree
+2023,13,2023-13,Dutch Grand Prix,zandvoort,C1,C2,C3,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/news-and-tyre-choices-for-zandvoort-and-monza/",two sources agree
+2023,14,2023-14,Italian Grand Prix,monza,C3,C4,C5,2023-2025,"harningle/fia-doc tyres.json (FIA event notes, Pirelli preview) https://press.pirelli.com/news-and-tyre-choices-for-zandvoort-and-monza/",two sources agree
+2023,15,2023-15,Singapore Grand Prix,marina_bay,C3,C4,C5,2023-2025,https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season,
+2023,16,2023-16,Japanese Grand Prix,suzuka,C1,C2,C3,2023-2025,https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season,
+2023,17,2023-17,Qatar Grand Prix,losail,C1,C2,C3,2023-2025,https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season,
+2023,18,2023-18,United States Grand Prix,americas,C2,C3,C4,2023-2025,https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season,
+2023,19,2023-19,Mexico City Grand Prix,rodriguez,C3,C4,C5,2023-2025,https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season,
+2023,20,2023-20,São Paulo Grand Prix,interlagos,C2,C3,C4,2023-2025,https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season,
+2023,21,2023-21,Las Vegas Grand Prix,vegas,C3,C4,C5,2023-2025,https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season,
+2023,22,2023-22,Abu Dhabi Grand Prix,yas_marina,C3,C4,C5,2023-2025,https://racingnews365.com/pirelli-goes-full-uncertainty-for-soft-softer-softest-in-final-f1-season,
+2024,1,2024-01,Bahrain Grand Prix,bahrain,C1,C2,C3,2023-2025,https://press.pirelli.com/formula-1-comes-to-japan-in-the-springtime/,
+2024,2,2024-02,Saudi Arabian Grand Prix,jeddah,C2,C3,C4,2023-2025,https://press.pirelli.com/mid-range-compounds-for-the-saudi-arabian-grand-prix/,spot-checked against the Pirelli release
+2024,3,2024-03,Australian Grand Prix,albert_park,C3,C4,C5,2023-2025,https://press.pirelli.com/pirellis-c5-compound-tyre-makes-its-debut/,
+2024,4,2024-04,Japanese Grand Prix,suzuka,C1,C2,C3,2023-2025,https://press.pirelli.com/these-are-the-p-zero-compounds-for-suzuka-shanghai-and-miami/,
+2024,5,2024-05,Chinese Grand Prix,shanghai,C2,C3,C4,2023-2025,https://press.pirelli.com/these-are-the-p-zero-compounds-for-suzuka-shanghai-and-miami/,
+2024,6,2024-06,Miami Grand Prix,miami,C2,C3,C4,2023-2025,https://press.pirelli.com/these-are-the-p-zero-compounds-for-suzuka-shanghai-and-miami/,
+2024,7,2024-07,Emilia Romagna Grand Prix,imola,C3,C4,C5,2023-2025,https://press.pirelli.com/same-soft-trio-for-imola-monaco-and-montreal/,
+2024,8,2024-08,Monaco Grand Prix,monaco,C3,C4,C5,2023-2025,https://press.pirelli.com/same-soft-trio-for-imola-monaco-and-montreal/,
+2024,9,2024-09,Canadian Grand Prix,villeneuve,C3,C4,C5,2023-2025,https://press.pirelli.com/same-soft-trio-for-imola-monaco-and-montreal/,
+2024,10,2024-10,Spanish Grand Prix,catalunya,C1,C2,C3,2023-2025,https://press.pirelli.com/no-surprises-for-the-compounds-for-spain-austria-and-great-britain/,
+2024,11,2024-11,Austrian Grand Prix,red_bull_ring,C3,C4,C5,2023-2025,https://press.pirelli.com/no-surprises-for-the-compounds-for-spain-austria-and-great-britain/,
+2024,12,2024-12,British Grand Prix,silverstone,C1,C2,C3,2023-2025,https://press.pirelli.com/no-surprises-for-the-compounds-for-spain-austria-and-great-britain/,
+2024,13,2024-13,Hungarian Grand Prix,hungaroring,C3,C4,C5,2023-2025,https://press.pirelli.com/all-compounds-on-track-over-next-three-races/,
+2024,14,2024-14,Belgian Grand Prix,spa,C2,C3,C4,2023-2025,https://press.pirelli.com/all-compounds-on-track-over-next-three-races/,
+2024,15,2024-15,Dutch Grand Prix,zandvoort,C1,C2,C3,2023-2025,https://press.pirelli.com/all-compounds-on-track-over-next-three-races/,
+2024,16,2024-16,Italian Grand Prix,monza,C3,C4,C5,2023-2025,https://press.pirelli.com/a-soft-september-for-pirelli-in-f1-compounds-confirmed-for-monza-baku-and-singapore/,
+2024,17,2024-17,Azerbaijan Grand Prix,baku,C3,C4,C5,2023-2025,https://press.pirelli.com/a-soft-september-for-pirelli-in-f1-compounds-confirmed-for-monza-baku-and-singapore/,
+2024,18,2024-18,Singapore Grand Prix,marina_bay,C3,C4,C5,2023-2025,https://press.pirelli.com/a-soft-september-for-pirelli-in-f1-compounds-confirmed-for-monza-baku-and-singapore/,
+2024,19,2024-19,United States Grand Prix,americas,C2,C3,C4,2023-2025,https://press.pirelli.com/these-are-the-tyres-for-the-americas/,
+2024,20,2024-20,Mexico City Grand Prix,rodriguez,C3,C4,C5,2023-2025,https://press.pirelli.com/these-are-the-tyres-for-the-americas/,
+2024,21,2024-21,São Paulo Grand Prix,interlagos,C3,C4,C5,2023-2025,https://press.pirelli.com/these-are-the-tyres-for-the-americas/,
+2024,22,2024-22,Las Vegas Grand Prix,vegas,C3,C4,C5,2023-2025,https://press.pirelli.com/all-compounds-on-track-to-end-the-season/,
+2024,23,2024-23,Qatar Grand Prix,losail,C1,C2,C3,2023-2025,https://press.pirelli.com/all-compounds-on-track-to-end-the-season/,
+2024,24,2024-24,Abu Dhabi Grand Prix,yas_marina,C3,C4,C5,2023-2025,https://press.pirelli.com/all-compounds-on-track-to-end-the-season/,
+2025,1,2025-01,Australian Grand Prix,albert_park,C3,C4,C5,2023-2025,https://press.pirelli.com/2025-compounds-something-new-for-jeddah/,
+2025,2,2025-02,Chinese Grand Prix,shanghai,C2,C3,C4,2023-2025,https://press.pirelli.com/2025-compounds-something-new-for-jeddah/,
+2025,3,2025-03,Japanese Grand Prix,suzuka,C1,C2,C3,2023-2025,https://press.pirelli.com/2025-compounds-something-new-for-jeddah/,
+2025,4,2025-04,Bahrain Grand Prix,bahrain,C1,C2,C3,2023-2025,https://press.pirelli.com/in-bahrain-with-prior-knowledge/,
+2025,5,2025-05,Saudi Arabian Grand Prix,jeddah,C3,C4,C5,2023-2025,https://press.pirelli.com/2025-compounds-something-new-for-jeddah/,
+2025,6,2025-06,Miami Grand Prix,miami,C3,C4,C5,2023-2025,https://press.pirelli.com/pirelli-on-the-soft-side-for-miami-and-imola/,
+2025,7,2025-07,Emilia Romagna Grand Prix,imola,C4,C5,C6,2023-2025,https://press.pirelli.com/the-c6-to-make-its-debut-in-imola/,
+2025,8,2025-08,Monaco Grand Prix,monaco,C4,C5,C6,2023-2025,https://press.pirelli.com/from-monaco-to-montreal-all-the-compounds-in-play/,
+2025,9,2025-09,Spanish Grand Prix,catalunya,C1,C2,C3,2023-2025,https://press.pirelli.com/from-monaco-to-montreal-all-the-compounds-in-play/,
+2025,10,2025-10,Canadian Grand Prix,villeneuve,C4,C5,C6,2023-2025,https://press.pirelli.com/from-monaco-to-montreal-all-the-compounds-in-play/,
+2025,11,2025-11,Austrian Grand Prix,red_bull_ring,C3,C4,C5,2023-2025,https://press.pirelli.com/both-new-and-familiar-for-spielberg-to-budapest/,spot-checked against the Pirelli release
+2025,12,2025-12,British Grand Prix,silverstone,C2,C3,C4,2023-2025,https://press.pirelli.com/both-new-and-familiar-for-spielberg-to-budapest/,
+2025,13,2025-13,Belgian Grand Prix,spa,C1,C3,C4,2023-2025,https://press.pirelli.com/sprint-with-a-jump-in-compounds-in-the-ardennes/,
+2025,14,2025-14,Hungarian Grand Prix,hungaroring,C3,C4,C5,2023-2025,https://press.pirelli.com/both-new-and-familiar-for-spielberg-to-budapest/,
+2025,15,2025-15,Dutch Grand Prix,zandvoort,C2,C3,C4,2023-2025,https://press.pirelli.com/changes-and-status-quo-when-it-comes-to-compound-choices-for-the-rest-of-the-season0/,
+2025,16,2025-16,Italian Grand Prix,monza,C3,C4,C5,2023-2025,https://press.pirelli.com/changes-and-status-quo-when-it-comes-to-compound-choices-for-the-rest-of-the-season0/,
+2025,17,2025-17,Azerbaijan Grand Prix,baku,C4,C5,C6,2023-2025,https://press.pirelli.com/changes-and-status-quo-when-it-comes-to-compound-choices-for-the-rest-of-the-season0/,
+2025,18,2025-18,Singapore Grand Prix,marina_bay,C3,C4,C5,2023-2025,https://press.pirelli.com/changes-and-status-quo-when-it-comes-to-compound-choices-for-the-rest-of-the-season0/,
+2025,19,2025-19,United States Grand Prix,americas,C1,C3,C4,2023-2025,https://press.pirelli.com/a-texas-rodeo-with-a-jump-in-compounds/,
+2025,20,2025-20,Mexico City Grand Prix,rodriguez,C2,C4,C5,2023-2025,https://press.pirelli.com/changes-and-status-quo-when-it-comes-to-compound-choices-for-the-rest-of-the-season0/,spot-checked against the Pirelli release; C3 skipped
+2025,21,2025-21,São Paulo Grand Prix,interlagos,C2,C3,C4,2023-2025,https://press.pirelli.com/harder-compounds-for-the-sao-paulo-sprint-weekend/,
+2025,22,2025-22,Las Vegas Grand Prix,vegas,C3,C4,C5,2023-2025,https://press.pirelli.com/changes-and-status-quo-when-it-comes-to-compound-choices-for-the-rest-of-the-season0/,
+2025,23,2025-23,Qatar Grand Prix,losail,C1,C2,C3,2023-2025,https://press.pirelli.com/changes-and-status-quo-when-it-comes-to-compound-choices-for-the-rest-of-the-season0/,
+2025,24,2025-24,Abu Dhabi Grand Prix,yas_marina,C3,C4,C5,2023-2025,https://press.pirelli.com/changes-and-status-quo-when-it-comes-to-compound-choices-for-the-rest-of-the-season0/,
+2026,1,2026-01,Australian Grand Prix,albert_park,C3,C4,C5,2026,https://press.pirelli.com/complete-f1-tyre-range-for-the-first-three-grands-prix-of-2026/,
+2026,2,2026-02,Chinese Grand Prix,shanghai,C2,C3,C4,2026,https://press.pirelli.com/complete-f1-tyre-range-for-the-first-three-grands-prix-of-2026/,
+2026,3,2026-03,Japanese Grand Prix,suzuka,C1,C2,C3,2026,https://press.pirelli.com/complete-f1-tyre-range-for-the-first-three-grands-prix-of-2026/,spot-checked against the Pirelli release
+2026,4,2026-04,Miami Grand Prix,miami,C3,C4,C5,2026,https://press.pirelli.com/the-softest-trio-for-the-challenges-of-miami-and-montreal/,
+2026,5,2026-05,Canadian Grand Prix,villeneuve,C3,C4,C5,2026,https://press.pirelli.com/the-softest-trio-for-the-challenges-of-miami-and-montreal/,
+2026,6,2026-06,Monaco Grand Prix,monaco,C3,C4,C5,2026,https://press.pirelli.com/the-tyre-compound-selections-for-monte-carlo-and-barcelona/,
+2026,7,2026-07,Barcelona Grand Prix,catalunya,C2,C3,C4,2026,https://press.pirelli.com/the-tyre-compound-selections-for-monte-carlo-and-barcelona/,
+2026,8,2026-08,Austrian Grand Prix,red_bull_ring,C3,C4,C5,2026,https://press.pirelli.com/the-full-pirelli-range-for-spielberg-and-silverstone/,
+2026,9,2026-09,British Grand Prix,silverstone,C1,C2,C3,2026,https://press.pirelli.com/the-full-pirelli-range-for-spielberg-and-silverstone/,
+2026,10,2026-10,Belgian Grand Prix,spa,C2,C3,C4,2026,https://press.pirelli.com/the-compounds-selected-for-belgium-and-hungary/,
+2026,11,2026-11,Hungarian Grand Prix,hungaroring,C3,C4,C5,2026,https://press.pirelli.com/the-compounds-selected-for-belgium-and-hungary/,
+2026,12,2026-12,Dutch Grand Prix,zandvoort,C2,C3,C4,2026,https://press.pirelli.com/tyre-compounds-selected-for-zandvoort-monza-and-madrid/,
+2026,13,2026-13,Italian Grand Prix,monza,C3,C4,C5,2026,https://press.pirelli.com/tyre-compounds-selected-for-zandvoort-monza-and-madrid/,
+2026,14,2026-14,Spanish Grand Prix,madring,C2,C3,C4,2026,https://press.pirelli.com/tyre-compounds-selected-for-zandvoort-monza-and-madrid/,
+2026,15,2026-15,Azerbaijan Grand Prix,baku,C3,C4,C5,2026,https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2026-azerbaijan-grand-prix.1UFiasleBnLs9s0hyRCpS0,
+2026,16,2026-16,Bahrain Grand Prix in Malaysia,sepang,C2,C3,C4,2026,https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2026-bahrain-grand-prix-in-malaysia.4vcrMxYY9DWg7PwyiNMrEV,
+2026,17,2026-17,Singapore Grand Prix,marina_bay,C3,C4,C5,2026,https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2026-singapore-grand-prix.4rG7uAn2d6vveGmRlkE5RM,
+2026,18,2026-18,United States Grand Prix,americas,C2,C3,C4,2026,https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2026-united-states-grand-prix.44LKddYSbUJK1LxMAa6VLI,
+2026,19,2026-19,Mexico City Grand Prix,rodriguez,C3,C4,C5,2026,https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2026-mexico-city-grand-prix.3a3o08HqrmdQ9IqXYUwJrH,
+2026,20,2026-20,Brazilian Grand Prix,interlagos,C3,C4,C5,2026,https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2026-sao-paulo-grand-prix.bjn9KJgqDprqvVr9z7i5V,
+2026,21,2026-21,Las Vegas Grand Prix,vegas,C3,C4,C5,2026,https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2026-las-vegas-grand-prix.1HEaoIW48MVZs9cAT7rP2w,
