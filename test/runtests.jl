@@ -1053,10 +1053,10 @@ end
         @test all(abs(sum(cx[((k - 1) * nm + 1):(k * nm)][g.mach_season .== s])) < 1e-10 for k in 1:3, s in 1:maximum(g.mach_season))
         @test circuit_offsets(cx, cr) ≈ [sum(cx[(k - 1) * nm + cr.mach[i]] * cr.xc[i, k] for k in 1:3) for i in eachindex(cr.mach)]
         @test_throws ArgumentError RaceCircuits(g, ctab[2:end, :])
-        # the reference tables: one row per race 1950–2026 (17 of 2026 run), with walls, surface and conditions
+        # the reference tables: one row per race 1950–2026 (21 of 2026 run), with walls, surface and conditions
         ct = circuit_table()
-        @test nrow(ct) == 1166 && Set(ct.condition) == Set(["dry", "mixed", "wet"])
-        @test count(==("wet"), ct.condition) == 63 && count(==("mixed"), ct.condition) == 107
+        @test nrow(ct) == 1170 && Set(ct.condition) == Set(["dry", "mixed", "wet"])
+        @test count(==("wet"), ct.condition) == 63 && count(==("mixed"), ct.condition) == 108
         @test all(in(0:2), ct.W) && all(in(0:2), ct.S)
     end
 
