@@ -481,6 +481,7 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
     h = Vector{T}(undef, length(d.y))
     hbar = zeros(T, length(d.races))
     nm, nc = length(d.machines), length(d.competitors)
+    ncv = cond.on ? (ctx.short ? last(COND_KAPPA) : COND_RAIN) : 0   # = length(cond_names(ctx.short)), without allocating
     for j in eachindex(d.y)
         st = d.stint[j] / 10
         h[j] = a[d.comp[j]] + sl[d.comp[j]] * d.agec[j] + b[d.mach[j]] + dv[d.mach[j]] * d.posc[j] +
@@ -498,6 +499,7 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
         if cond.on          # compound offsets and stint slopes, track temperature, rain (#116)
             k = cond.comp[j]
             k > 1 && (h[j] += cv[COND_OFFSET[k - 1]] + cv[COND_SLOPE[k - 1]] * st)
+            cond.racedeg && (h[j] += cv[ncv + d.race[j]] * st)   # `racedeg` (#124): the race's own stint slope
             h[j] += cv[COND_TT] * cond.tt[j] + cv[COND_RAIN] * cond.rain[j]
             cond.wetdev && (h[j] += (wv[d.mach[j]] + wv[nm + d.comp[j]] +
                                      (length(wv) > nm + nc ? wv[nm + nc + d.race[j]] : zero(eltype(wv)))) * cond.wet[j])
@@ -513,6 +515,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk, ctx, cond, d)
     gcv, gwv = zeros(length(cv)), zeros(length(wv))
     cshort = cond.on && ctx.short && length(cv) >= last(COND_KAPPA)
+    ncvg = cond.on ? (ctx.short ? last(COND_KAPPA) : COND_RAIN) : 0   # `racedeg`'s block starts after the shared terms
     gxr, rw = zeros(length(xr)), !isempty(rwk.lap)
     gηt, gφ, gsh, gκ = zeros(length(ηt)), zeros(length(φ)), zeros(length(sh)), zeros(length(κ))
     κπ, κλ = ctx.fpace ? (κ[1], κ[end]) : (0.0, 0.0)
@@ -644,6 +647,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
         if cond.on
             k = cond.comp[j]
             k > 1 && (gcv[COND_OFFSET[k - 1]] += gh; gcv[COND_SLOPE[k - 1]] += gh * st)
+            cond.racedeg && (gcv[ncvg + d.race[j]] += gh * st)   # `racedeg`
             gcv[COND_TT] += gh * cond.tt[j]; gcv[COND_RAIN] += gh * cond.rain[j]
             if cond.wetdev
                 gw = gh * cond.wet[j]
@@ -864,7 +868,11 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
   against SOFT (sd 2 % for MEDIUM and HARD, 5 % for INTERMEDIATE and WET), compound stint
   slopes on top of the shared stint curve (sd 1 % per 10 laps), track temperature (lap minus
   race mean; sd 1 % per 10 °C) and rain (sd 2 %); with `short` also wet tyres and rain on
-  the shortfall's logit π and log λ (sd 1). With `cond.wetdev`, car-season and driver
+  the shortfall's logit π and log λ (sd 1). With `cond.racedeg` (`racedeg`, #124) each race
+  also has its own stint slope around the shared tyre curve, τ_rd·(u - mean u)·s on every lap,
+  τ_rd ~ half-N(0, `RACEDEG_SD`): degradation varies more between races (circuit, temperature,
+  the nominated window) than between a race's compounds, whose average slopes are about equal
+  (2021–2026); the drivers' and car-seasons' tyre-management slopes are deviations around it. With `cond.wetdev`, car-season and driver
   deviations on wet-tyre laps, wv = τ_wet[k]·(u - group mean u), τ_wet ~ half-N(0, 1) (car-
   seasons centred within season, drivers overall): the car's and driver's limit in the wet
   against the dry (#116 steps 1 and 2, without the works pooling). With `cond.wetpool` the
@@ -1074,6 +1082,11 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     if cond.on              # shared condition effects (#116): z scaled by fixed prior sds, see cond_names
         z_cond ~ StdNormalVec(length(cond_names(ctx.short)))
         cv = cond_sd(ctx.short) .* z_cond
+        if cond.racedeg     # `racedeg` (#124): each race's stint slope around the shared curve, centred over races
+            τ_rd ~ truncated(Normal(0, RACEDEG_SD); lower = 0)
+            u_rd ~ StdNormalVec(length(d.races))
+            cv = wet_join(cv, τ_rd .* (u_rd .- mean(u_rd)))
+        end
     else
         cv = 0 .* a_π .+ zeros(1)
     end
@@ -1305,6 +1318,7 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                             ctx.short ? (; τ_sh = 0.05 .+ 0.05 .* rand(rng, 4),
                                            u_sh = 0.1 .* randn(rng, 2length(d.competitors) + 2length(d.machines))) : (;),
                             cond.on ? (; z_cond = 0.01 .* randn(rng, length(cond_names(ctx.short)))) : (;),
+                            cond.on && cond.racedeg ? (; τ_rd = 0.1 + 0.1 * rand(rng), u_rd = 0.1 .* randn(rng, length(d.races))) : (;),
                             cond.on && cond.wetdev && cond.wetpool ?
                                 (; σ0_wet = 0.2 + 0.2 * rand(rng), τ_wws = 0.1 + 0.1 * rand(rng),
                                    z_wet = 0.1 .* randn(rng, length(wcw.chassis.prev)), τ_wetd = 0.2 + 0.2 * rand(rng),
@@ -1343,6 +1357,8 @@ const WALK_PARAMS = (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :�
 const FPACE_PARAMS = (:β_fp, :τ_fp, :u_fp, :κ_fp)
 const SHORT_PARAMS = (:τ_sh, :u_sh)
 const COND_PARAMS = (:z_cond,)
+const RACEDEG_PARAMS = (:τ_rd, :u_rd)   # each race's stint slope (`racedeg`, #124)
+const RACEDEG_SD = 1.0                  # prior scale of their spread over races, % per 10 laps
 const WETDEV_PARAMS = (:τ_wet, :u_wet)
 const WETPOOL_PARAMS = (:σ0_wet, :τ_wws, :z_wet)     # the pooled car part (`wetwalk`)
 const WETDRV_PARAMS = (:τ_wetd, :u_wetd)             # drivers, with `wetwalk`, `wetdrv` or `wetshr`
@@ -1373,6 +1389,7 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                 (ctx.traffic || first(p) !== :η_tr) && (ctx.fpace || first(p) ∉ FPACE_PARAMS) &&
                 (ctx.short || first(p) ∉ SHORT_PARAMS) && (cond.on || first(p) ∉ COND_PARAMS) &&
                 (cond.on && cond.wetdev && cond.wetcar && !cond.wetpool && cond.wetmin == 0 || first(p) ∉ WETDEV_PARAMS) &&
+                (cond.on && cond.racedeg || first(p) ∉ RACEDEG_PARAMS) &&
                 (cond.on && cond.wetdev && cond.wetpool || first(p) ∉ WETPOOL_PARAMS) &&
                 (cond.on && cond.wetdev && cond.wetmin > 0 || first(p) ∉ WETSHR_PARAMS) &&
                 (cond.on && cond.wetdev && !isempty(cond.wetraces) || first(p) ∉ WETRACE_PARAMS) &&
@@ -1420,6 +1437,7 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                                     vcat("π|" .* d.competitors, "π|" .* d.machines, "λ|" .* d.competitors, "λ|" .* d.machines)),
                           # #116 terms, sampled after the #113 ones
                           :z_cond => (length(cond_names(ctx.short)), cond_names(ctx.short)),
+                          :τ_rd => (1, nothing), :u_rd => (length(d.races), d.races),   # `racedeg` (#124), sampled after z_cond
                           :τ_wet => (2, ["car", "drv"]),
                           :u_wet => (length(d.machines) + length(d.competitors), vcat(d.machines, d.competitors)),
                           :σ0_wet => (1, nothing), :τ_wws => (1, nothing),
@@ -1448,7 +1466,7 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                               :z_cond => 1e-3, :τ_wet => 0.01, :u_wet => 0.01,
                               :σ0_wet => 0.01, :τ_wws => 0.01, :z_wet => 0.01, :τ_wetd => 0.01, :u_wetd => 0.01,
                               :τ_wetc => 0.01, :u_wetc => 0.01,
-                              :τ_wr => 0.01, :u_wr => 0.01)
+                              :τ_wr => 0.01, :u_wr => 0.01, :τ_rd => 0.01, :u_rd => 0.01)
 
 """
     lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old = true, tyres_new = tyres_old,
