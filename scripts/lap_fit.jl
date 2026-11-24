@@ -64,6 +64,12 @@
 # `wetdrv` drivers' deviations only (…_wetdrv; the car-seasons' weren't identified, #116);
 # `wetshr` drivers' and, for car-seasons with ≥ 100 wet-tyre laps only, car-seasons' deviations,
 # their spread ~ half-N(0, 0.5) (…_wetshr, #116 option 2).
+# #124, `ccomp` (with `cond`; …_ccomp): the dry compounds keyed on Pirelli's C-number
+# (reference/compounds/nominations.csv) instead of SOFT/MEDIUM/HARD: pace and stint slope per
+# compound within each compound range, as steps between neighbouring C-numbers pooled over the
+# ranges; combine writes <tag>_compounds.csv. `warmlast=<event_id>` (e.g. 2026-17) limits the
+# warmfrom= fit's data to the races up to that one, for a warm start from a fit made before
+# later races were added to the cache.
 
 using Diomedes, CSV, DataFrames, Random, Serialization, Statistics, Turing
 using Diomedes: sum_to_zero, sum_to_zero_by, lap_mach_counts
@@ -99,6 +105,7 @@ condf = "cond" ∈ ARGS             # per-lap compound, track temperature, rain 
 wetwalk = "wetwalk" ∈ ARGS        # the same, the car-seasons' pooled by works (#116 step 1)
 wetdrv = "wetdrv" ∈ ARGS          # drivers' wet deviations only (#116)
 wetrace = "wetrace" ∈ ARGS        # each wet race's own wet-lap offset, with wetshr / wetall / wetallg (#116)
+ccomp = "ccomp" ∈ ARGS            # dry compounds keyed on Pirelli's C-number, with cond (#124)
 wetallg = "wetallg" ∈ ARGS        # as wetall, the car-seasons' deviations centred over all of them, not within season (#116)
 wetall = "wetall" ∈ ARGS || wetallg   # as wetshr, every car-season with a wet lap: the prior alone shrinks them (#116)
 wetshr = "wetshr" ∈ ARGS || wetall   # drivers', and car-seasons' with ≥ WETSHR_MIN wet laps, spread shrunk (#116 option 2)
@@ -119,8 +126,8 @@ n_block = blockarg === nothing ? (probe ? 25 : 100) : parse(Int, split(ARGS[bloc
 # missing from this list was read as the chain count, and warm= had to be 5th).
 FLAGS = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
          "walk", "works", "big", "keepslow", "keepwet", "rwalk", "rwrel", "rwrels", "nostartdrv", "dinc1", "notune", "probe",
-         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace")
-KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "n")
+         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "ccomp")
+KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "warmlast", "n")
 optkey(a) = (i = findfirst('=', a); i === nothing ? nothing : a[1:prevind(a, i)])
 badkeys = [a for a in ARGS if optkey(a) !== nothing && optkey(a) ∉ KEYS]
 isempty(badkeys) || error("unknown option(s): $(join(badkeys, ", ")); known: $(join(KEYS .* "=", ", "))")
@@ -145,7 +152,7 @@ flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev
 flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1)
 ctx_sfx = (traffic ? "_traffic" : "") * (fpace ? "_fpace" : "") * (short ? "_short" : "") *   # #113, after the others
           (condf ? "_cond" : "") * (wetwalk ? "_wetwalk" : wetdrv ? "_wetdrv" : wetallg ? "_wetallg" : wetall ? "_wetall" : wetshr ? "_wetshr" : wetdev ? "_wetdev" : "") *
-          (wetrace ? "_wetrace" : "")                                       # #116, after those
+          (wetrace ? "_wetrace" : "") * (ccomp ? "_ccomp" : "")            # #116, #124, after those
 tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (rwrels ? "_rwrels" : rwrel ? "_rwrel" : "") * ctx_sfx * (keepslow ? "_keepslow" : "") * (keepwet ? "_keepwet" : "") * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
@@ -163,8 +170,9 @@ d = prepare_laps(sd.laps, res; pits, pit_stops = sd.pits, circuits = circ, stopp
 println(d); flush(stdout)
 ctx = traffic || fpace || short ? LapContext(d, sd.laps; traffic, fpace, short) : LapContext()
 cnd = condf ? LapConditions(d, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons)); wetdev,
-                                   wetpool = wetwalk, wetcar = !wetdrv, wetmin = wetall ? 1 : wetshr ? Diomedes.WETSHR_MIN : 0, wetglobal = wetallg, wetrace) :
+                                   wetpool = wetwalk, wetcar = !wetdrv, wetmin = wetall ? 1 : wetshr ? Diomedes.WETSHR_MIN : 0, wetglobal = wetallg, wetrace, ccomp) :
       LapConditions()
+ccomp && !condf && error("ccomp needs cond")
 condf && (println(cnd); flush(stdout))
 mkpath("output")
 
@@ -188,6 +196,12 @@ if action == "chain"
         wseasons, wpits = parse(Int, wm[1]):parse(Int, wm[2]), Symbol(wm[3])
         od = (res = fetch_results(jolpica, collect(wseasons)), laps = fetch_laps(jolpica, collect(wseasons)),
               pits = wpits === :recorded ? fetch_pit_stops(jolpica, collect(wseasons)) : nothing)
+        wl = optval("warmlast")            # the old fit's last race, when the cache has gained races since
+        if wl !== nothing
+            occursin(r"^\d{4}-\d{2}$", wl) || error("warmlast=: expected <season>-<round, 2 digits>, got $wl")
+            od = (res = filter(r -> r.event_id <= wl, od.res), laps = filter(r -> r.event_id <= wl, od.laps),
+                  pits = od.pits === nothing ? nothing : filter(r -> r.event_id <= wl, od.pits))
+        end
         d_old = prepare_laps(od.laps, od.res; pits = wpits, pit_stops = od.pits, circuits = circ,
                              stoppage = !occursin("_keepslow", wtag),
                              keep_laps = occursin("_keepwet", wtag) ? Diomedes.wet_green_laps(read_lap_conditions()) : nothing)
@@ -197,7 +211,8 @@ if action == "chain"
                                  wetdev = occursin(r"_wet(dev|walk|drv|shr|all)", wtag), wetpool = occursin("_wetwalk", wtag),
                                  wetcar = !occursin("_wetdrv", wtag),
                                  wetmin = occursin("_wetall", wtag) ? 1 : occursin("_wetshr", wtag) ? Diomedes.WETSHR_MIN : 0,
-                                 wetglobal = occursin("_wetallg", wtag), wetrace = occursin("_wetrace", wtag)) :
+                                 wetglobal = occursin("_wetallg", wtag), wetrace = occursin("_wetrace", wtag),
+                                 ccomp = occursin("_ccomp", wtag)) :
                    LapConditions()
         # blocks the old fit predates: κ_fp (#113's field pace on the shortfall) came after probe 113b
         wst = deserialize(wfile)
@@ -377,7 +392,8 @@ scal = collect3((i, c) -> vcat([chain[s][i, c] for s in scal_names], tyres ? cha
                                 wetwalk ? [chain[s][i, c] for s in (:σ0_wet, :τ_wws, :τ_wetd)] :
                                 wetdrv ? [chain[:τ_wetd][i, c]] :
                                 wetshr ? vcat([chain[:τ_wetc][i, c], chain[:τ_wetd][i, c]], wetrace ? [chain[:τ_wr][i, c]] : Float64[]) :
-                                wetdev ? chain[:τ_wet][i, c] : Float64[]))
+                                wetdev ? chain[:τ_wet][i, c] : Float64[],
+                                ccomp ? [chain[:τ_cp][i, c], chain[:τ_cg][i, c]] : Float64[]))
 # #113: per driver at the base rates (no track terms, a car with zero offset): shortfall
 # frequency q, size λ, mean q·λ and sd λ·√(q(2 - q)), and the peak pace, the mean-pace
 # effect less the shortfall mean against the drivers' average (both in %, lower faster)
@@ -449,7 +465,8 @@ for (j, nm) in enumerate((string.(scal_names)..., (tyres ? Tuple(n for e in d.er
                           (fpace ? ("β_fp", "τ_fp", "κ_fp[π]", "κ_fp[λ]") : ())..., (short ? ("τ_sh[π drv]", "τ_sh[π car]", "τ_sh[λ drv]", "τ_sh[λ car]") : ())...,
                           (condf ? Tuple("cond[$n]" for n in Diomedes.cond_names(short)) : ())...,
                           (wetwalk ? ("σ0_wet", "τ_wws", "τ_wetd") : wetdrv ? ("τ_wetd",) : wetshr ? (wetrace ? ("τ_wetc", "τ_wetd", "τ_wr") : ("τ_wetc", "τ_wetd")) :
-                           wetdev ? ("τ_wet[car]", "τ_wet[drv]") : ())...))
+                           wetdev ? ("τ_wet[car]", "τ_wet[drv]") : ())...,
+                          (ccomp ? ("τ_cp", "τ_cg") : ())...))
     v = flat(scal)[:, j]
     println(rpad(nm, 12), round(mean(v); digits = 4), " ± ", round(std(v); digits = 4))
 end
@@ -495,6 +512,32 @@ if wetdev                            # car-season and driver deviations on wet-t
     println("\nwet-tyre deviations, drivers (% vs their dry pace; ≥ 100 wet laps):")
     bw = wdt[wdt.wet_laps .>= 100, :]
     show(stdout, MIME"text/plain"(), vcat(first(bw, 6), last(bw, 6))); println()
+end
+if ccomp                             # dry compounds by C-number (#124): pace and stint slope per range and compound
+    cs = Diomedes.ccomp_steps(cnd)
+    Bp, Bg, B0 = Diomedes.ccomp_maps(cnd)
+    nr = length(cnd.cranges)
+    cblk(i, c) = Bp * (chain[:μ_cp][i, c][cs.jpos] .+ chain[:τ_cp][i, c] .* chain[:u_cp][i, c]) .+
+                 Bg * (chain[:μ_cg][i, c][cs.jpos] .+ chain[:τ_cg][i, c] .* chain[:u_cg][i, c]) .+
+                 (nr > 1 ? B0 * chain[:g0_c][i, c] : zeros(size(B0, 1)))
+    CB = flat(collect3(cblk))
+    q(v, p) = quantile(v, p)
+    rows = [(e, c) for e in 1:nr for c in cnd.cmin[e]:cnd.cmax[e]]
+    ip(e, c) = (e - 1) * Diomedes.CCOMP_CMAX + c
+    cct = DataFrame(range = [cnd.cranges[e] for (e, _) in rows], compound = ["C$c" for (_, c) in rows],
+                    laps = [count(j -> cnd.crange[j] == e && cnd.cnum[j] == c, eachindex(d.y)) for (e, c) in rows],
+                    races = [length(unique(d.race[(cnd.crange .== e) .& (cnd.cnum .== c)])) for (e, c) in rows],
+                    pace = [mean(CB[:, ip(e, c)]) for (e, c) in rows], pace_sd = [std(CB[:, ip(e, c)]) for (e, c) in rows],
+                    slope = [mean(CB[:, ip(e, c) + nr * Diomedes.CCOMP_CMAX]) for (e, c) in rows],
+                    slope_sd = [std(CB[:, ip(e, c) + nr * Diomedes.CCOMP_CMAX]) for (e, c) in rows])
+    CSV.write("output/$(tag)_compounds.csv", cct)
+    println("\ndry compounds by C-number (pace: % against the range's hardest; slope: % per 10 laps on top of the shared curve):")
+    show(stdout, MIME"text/plain"(), cct); println()
+    println("mean steps between neighbours over ranges (90% interval):")
+    for (k, j) in enumerate(cs.J), (lab, s) in (("pace", :μ_cp), ("slope", :μ_cg))
+        v = flat(collect3((i, c) -> [chain[s][i, c][k]]))[:, 1]
+        println("  C$(j - 1)→C$j $lab: ", round(mean(v); digits = 3), " [", round(q(v, 0.05); digits = 3), ", ", round(q(v, 0.95); digits = 3), "]")
+    end
 end
 if rwalk                             # race-level chassis walk states (#108)
     XR = flat(collect3(race_states))

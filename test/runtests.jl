@@ -1981,9 +1981,40 @@ end
                 cwr = LapConditions(cshr.comp, cshr.wet, cshr.tt, cshr.rain, true, true, false, true, wmin, wcs, true, wrs, (;))
                 @test Diomedes.wet_car_groups(d9, cglob) == (fill(1, length(wcs)), [length(wcs)]) &&
                       Diomedes.wet_car_groups(d9, cshr) == Diomedes.wet_car_groups(d9, wcs)
+                # `ccomp` (#124): dry laps keyed on a C-number in one of two compound ranges (the first half of the
+                # races, then the rest), each race nominating three consecutive compounds, its softest C3 to C5
+                c2 = conds[2]
+                rr = [r <= cld(nr9, 2) ? 1 : 2 for r in d9.race]
+                csoft = [3 + r % 3 for r in d9.race]
+                ccn = [1 <= c2.comp[j] <= 3 ? csoft[j] - (c2.comp[j] - 1) : 0 for j in 1:n]
+                ccr_ = [ccn[j] > 0 ? rr[j] : 0 for j in 1:n]
+                cmn = [minimum(ccn[(ccr_ .== e)]) for e in 1:2]; cmx = [maximum(ccn[(ccr_ .== e)]) for e in 1:2]
+                ccc = LapConditions(c2.comp, c2.wet, c2.tt, c2.rain, true, c2.wetdev, c2.wetpool, c2.wetcar, c2.wetmin, c2.wetcars,
+                                    c2.wetglobal, c2.wetraces, ccr_, ccn, ["A", "B"], cmn, cmx, (;))
+                cs9 = Diomedes.ccomp_steps(ccc)
+                @test Diomedes.ccomp_on(ccc) && !Diomedes.ccomp_on(c2) &&
+                      cs9.steps == [(e, j) for e in 1:2 for j in (cmn[e] + 1):cmx[e]] && cs9.J == sort(unique(last.(cs9.steps)))
+                # the maps: a compound's pace is the sum of its range's steps from the hardest (0 there); its slope the
+                # same plus the range's level, 0 for the first range
+                let (Bp, Bg, B0) = Diomedes.ccomp_maps(ccc), Δp = randn(rng, length(cs9.steps)), Δg = randn(rng, length(cs9.steps)),
+                    g0 = randn(rng, 1), blk = Bp * Δp .+ Bg * Δg .+ B0 * g0
+                    for e in 1:2, c in cmn[e]:cmx[e]
+                        ip, ig = Diomedes.ccomp_index(ccc, false, e, c) .- 10
+                        sel = [es == e && j <= c for (es, j) in cs9.steps]
+                        @test blk[ip] ≈ sum(Δp[sel]; init = 0.0) && blk[ig] ≈ sum(Δg[sel]; init = 0.0) + (e > 1 ? g0[1] : 0.0)
+                    end
+                    @test all(iszero, blk[[i for i in eachindex(blk) if !any(i in (Diomedes.ccomp_index(ccc, false, e, c) .- 10)
+                                                                              for e in 1:2 for c in cmn[e]:cmx[e])]])
+                end
+                # the nominations table (#148): one row per race, three ascending C-numbers in a known range
+                let nt = Diomedes.read_compound_nominations(), cn(s) = parse(Int, s[2:end])
+                    @test nrow(nt) >= 135 && allunique(nt.event_id) &&
+                          all(cn(r.hard) < cn(r.medium) < cn(r.soft) <= Diomedes.CCOMP_CMAX for r in eachrow(nt)) &&
+                          Set(nt.era) == Set(["2019-2021", "2022", "2023-2025", "2026"])
+                end
                 # zero condition effects: the model without them
                 m0 = lap_effects(d9)
-                for c in (conds..., cpool, cdrv, cshr, cglob, cwr)
+                for c in (conds..., cpool, cdrv, cshr, cglob, cwr, ccc)
                     mc = lap_effects(d9; cond = c, cars = fc)
                     θc = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))),
                                c.wetpool ? (; σ0_wet = 0.5, τ_wws = 0.2, z_wet = zeros(length(wcw9.chassis.prev)), τ_wetd = 0.3,
@@ -1991,7 +2022,10 @@ end
                                !c.wetcar ? (; τ_wetd = 0.3, u_wetd = zeros(nc9)) :
                                c.wetmin > 0 ? merge((; τ_wetc = 0.2, u_wetc = zeros(length(c.wetcars)), τ_wetd = 0.3, u_wetd = zeros(nc9)),
                                                     isempty(c.wetraces) ? (;) : (; τ_wr = 0.5, u_wr = zeros(length(c.wetraces)))) :
-                               c.wetdev ? (; τ_wet = [0.3, 0.4], u_wet = zeros(nm9 + nc9)) : (;))
+                               c.wetdev ? (; τ_wet = [0.3, 0.4], u_wet = zeros(nm9 + nc9)) : (;),
+                               Diomedes.ccomp_on(c) ? (; μ_cp = zeros(length(cs9.J)), τ_cp = 0.3, u_cp = zeros(length(cs9.steps)),
+                                                         μ_cg = zeros(length(cs9.J)), τ_cg = 0.3, u_cg = zeros(length(cs9.steps)),
+                                                         g0_c = zeros(1)) : (;))
                     @test Turing.DynamicPPL.loglikelihood(mc, θc) ≈ Turing.DynamicPPL.loglikelihood(m0, θ)
                 end
                 # `wetshr` gives the same likelihood as `wetdev` with the same deviations: its car-seasons'
@@ -2029,6 +2063,19 @@ end
                     @test h3 ≈ h0 .+ [(wv3[d9.mach[j]] + wv3[nm9 + d9.comp[j]] + wv3[nm9 + nc9 + d9.race[j]] -
                                        wv[d9.mach[j]] - wv[nm9 + d9.comp[j]]) * c.wet[j] for j in 1:n]
                 end
+                # `ccomp`: a dry lap takes its compound's pace and slope from the block after the shared terms, the
+                # MEDIUM / HARD offsets and slopes no longer apply; wet-tyre laps as before
+                let cvx = vcat(cv, randn(rng, 2 * 2 * Diomedes.CCOMP_CMAX))
+                    hc, _ = Diomedes.lap_h(z(nc9), z(nm9), z(2length(d9.eras)), z(nc9), z(nm9), z(1), z(nc9), z(nm9),
+                                           z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), z(1), z(1), cvx, wv,
+                                           RaceWalk(), LapContext(), ccc, d9)
+                    function dry(j)
+                        ip, ig = Diomedes.ccomp_index(ccc, false, ccr_[j], ccn[j])
+                        return cvx[ip] + cvx[ig] * d9.stint[j] / 10
+                    end
+                    @test hc ≈ [(ccr_[j] > 0 ? dry(j) : c.comp[j] > 1 ? cv[c.comp[j] - 1] + cv[c.comp[j] + 3] * d9.stint[j] / 10 : 0.0) +
+                                cv[9] * c.tt[j] + cv[10] * c.rain[j] + (wv[d9.mach[j]] + wv[nm9 + d9.comp[j]]) * c.wet[j] for j in 1:n]
+                end
                 # gradients against ForwardDiff, with and without the shortfall terms; layout
                 # pooled: each car-season takes its works' centred walk state
                 let z = randn(rng, length(wcw9.chassis.prev))
@@ -2036,7 +2083,7 @@ end
                     xc = Diomedes.center_by(x, wcw9.chassis.season, wcw9.chassis.counts)
                     @test Diomedes.wet_car_walk(0.5, 0.2, z, wcw9) == xc[wcw9.row_ch]
                 end
-                for c in (conds..., cpool, cdrv, cshr, cglob, cwr), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
+                for c in (conds..., cpool, cdrv, cshr, cglob, cwr, ccc), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
                     m = lap_effects(d9; flags..., cars = fc, ctx = cx, cond = c)
                     rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                     rg = NamedTuple(getfield(rdm, :_varname_ranges))
@@ -2045,7 +2092,8 @@ end
                           haskey(rg, :z_wet) == c.wetpool && haskey(rg, :u_wetd) == (c.wetpool || !c.wetcar || c.wetmin > 0) &&
                           haskey(rg, :u_wetc) == (c.wetmin > 0) && (c.wetmin == 0 || length(rg.u_wetc.range) == length(c.wetcars))
                     xw = 0.5 .* randn(rng, LDP.dimension(rdm))
-                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd, :τ_wetc, :τ_wr)
+                    @test haskey(rg, :u_cp) == Diomedes.ccomp_on(c) && (!Diomedes.ccomp_on(c) || length(rg.u_cp.range) == length(cs9.steps))
+                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd, :τ_wetc, :τ_wr, :τ_cp, :τ_cg)
                         haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
                     end
                     @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]

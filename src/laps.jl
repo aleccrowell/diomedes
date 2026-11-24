@@ -497,7 +497,12 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
         ctx.fpace && (h[j] += φ[d.mach[j]] * ctx.fp[j])
         if cond.on          # compound offsets and stint slopes, track temperature, rain (#116)
             k = cond.comp[j]
-            k > 1 && (h[j] += cv[COND_OFFSET[k - 1]] + cv[COND_SLOPE[k - 1]] * st)
+            if ccomp_on(cond) && cond.crange[j] > 0     # `ccomp` (#124): the dry compound's pace and stint slope
+                ip, ig = ccomp_index(cond, ctx.short, cond.crange[j], cond.cnum[j])
+                h[j] += cv[ip] + cv[ig] * st
+            else
+                k > 1 && (h[j] += cv[COND_OFFSET[k - 1]] + cv[COND_SLOPE[k - 1]] * st)
+            end
             h[j] += cv[COND_TT] * cond.tt[j] + cv[COND_RAIN] * cond.rain[j]
             cond.wetdev && (h[j] += (wv[d.mach[j]] + wv[nm + d.comp[j]] +
                                      (length(wv) > nm + nc ? wv[nm + nc + d.race[j]] : zero(eltype(wv)))) * cond.wet[j])
@@ -643,7 +648,12 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
         ctx.fpace && (gφ[d.mach[j]] += gh * ctx.fp[j])
         if cond.on
             k = cond.comp[j]
-            k > 1 && (gcv[COND_OFFSET[k - 1]] += gh; gcv[COND_SLOPE[k - 1]] += gh * st)
+            if ccomp_on(cond) && cond.crange[j] > 0     # `ccomp` (#124)
+                ip, ig = ccomp_index(cond, ctx.short, cond.crange[j], cond.cnum[j])
+                gcv[ip] += gh; gcv[ig] += gh * st
+            else
+                k > 1 && (gcv[COND_OFFSET[k - 1]] += gh; gcv[COND_SLOPE[k - 1]] += gh * st)
+            end
             gcv[COND_TT] += gh * cond.tt[j]; gcv[COND_RAIN] += gh * cond.rain[j]
             if cond.wetdev
                 gw = gh * cond.wet[j]
@@ -864,7 +874,15 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
   against SOFT (sd 2 % for MEDIUM and HARD, 5 % for INTERMEDIATE and WET), compound stint
   slopes on top of the shared stint curve (sd 1 % per 10 laps), track temperature (lap minus
   race mean; sd 1 % per 10 °C) and rain (sd 2 %); with `short` also wet tyres and rain on
-  the shortfall's logit π and log λ (sd 1). With `cond.wetdev`, car-season and driver
+  the shortfall's logit π and log λ (sd 1). With `ccomp_on(cond)` (`ccomp`, #124) the dry
+  laps' compound terms are keyed on Pirelli's C-number instead (SOFT/MEDIUM/HARD are a window
+  of three compounds that moves from race to race): within each compound range e (the same
+  C-number is a different tyre across ranges), compound c's pace p[e,c] and stint slope g[e,c]
+  are sums of steps between neighbouring compounds from the range's hardest (pace 0), each step
+  μ[j] + τ·u[e,j] pooled over the ranges (μ ~ N(0, 1), τ ~ half-N(0, `CCOMP_TAU_SD`)), the
+  slopes plus a level per range after the first (g0_c ~ N(0, 1); the shared stint curve
+  carries the first's). The MEDIUM and HARD entries of cv are then unused (prior only);
+  wet-tyre laps keep theirs, now against the range's hardest compound rather than SOFT. With `cond.wetdev`, car-season and driver
   deviations on wet-tyre laps, wv = τ_wet[k]·(u - group mean u), τ_wet ~ half-N(0, 1) (car-
   seasons centred within season, drivers overall): the car's and driver's limit in the wet
   against the dry (#116 steps 1 and 2, without the works pooling). With `cond.wetpool` the
@@ -1074,6 +1092,22 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     if cond.on              # shared condition effects (#116): z scaled by fixed prior sds, see cond_names
         z_cond ~ StdNormalVec(length(cond_names(ctx.short)))
         cv = cond_sd(ctx.short) .* z_cond
+        if ccomp_on(cond)   # `ccomp` (#124): dry compounds by C-number, steps between neighbours pooled over ranges
+            cs = ccomp_steps(cond)
+            μ_cp ~ StdNormalVec(length(cs.J))                     # mean pace step C(j-1) → Cj, % (sd 1)
+            τ_cp ~ truncated(Normal(0, CCOMP_TAU_SD); lower = 0)  # spread of a step over ranges
+            u_cp ~ StdNormalVec(length(cs.steps))
+            μ_cg ~ StdNormalVec(length(cs.J))                     # mean stint-slope step, % per 10 laps (sd 1)
+            τ_cg ~ truncated(Normal(0, CCOMP_TAU_SD); lower = 0)
+            u_cg ~ StdNormalVec(length(cs.steps))
+            Bp, Bg, B0 = ccomp_maps(cond)
+            blk = Bp * (μ_cp[cs.jpos] .+ τ_cp .* u_cp) .+ Bg * (μ_cg[cs.jpos] .+ τ_cg .* u_cg)
+            if length(cond.cranges) > 1
+                g0_c ~ StdNormalVec(length(cond.cranges) - 1)    # each later range's stint-slope level (sd 1)
+                blk = blk .+ B0 * g0_c
+            end
+            cv = wet_join(cv, blk)
+        end
     else
         cv = 0 .* a_π .+ zeros(1)
     end
@@ -1305,6 +1339,11 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                             ctx.short ? (; τ_sh = 0.05 .+ 0.05 .* rand(rng, 4),
                                            u_sh = 0.1 .* randn(rng, 2length(d.competitors) + 2length(d.machines))) : (;),
                             cond.on ? (; z_cond = 0.01 .* randn(rng, length(cond_names(ctx.short)))) : (;),
+                            cond.on && ccomp_on(cond) ?
+                                (ns = length(ccomp_steps(cond).steps); nj = length(ccomp_steps(cond).J);
+                                 merge((; μ_cp = 0.01 .* randn(rng, nj), τ_cp = 0.05 + 0.05 * rand(rng), u_cp = 0.1 .* randn(rng, ns),
+                                          μ_cg = 0.01 .* randn(rng, nj), τ_cg = 0.05 + 0.05 * rand(rng), u_cg = 0.1 .* randn(rng, ns)),
+                                       length(cond.cranges) > 1 ? (; g0_c = 0.01 .* randn(rng, length(cond.cranges) - 1)) : (;))) : (;),
                             cond.on && cond.wetdev && cond.wetpool ?
                                 (; σ0_wet = 0.2 + 0.2 * rand(rng), τ_wws = 0.1 + 0.1 * rand(rng),
                                    z_wet = 0.1 .* randn(rng, length(wcw.chassis.prev)), τ_wetd = 0.2 + 0.2 * rand(rng),
@@ -1343,6 +1382,56 @@ const WALK_PARAMS = (:τ_ch, :σ0_ch, :z_ch, :τ_en, :σ0_en, :z_en, :δ_own, :�
 const FPACE_PARAMS = (:β_fp, :τ_fp, :u_fp, :κ_fp)
 const SHORT_PARAMS = (:τ_sh, :u_sh)
 const COND_PARAMS = (:z_cond,)
+const CCOMP_PARAMS = (:μ_cp, :τ_cp, :u_cp, :μ_cg, :τ_cg, :u_cg, :g0_c)   # `ccomp` (#124)
+const CCOMP_CMAX = 6           # C-numbers C1 … C6
+const CCOMP_TAU_SD = 0.5       # prior scale of a step's spread over compound ranges
+
+"""
+    ccomp_steps(cond) -> (; steps, J, jpos)
+
+The steps between neighbouring C-numbers in each compound range of `cond` (`ccomp`, #124):
+`steps[i] = (e, j)`, range e's step from C(j-1) to Cj, for j from its hardest compound + 1 to
+its softest; `J` the step numbers j over all ranges, and `jpos[i]` step i's position in `J`.
+"""
+function ccomp_steps(cond)
+    steps = [(e, j) for e in eachindex(cond.cranges) for j in (cond.cmin[e] + 1):cond.cmax[e]]
+    J = sort(unique(last.(steps)))
+    return (; steps, J, jpos = [findfirst(==(j), J) for (_, j) in steps])
+end
+
+"""
+    ccomp_index(cond, short, e, c) -> (pace, slope)
+
+Positions in `cv` of compound Cc's pace offset and stint slope in range e (`ccomp`, #124): a block
+after the shared condition terms, the paces (range-major, `CCOMP_CMAX` per range), then the slopes.
+"""
+@inline function ccomp_index(cond, short::Bool, e::Int, c::Int)
+    o = length(cond_names(short)) + (e - 1) * CCOMP_CMAX + c
+    return o, o + length(cond.cranges) * CCOMP_CMAX
+end
+
+"""
+    ccomp_maps(cond) -> (Bp, Bg, B0)
+
+Maps from the pace steps, the stint-slope steps and the later ranges' slope levels to the
+`ccomp` block of `cv` (#124): a compound's pace is the sum of the range's steps up to it from
+its hardest compound (0), its stint slope the same plus the range's level (0 for the first range,
+whose level the shared stint curve carries).
+"""
+function ccomp_maps(cond)
+    cs, nr = ccomp_steps(cond), length(cond.cranges)
+    n = 2nr * CCOMP_CMAX
+    Bp, Bg, B0 = zeros(n, length(cs.steps)), zeros(n, length(cs.steps)), zeros(n, max(nr - 1, 0))
+    for e in 1:nr, c in cond.cmin[e]:cond.cmax[e]
+        rp = (e - 1) * CCOMP_CMAX + c
+        rg = rp + nr * CCOMP_CMAX
+        for (i, (es, j)) in enumerate(cs.steps)
+            es == e && j <= c && (Bp[rp, i] = 1.0; Bg[rg, i] = 1.0)
+        end
+        e > 1 && (B0[rg, e - 1] = 1.0)
+    end
+    return Bp, Bg, B0
+end
 const WETDEV_PARAMS = (:τ_wet, :u_wet)
 const WETPOOL_PARAMS = (:σ0_wet, :τ_wws, :z_wet)     # the pooled car part (`wetwalk`)
 const WETDRV_PARAMS = (:τ_wetd, :u_wetd)             # drivers, with `wetwalk`, `wetdrv` or `wetshr`
@@ -1373,6 +1462,8 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                 (ctx.traffic || first(p) !== :η_tr) && (ctx.fpace || first(p) ∉ FPACE_PARAMS) &&
                 (ctx.short || first(p) ∉ SHORT_PARAMS) && (cond.on || first(p) ∉ COND_PARAMS) &&
                 (cond.on && cond.wetdev && cond.wetcar && !cond.wetpool && cond.wetmin == 0 || first(p) ∉ WETDEV_PARAMS) &&
+                (cond.on && ccomp_on(cond) || first(p) ∉ CCOMP_PARAMS) &&
+                (cond.on && length(cond.cranges) > 1 || first(p) != :g0_c) &&
                 (cond.on && cond.wetdev && cond.wetpool || first(p) ∉ WETPOOL_PARAMS) &&
                 (cond.on && cond.wetdev && cond.wetmin > 0 || first(p) ∉ WETSHR_PARAMS) &&
                 (cond.on && cond.wetdev && !isempty(cond.wetraces) || first(p) ∉ WETRACE_PARAMS) &&
@@ -1420,6 +1511,14 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                                     vcat("π|" .* d.competitors, "π|" .* d.machines, "λ|" .* d.competitors, "λ|" .* d.machines)),
                           # #116 terms, sampled after the #113 ones
                           :z_cond => (length(cond_names(ctx.short)), cond_names(ctx.short)),
+                          # `ccomp` (#124), sampled after z_cond
+                          :μ_cp => (length(ccomp_steps(cond).J), ["C$(j - 1)→C$j" for j in ccomp_steps(cond).J]),
+                          :τ_cp => (1, nothing),
+                          :u_cp => (length(ccomp_steps(cond).steps), ["$(cond.cranges[e]) C$(j - 1)→C$j" for (e, j) in ccomp_steps(cond).steps]),
+                          :μ_cg => (length(ccomp_steps(cond).J), ["C$(j - 1)→C$j" for j in ccomp_steps(cond).J]),
+                          :τ_cg => (1, nothing),
+                          :u_cg => (length(ccomp_steps(cond).steps), ["$(cond.cranges[e]) C$(j - 1)→C$j" for (e, j) in ccomp_steps(cond).steps]),
+                          :g0_c => (max(length(cond.cranges) - 1, 0), cond.cranges[2:end]),
                           :τ_wet => (2, ["car", "drv"]),
                           :u_wet => (length(d.machines) + length(d.competitors), vcat(d.machines, d.competitors)),
                           :σ0_wet => (1, nothing), :τ_wws => (1, nothing),
@@ -1448,7 +1547,8 @@ const LAP_WARM_DEFAULT = Dict(:τ_slope => 0.01, :u_slope => 0.01, :τ_dev => 0.
                               :z_cond => 1e-3, :τ_wet => 0.01, :u_wet => 0.01,
                               :σ0_wet => 0.01, :τ_wws => 0.01, :z_wet => 0.01, :τ_wetd => 0.01, :u_wetd => 0.01,
                               :τ_wetc => 0.01, :u_wetc => 0.01,
-                              :τ_wr => 0.01, :u_wr => 0.01)
+                              :τ_wr => 0.01, :u_wr => 0.01,
+                              :μ_cp => 0.01, :τ_cp => 0.01, :u_cp => 0.01, :μ_cg => 0.01, :τ_cg => 0.01, :u_cg => 0.01, :g0_c => 0.01)
 
 """
     lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old = true, tyres_new = tyres_old,

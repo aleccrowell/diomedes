@@ -54,8 +54,18 @@ struct LapConditions
     wetcars::Vector{Int}        # those car-seasons (indices into d.machines), with wetmin > 0
     wetglobal::Bool             # their deviations centred over all of them, not within each season (`wetallg`)
     wetraces::Vector{Int}       # races (indices into d.races) with a wet-lap offset each (`wetrace`), else empty
+    # `ccomp` (#124): dry compounds keyed on Pirelli's C-number (reference/compounds/nominations.csv), else empty
+    crange::Vector{Int}         # per lap: the compound range (index into `cranges`) of a dry lap, else 0
+    cnum::Vector{Int}           # per lap: the dry compound's C-number, else 0
+    cranges::Vector{String}     # the compound ranges of d's races (`era` in the table), in order; empty: off
+    cmin::Vector{Int}           # per range: the lowest C-number (hardest compound) on its laps
+    cmax::Vector{Int}           # per range: the highest (softest)
     check::NamedTuple
 end
+LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, wetcar::Bool, wetmin::Int, wetcars::Vector{Int},
+              wetglobal::Bool, wetraces::Vector{Int}, check::NamedTuple) =
+    LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, wetmin, wetcars, wetglobal, wetraces,
+                  Int[], Int[], String[], Int[], Int[], check)
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, check::NamedTuple) =
     LapConditions(comp, wet, tt, rain, on, wetdev, false, true, check)
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, check::NamedTuple) =
@@ -68,6 +78,19 @@ LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, wetcar
               wetglobal::Bool, check::NamedTuple) =
     LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, wetmin, wetcars, wetglobal, Int[], check)
 LapConditions() = LapConditions(Int[], Float64[], Float64[], Float64[], false, false, false, true, (;))
+
+"Whether `c` keys the dry compounds on their C-number (`ccomp`, #124)."
+ccomp_on(c::LapConditions) = !isempty(c.cranges)
+
+"""
+    read_compound_nominations(path = reference/compounds/nominations.csv) -> DataFrame
+
+Pirelli's dry compounds behind SOFT, MEDIUM and HARD for each race (#148): `event_id`,
+`hard`, `medium`, `soft` (C-numbers as "C3") and `era`, the compound range they belong to.
+"""
+read_compound_nominations(path::AbstractString = joinpath(dirname(@__DIR__), "reference", "compounds", "nominations.csv")) =
+    CSV.read(path, DataFrame; types = Dict(:event_id => String, :hard => String, :medium => String, :soft => String,
+                                           :era => String))
 
 # `wetshr` (#116 option 2): the minimum wet-tyre laps for a car-season's deviation, and the prior sd of their spread
 const WETSHR_MIN = 100
@@ -115,7 +138,8 @@ end
 
 function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDict; wetdev::Bool = false,
                        wetpool::Bool = false, wetcar::Bool = true, wetmin::Int = 0, wetglobal::Bool = false,
-                       wetrace::Bool = false)
+                       wetrace::Bool = false, ccomp::Bool = false,
+                       nominations::Union{Nothing,AbstractDataFrame} = ccomp ? read_compound_nominations() : nothing)
     wetpool && !wetdev && throw(ArgumentError("wetpool pools the wet deviations: it needs wetdev"))
     wetpool && !wetcar && throw(ArgumentError("wetpool pools the car-seasons' wet deviations: it needs wetcar"))
     wetmin > 0 && !(wetdev && wetcar && !wetpool) &&
@@ -184,7 +208,28 @@ function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDic
     wcs = wetmin > 0 ? wet_cars(d.mach, wet, length(d.machines), wetmin) : Int[]
     wetmin > 0 && isempty(wcs) && throw(ArgumentError("no car-season has $wetmin wet-tyre laps"))
     wrs = wetrace ? sort(unique(d.race[wet .> 0])) : Int[]
-    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, wetcar, wetmin, wcs, wetglobal, wrs, check)
+    # `ccomp` (#124): each dry lap's compound range and C-number, from the race's nominations
+    crange, cnum, cranges, cmin, cmax = zeros(Int, n), zeros(Int, n), String[], Int[], Int[]
+    if ccomp
+        nom = Dict(r.event_id => r for r in eachrow(nominations))
+        nonom = filter(e -> !haskey(nom, e), d.races)
+        isempty(nonom) || throw(ArgumentError("no compound nominations for $(join(nonom, ", "))"))
+        cranges = sort(unique(nom[e].era for e in d.races))
+        ri = Dict(e => k for (k, e) in enumerate(cranges))
+        cn(s) = parse(Int, s[2:end])
+        for j in 1:n
+            1 <= comp[j] <= 3 || continue
+            r = nom[d.races[d.race[j]]]
+            crange[j], cnum[j] = ri[r.era], cn((r.soft, r.medium, r.hard)[comp[j]])
+        end
+        for e in eachindex(cranges)
+            cs = cnum[crange .== e]
+            isempty(cs) && throw(ArgumentError("compound range $(cranges[e]) has no dry laps"))
+            push!(cmin, minimum(cs)); push!(cmax, maximum(cs))
+        end
+    end
+    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, wetcar, wetmin, wcs, wetglobal, wrs,
+                         crange, cnum, cranges, cmin, cmax, check)
 end
 
 function Base.show(io::IO, c::LapConditions)
@@ -198,7 +243,9 @@ function Base.show(io::IO, c::LapConditions)
                       c.wetmin > 0 ? "; wet deviations, $(length(c.wetcars)) car-seasons with ≥ $(c.wetmin) wet laps" *
                                      (c.wetglobal ? ", centred over all" : ", centred within season") *
                                      (isempty(c.wetraces) ? "" : "; wet-lap offsets for $(length(c.wetraces)) races") :
-                      "; wet deviations") : "", ")")
+                      "; wet deviations") : "",
+          ccomp_on(c) ? "; dry compounds by C-number over ranges " *
+                        join(["$(r) (C$(c.cmin[e])–C$(c.cmax[e]))" for (e, r) in enumerate(c.cranges)], ", ") : "", ")")
 end
 
 # Shared condition effects (`cv` in `lap_loglik`): names and prior sds, laid out as
