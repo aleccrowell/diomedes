@@ -65,7 +65,11 @@
 # `wetshr` drivers' and, for car-seasons with ≥ 100 wet-tyre laps only, car-seasons' deviations,
 # their spread ~ half-N(0, 0.5) (…_wetshr, #116 option 2).
 # #124, `racedeg` (with `cond`; …_racedeg): each race's own stint slope around the shared tyre
-# curve, pooled (combine writes <tag>_race_degradation.csv). `warmlast=<event_id>` (e.g. 2026-17)
+# curve, pooled (combine writes <tag>_race_degradation.csv). `tyreage` (with `cond`; …_tyreage):
+# the tyre's true age, counting the laps a used set had before the stint (the conditions data's
+# tyre_age), in place of the stint age in every tyre term. `pitfix` (with `cond` and recorded pits;
+# …_pitfix, #151): the pit stops reconciled with the timing data's tyre stints
+# (`reconcile_pit_stops`) before the stints are built. `warmlast=<event_id>` (e.g. 2026-17)
 # limits the warmfrom= fit's data to the races up to that one, for a warm start from a fit made
 # before later races were added to the cache.
 
@@ -104,6 +108,8 @@ wetwalk = "wetwalk" ∈ ARGS        # the same, the car-seasons' pooled by works
 wetdrv = "wetdrv" ∈ ARGS          # drivers' wet deviations only (#116)
 wetrace = "wetrace" ∈ ARGS        # each wet race's own wet-lap offset, with wetshr / wetall / wetallg (#116)
 racedeg = "racedeg" ∈ ARGS        # each race's own stint slope around the shared tyre curve, with cond (#124)
+tyreage = "tyreage" ∈ ARGS        # the true tyre age (a used set's earlier laps counted), with cond (#124)
+pitfix = "pitfix" ∈ ARGS          # pit stops reconciled with the timing data's tyre stints, with cond (#151)
 wetallg = "wetallg" ∈ ARGS        # as wetall, the car-seasons' deviations centred over all of them, not within season (#116)
 wetall = "wetall" ∈ ARGS || wetallg   # as wetshr, every car-season with a wet lap: the prior alone shrinks them (#116)
 wetshr = "wetshr" ∈ ARGS || wetall   # drivers', and car-seasons' with ≥ WETSHR_MIN wet laps, spread shrunk (#116 option 2)
@@ -124,7 +130,7 @@ n_block = blockarg === nothing ? (probe ? 25 : 100) : parse(Int, split(ARGS[bloc
 # missing from this list was read as the chain count, and warm= had to be 5th).
 FLAGS = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
          "walk", "works", "big", "keepslow", "keepwet", "rwalk", "rwrel", "rwrels", "nostartdrv", "dinc1", "notune", "probe",
-         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "racedeg")
+         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "racedeg", "tyreage", "pitfix")
 KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "warmlast", "n")
 optkey(a) = (i = findfirst('=', a); i === nothing ? nothing : a[1:prevind(a, i)])
 badkeys = [a for a in ARGS if optkey(a) !== nothing && optkey(a) ∉ KEYS]
@@ -150,7 +156,7 @@ flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev
 flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1)
 ctx_sfx = (traffic ? "_traffic" : "") * (fpace ? "_fpace" : "") * (short ? "_short" : "") *   # #113, after the others
           (condf ? "_cond" : "") * (wetwalk ? "_wetwalk" : wetdrv ? "_wetdrv" : wetallg ? "_wetallg" : wetall ? "_wetall" : wetshr ? "_wetshr" : wetdev ? "_wetdev" : "") *
-          (wetrace ? "_wetrace" : "") * (racedeg ? "_racedeg" : "")        # #116, #124, after those
+          (wetrace ? "_wetrace" : "") * (racedeg ? "_racedeg" : "") * (tyreage ? "_tyreage" : "") * (pitfix ? "_pitfix" : "")   # #116, #124, #151
 tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (rwrels ? "_rwrels" : rwrel ? "_rwrel" : "") * ctx_sfx * (keepslow ? "_keepslow" : "") * (keepwet ? "_keepwet" : "") * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
@@ -164,13 +170,17 @@ res = sd.res
 circ = circuits || track ? circuit_table() : nothing
 keepwet && !condf && error("keepwet needs cond")
 wetkeep = keepwet ? Diomedes.wet_green_laps(read_lap_conditions()) : nothing
-d = prepare_laps(sd.laps, res; pits, pit_stops = sd.pits, circuits = circ, stoppage = !keepslow, keep_laps = wetkeep)
+(pitfix && !(condf && pits === :recorded)) && error("pitfix needs cond and recorded pit stops")
+rec = pitfix ? reconcile_pit_stops(sd.pits, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons))) : nothing
+pitfix && (println("pit stops reconciled (#151): ", rec.report); flush(stdout))
+d = prepare_laps(sd.laps, res; pits, pit_stops = pitfix ? rec.stops : sd.pits, circuits = circ, stoppage = !keepslow, keep_laps = wetkeep)
 println(d); flush(stdout)
 ctx = traffic || fpace || short ? LapContext(d, sd.laps; traffic, fpace, short) : LapContext()
 cnd = condf ? LapConditions(d, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons)); wetdev,
-                                   wetpool = wetwalk, wetcar = !wetdrv, wetmin = wetall ? 1 : wetshr ? Diomedes.WETSHR_MIN : 0, wetglobal = wetallg, wetrace, racedeg) :
+                                   wetpool = wetwalk, wetcar = !wetdrv, wetmin = wetall ? 1 : wetshr ? Diomedes.WETSHR_MIN : 0, wetglobal = wetallg, wetrace, racedeg, tyreage,
+                                   noage = pitfix ? rec.noage : Set{Tuple{String,String,Int}}()) :
       LapConditions()
-racedeg && !condf && error("racedeg needs cond")
+(racedeg || tyreage) && !condf && error("racedeg and tyreage need cond")
 condf && (println(cnd); flush(stdout))
 mkpath("output")
 
@@ -200,6 +210,9 @@ if action == "chain"
             od = (res = filter(r -> r.event_id <= wl, od.res), laps = filter(r -> r.event_id <= wl, od.laps),
                   pits = od.pits === nothing ? nothing : filter(r -> r.event_id <= wl, od.pits))
         end
+        orec = occursin("_pitfix", wtag) ?
+               reconcile_pit_stops(od.pits, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(wseasons))) : nothing
+        orec === nothing || (od = (res = od.res, laps = od.laps, pits = orec.stops))
         d_old = prepare_laps(od.laps, od.res; pits = wpits, pit_stops = od.pits, circuits = circ,
                              stoppage = !occursin("_keepslow", wtag),
                              keep_laps = occursin("_keepwet", wtag) ? Diomedes.wet_green_laps(read_lap_conditions()) : nothing)
@@ -210,7 +223,8 @@ if action == "chain"
                                  wetcar = !occursin("_wetdrv", wtag),
                                  wetmin = occursin("_wetall", wtag) ? 1 : occursin("_wetshr", wtag) ? Diomedes.WETSHR_MIN : 0,
                                  wetglobal = occursin("_wetallg", wtag), wetrace = occursin("_wetrace", wtag),
-                                 racedeg = occursin("_racedeg", wtag)) :
+                                 racedeg = occursin("_racedeg", wtag), tyreage = occursin("_tyreage", wtag),
+                                 noage = orec === nothing ? Set{Tuple{String,String,Int}}() : orec.noage) :
                    LapConditions()
         # blocks the old fit predates: κ_fp (#113's field pace on the shortfall) came after probe 113b
         wst = deserialize(wfile)

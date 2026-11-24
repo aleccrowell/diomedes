@@ -483,10 +483,10 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
     nm, nc = length(d.machines), length(d.competitors)
     ncv = cond.on ? (ctx.short ? last(COND_KAPPA) : COND_RAIN) : 0   # = length(cond_names(ctx.short)), without allocating
     for j in eachindex(d.y)
-        st = d.stint[j] / 10
+        st = lap_age(cond, d, j) / 10          # the true tyre age with `tyreage` (#124), else the stint age
         h[j] = a[d.comp[j]] + sl[d.comp[j]] * d.agec[j] + b[d.mach[j]] + dv[d.mach[j]] * d.posc[j] +
                η[1] * d.lead[j] + β[2d.era[j] - 1] * st + β[2d.era[j]] * st^2 +
-               td[d.comp[j]] * d.stint_cd[j] + tm[d.mach[j]] * d.stint_cm[j] +
+               td[d.comp[j]] * lap_age_cd(cond, d, j) + tm[d.mach[j]] * lap_age_cm(cond, d, j) +
                (d.abin[j] > 0 ? fage[d.abin[j]] : zero(T)) + circuit_term(cx, d.race_x, d.mach[j], d.race[j], nm) +
                (rw ? xr[rwk.lap[j]] : zero(T))        # the car's works at this race (race-level chassis walk)
         if ctx.traffic
@@ -625,13 +625,13 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     # h enters every lap of its race through the race mean: dμ_k/dh_j = [k = j] - 1/n_race
     for j in 1:N
         gh = gμ[j] - gγ[d.race[j]] / d.race_n[d.race[j]]
-        st = d.stint[j] / 10
+        st = lap_age(cond, d, j) / 10
         ga[d.comp[j]] += gh; gb[d.mach[j]] += gh
         gsl[d.comp[j]] += gh * d.agec[j]
         gdv[d.mach[j]] += gh * d.posc[j]
         gβ[2d.era[j] - 1] += gh * st; gβ[2d.era[j]] += gh * st^2
         gη[1] += gh * d.lead[j]
-        gtd[d.comp[j]] += gh * d.stint_cd[j]; gtm[d.mach[j]] += gh * d.stint_cm[j]
+        gtd[d.comp[j]] += gh * lap_age_cd(cond, d, j); gtm[d.mach[j]] += gh * lap_age_cm(cond, d, j)
         d.abin[j] > 0 && (gfage[d.abin[j]] += gh)
         for k in axes(d.race_x, 2)
             gcx[(k - 1) * nm + d.mach[j]] += gh * d.race_x[d.race[j], k]
