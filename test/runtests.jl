@@ -1992,6 +1992,7 @@ end
                 ccc = LapConditions(c2.comp, c2.wet, c2.tt, c2.rain, true, c2.wetdev, c2.wetpool, c2.wetcar, c2.wetmin, c2.wetcars,
                                     c2.wetglobal, c2.wetraces, ccr_, ccn, ["A", "B"], cmn, cmx, (;))
                 cs9 = Diomedes.ccomp_steps(ccc)
+                @test all(first(Diomedes.ccomp_index(ccc, s, 1, 1)) == length(Diomedes.cond_names(s)) + 1 for s in (false, true))
                 @test Diomedes.ccomp_on(ccc) && !Diomedes.ccomp_on(c2) &&
                       cs9.steps == [(e, j) for e in 1:2 for j in (cmn[e] + 1):cmx[e]] && cs9.J == sort(unique(last.(cs9.steps)))
                 # the maps: a compound's pace is the sum of its range's steps from the hardest (0 there); its slope the

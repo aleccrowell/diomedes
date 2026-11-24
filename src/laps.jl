@@ -1406,7 +1406,7 @@ Positions in `cv` of compound Cc's pace offset and stint slope in range e (`ccom
 after the shared condition terms, the paces (range-major, `CCOMP_CMAX` per range), then the slopes.
 """
 @inline function ccomp_index(cond, short::Bool, e::Int, c::Int)
-    o = length(cond_names(short)) + (e - 1) * CCOMP_CMAX + c
+    o = (short ? last(COND_KAPPA) : COND_RAIN) + (e - 1) * CCOMP_CMAX + c   # = length(cond_names(short)), without allocating
     return o, o + length(cond.cranges) * CCOMP_CMAX
 end
 
