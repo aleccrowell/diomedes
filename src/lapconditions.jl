@@ -55,6 +55,7 @@ struct LapConditions
     wetglobal::Bool             # their deviations centred over all of them, not within each season (`wetallg`)
     wetraces::Vector{Int}       # races (indices into d.races) with a wet-lap offset each (`wetrace`), else empty
     racedeg::Bool               # each race's own stint-age slope around the shared tyre curve (`racedeg`, #124)
+    rdcentred::Bool             # … on the tyre age centred within the race (`racedegc`): it tilts pace without moving its level
     # `tyreage` (#124): the tyre's true age, counting the laps a used set had before the stint; else empty (stint age)
     tage::Vector{Float64}       # per lap, in laps (d.stint plus the set's earlier laps)
     tage_cd::Vector{Float64}    # tage/10 minus its mean over the driver's laps (as d.stint_cd)
@@ -62,9 +63,12 @@ struct LapConditions
     check::NamedTuple
 end
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, wetcar::Bool, wetmin::Int, wetcars::Vector{Int},
-              wetglobal::Bool, wetraces::Vector{Int}, racedeg::Bool, check::NamedTuple) =
-    LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, wetmin, wetcars, wetglobal, wetraces, racedeg,
+              wetglobal::Bool, wetraces::Vector{Int}, racedeg::Bool, rdcentred::Bool, check::NamedTuple) =
+    LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, wetmin, wetcars, wetglobal, wetraces, racedeg, rdcentred,
                   Float64[], Float64[], Float64[], check)
+LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, wetcar::Bool, wetmin::Int, wetcars::Vector{Int},
+              wetglobal::Bool, wetraces::Vector{Int}, racedeg::Bool, check::NamedTuple) =
+    LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, wetmin, wetcars, wetglobal, wetraces, racedeg, false, check)
 LapConditions(comp, wet, tt, rain, on::Bool, wetdev::Bool, wetpool::Bool, wetcar::Bool, wetmin::Int, wetcars::Vector{Int},
               wetglobal::Bool, wetraces::Vector{Int}, check::NamedTuple) =
     LapConditions(comp, wet, tt, rain, on, wetdev, wetpool, wetcar, wetmin, wetcars, wetglobal, wetraces, false, check)
@@ -75,6 +79,14 @@ const TYREAGE_MAX_EXTRA = 10   # more earlier laps than this: the sources disagr
 @inline lap_age(c::LapConditions, d, j) = isempty(c.tage) ? d.stint[j] : c.tage[j]
 @inline lap_age_cd(c::LapConditions, d, j) = isempty(c.tage) ? d.stint_cd[j] : c.tage_cd[j]
 @inline lap_age_cm(c::LapConditions, d, j) = isempty(c.tage) ? d.stint_cm[j] : c.tage_cm[j]
+
+"Each race's mean tyre age /10 over its laps (`lap_age`), the centre of its stint slope with `racedegc`; zeros otherwise."
+function race_age_means(c::LapConditions, d)
+    m, n = zeros(length(d.races)), zeros(length(d.races))
+    c.racedeg && c.rdcentred || return m
+    for j in eachindex(d.y); m[d.race[j]] += lap_age(c, d, j) / 10; n[d.race[j]] += 1; end
+    return m ./ max.(n, 1)
+end
 
 """
     true_tyre_age(stint, src_age, segs) -> (tage, extra, base)
@@ -256,7 +268,7 @@ end
 
 function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDict; wetdev::Bool = false,
                        wetpool::Bool = false, wetcar::Bool = true, wetmin::Int = 0, wetglobal::Bool = false,
-                       wetrace::Bool = false, racedeg::Bool = false, tyreage::Bool = false,
+                       wetrace::Bool = false, racedeg::Bool = false, racedegc::Bool = false, tyreage::Bool = false,
                        noage::AbstractSet = Set{Tuple{String,String,Int}}())
     wetpool && !wetdev && throw(ArgumentError("wetpool pools the wet deviations: it needs wetdev"))
     wetpool && !wetcar && throw(ArgumentError("wetpool pools the car-seasons' wet deviations: it needs wetcar"))
@@ -345,7 +357,7 @@ function LapConditions(d::LapData, cond::AbstractDataFrame, numbers::AbstractDic
                                used_median_laps = isempty(filter(>(0), ex)) ? 0.0 : median(filter(>(0), ex)),
                                laps_aged = count(j -> tage[j] > d.stint[j], 1:n) / n))
     end
-    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, wetcar, wetmin, wcs, wetglobal, wrs, racedeg,
+    return LapConditions(comp, wet, tt, rain, true, wetdev, wetpool, wetcar, wetmin, wcs, wetglobal, wrs, racedeg || racedegc, racedegc,
                          tage, tcd, tcm, check)
 end
 
@@ -360,7 +372,7 @@ function Base.show(io::IO, c::LapConditions)
                       c.wetmin > 0 ? "; wet deviations, $(length(c.wetcars)) car-seasons with ≥ $(c.wetmin) wet laps" *
                                      (c.wetglobal ? ", centred over all" : ", centred within season") *
                                      (isempty(c.wetraces) ? "" : "; wet-lap offsets for $(length(c.wetraces)) races") :
-                      "; wet deviations") : "", c.racedeg ? "; a stint slope per race" : "",
+                      "; wet deviations") : "", c.racedeg ? "; a stint slope per race" * (c.rdcentred ? " (on the race-centred age)" : "") : "",
           isempty(c.tage) ? "" : "; true tyre age: $(k.stints_used) of $(k.stints_aged) stints on used sets " *
                                  "(median $(k.used_median_laps) earlier laps; new-set offset $(k.tyre_age_base); " *
                                  "$(k.stints_dropped) with > $(TYREAGE_MAX_EXTRA) treated as unknown), " *

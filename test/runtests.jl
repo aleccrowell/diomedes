@@ -1986,6 +1986,10 @@ end
                 crd = LapConditions(c2.comp, c2.wet, c2.tt, c2.rain, true, c2.wetdev, c2.wetpool, c2.wetcar, c2.wetmin, c2.wetcars,
                                     c2.wetglobal, c2.wetraces, true, (;))
                 @test crd.racedeg && !c2.racedeg
+                crdc = LapConditions(c2.comp, c2.wet, c2.tt, c2.rain, true, c2.wetdev, c2.wetpool, c2.wetcar, c2.wetmin, c2.wetcars,
+                                     c2.wetglobal, c2.wetraces, true, true, (;))       # `racedegc`: on the race-centred age
+                rmean = [mean(d9.stint[d9.race .== r]) / 10 for r in 1:nr9]
+                @test crdc.rdcentred && Diomedes.race_age_means(crdc, d9) ≈ rmean && all(iszero, Diomedes.race_age_means(crd, d9))
                 # #151: pit stops reconciled with the timing data's tyre stints
                 let ev = "2023-01", pitsx = DataFrame(series = "f1", season = 2023,
                                                       event_id = ["2023-01", "2023-01", "2023-02", "2019-01", "2023-01", "2023-01"],
@@ -2023,13 +2027,13 @@ end
                     cdv = s10 .- [mean(s10[d9.comp .== d9.comp[j]]) for j in 1:n]
                     cmv = s10 .- [mean(s10[d9.mach .== d9.mach[j]]) for j in 1:n]
                     LapConditions(c2.comp, c2.wet, c2.tt, c2.rain, true, c2.wetdev, c2.wetpool, c2.wetcar, c2.wetmin, c2.wetcars,
-                                  c2.wetglobal, c2.wetraces, false, tg, cdv, cmv, (;))
+                                  c2.wetglobal, c2.wetraces, false, false, tg, cdv, cmv, (;))
                 end
                 ctg0, ctg = tcond(Float64.(d9.stint)), tcond(d9.stint .+ extra)
                 @test ctg0.tage_cd ≈ d9.stint_cd && ctg0.tage_cm ≈ d9.stint_cm
                 # zero condition effects: the model without them
                 m0 = lap_effects(d9)
-                for c in (conds..., cpool, cdrv, cshr, cglob, cwr, crd, ctg0)
+                for c in (conds..., cpool, cdrv, cshr, cglob, cwr, crd, crdc, ctg0)
                     mc = lap_effects(d9; cond = c, cars = fc)
                     θc = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))),
                                c.wetpool ? (; σ0_wet = 0.5, τ_wws = 0.2, z_wet = zeros(length(wcw9.chassis.prev)), τ_wetd = 0.3,
@@ -2084,6 +2088,7 @@ end
                                                       z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), z(nη), z(nφ),
                                                       cvv, wv, RaceWalk(), cx, c, d9))
                     @test hc(cvx, crd) ≈ hc(cvx[1:nsh], c2) .+ [cvx[nsh + d9.race[j]] * d9.stint[j] / 10 for j in 1:n]
+                    @test hc(cvx, crdc) ≈ hc(cvx[1:nsh], c2) .+ [cvx[nsh + d9.race[j]] * (d9.stint[j] / 10 - rmean[d9.race[j]]) for j in 1:n]
                 end
                 # `tyreage`: the tyre curve and the tyre-management slopes take the true age and its centred versions
                 let β = randn(rng, 2length(d9.eras)), td = randn(rng, nc9), tm = randn(rng, nm9)
@@ -2100,7 +2105,7 @@ end
                     xc = Diomedes.center_by(x, wcw9.chassis.season, wcw9.chassis.counts)
                     @test Diomedes.wet_car_walk(0.5, 0.2, z, wcw9) == xc[wcw9.row_ch]
                 end
-                for c in (conds..., cpool, cdrv, cshr, cglob, cwr, crd, ctg), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
+                for c in (conds..., cpool, cdrv, cshr, cglob, cwr, crd, crdc, ctg), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
                     m = lap_effects(d9; flags..., cars = fc, ctx = cx, cond = c)
                     rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                     rg = NamedTuple(getfield(rdm, :_varname_ranges))

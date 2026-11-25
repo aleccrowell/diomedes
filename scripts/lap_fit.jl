@@ -65,7 +65,8 @@
 # `wetshr` drivers' and, for car-seasons with ≥ 100 wet-tyre laps only, car-seasons' deviations,
 # their spread ~ half-N(0, 0.5) (…_wetshr, #116 option 2).
 # #124, `racedeg` (with `cond`; …_racedeg): each race's own stint slope around the shared tyre
-# curve, pooled (combine writes <tag>_race_degradation.csv). `tyreage` (with `cond`; …_tyreage):
+# curve, pooled (combine writes <tag>_race_degradation.csv); `racedegc` the same on the tyre age
+# centred within the race (…_racedegc), so the slope doesn't move the race's level. `tyreage` (with `cond`; …_tyreage):
 # the tyre's true age, counting the laps a used set had before the stint (the conditions data's
 # tyre_age), in place of the stint age in every tyre term. `pitfix` (with `cond` and recorded pits;
 # …_pitfix, #151): the pit stops reconciled with the timing data's tyre stints
@@ -107,7 +108,8 @@ condf = "cond" ∈ ARGS             # per-lap compound, track temperature, rain 
 wetwalk = "wetwalk" ∈ ARGS        # the same, the car-seasons' pooled by works (#116 step 1)
 wetdrv = "wetdrv" ∈ ARGS          # drivers' wet deviations only (#116)
 wetrace = "wetrace" ∈ ARGS        # each wet race's own wet-lap offset, with wetshr / wetall / wetallg (#116)
-racedeg = "racedeg" ∈ ARGS        # each race's own stint slope around the shared tyre curve, with cond (#124)
+racedegc = "racedegc" ∈ ARGS      # … on the tyre age centred within the race (#124; tag _racedegc)
+racedeg = "racedeg" ∈ ARGS || racedegc   # each race's own stint slope around the shared tyre curve, with cond (#124)
 tyreage = "tyreage" ∈ ARGS        # the true tyre age (a used set's earlier laps counted), with cond (#124)
 pitfix = "pitfix" ∈ ARGS          # pit stops reconciled with the timing data's tyre stints, with cond (#151)
 wetallg = "wetallg" ∈ ARGS        # as wetall, the car-seasons' deviations centred over all of them, not within season (#116)
@@ -130,7 +132,7 @@ n_block = blockarg === nothing ? (probe ? 25 : 100) : parse(Int, split(ARGS[bloc
 # missing from this list was read as the chain count, and warm= had to be 5th).
 FLAGS = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
          "walk", "works", "big", "keepslow", "keepwet", "rwalk", "rwrel", "rwrels", "nostartdrv", "dinc1", "notune", "probe",
-         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "racedeg", "tyreage", "pitfix")
+         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "racedeg", "racedegc", "tyreage", "pitfix")
 KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "warmlast", "n")
 optkey(a) = (i = findfirst('=', a); i === nothing ? nothing : a[1:prevind(a, i)])
 badkeys = [a for a in ARGS if optkey(a) !== nothing && optkey(a) ∉ KEYS]
@@ -156,7 +158,7 @@ flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev
 flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1)
 ctx_sfx = (traffic ? "_traffic" : "") * (fpace ? "_fpace" : "") * (short ? "_short" : "") *   # #113, after the others
           (condf ? "_cond" : "") * (wetwalk ? "_wetwalk" : wetdrv ? "_wetdrv" : wetallg ? "_wetallg" : wetall ? "_wetall" : wetshr ? "_wetshr" : wetdev ? "_wetdev" : "") *
-          (wetrace ? "_wetrace" : "") * (racedeg ? "_racedeg" : "") * (tyreage ? "_tyreage" : "") * (pitfix ? "_pitfix" : "")   # #116, #124, #151
+          (wetrace ? "_wetrace" : "") * (racedegc ? "_racedegc" : racedeg ? "_racedeg" : "") * (tyreage ? "_tyreage" : "") * (pitfix ? "_pitfix" : "")   # #116, #124, #151
 tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (rwrels ? "_rwrels" : rwrel ? "_rwrel" : "") * ctx_sfx * (keepslow ? "_keepslow" : "") * (keepwet ? "_keepwet" : "") * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
@@ -177,7 +179,7 @@ d = prepare_laps(sd.laps, res; pits, pit_stops = pitfix ? rec.stops : sd.pits, c
 println(d); flush(stdout)
 ctx = traffic || fpace || short ? LapContext(d, sd.laps; traffic, fpace, short) : LapContext()
 cnd = condf ? LapConditions(d, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons)); wetdev,
-                                   wetpool = wetwalk, wetcar = !wetdrv, wetmin = wetall ? 1 : wetshr ? Diomedes.WETSHR_MIN : 0, wetglobal = wetallg, wetrace, racedeg, tyreage,
+                                   wetpool = wetwalk, wetcar = !wetdrv, wetmin = wetall ? 1 : wetshr ? Diomedes.WETSHR_MIN : 0, wetglobal = wetallg, wetrace, racedeg, racedegc, tyreage,
                                    noage = pitfix ? rec.noage : Set{Tuple{String,String,Int}}()) :
       LapConditions()
 (racedeg || tyreage) && !condf && error("racedeg and tyreage need cond")
@@ -223,7 +225,8 @@ if action == "chain"
                                  wetcar = !occursin("_wetdrv", wtag),
                                  wetmin = occursin("_wetall", wtag) ? 1 : occursin("_wetshr", wtag) ? Diomedes.WETSHR_MIN : 0,
                                  wetglobal = occursin("_wetallg", wtag), wetrace = occursin("_wetrace", wtag),
-                                 racedeg = occursin("_racedeg", wtag), tyreage = occursin("_tyreage", wtag),
+                                 racedeg = occursin("_racedeg", wtag), racedegc = occursin("_racedegc", wtag),
+                                 tyreage = occursin("_tyreage", wtag),
                                  noage = orec === nothing ? Set{Tuple{String,String,Int}}() : orec.noage) :
                    LapConditions()
         # blocks the old fit predates: κ_fp (#113's field pace on the shortfall) came after probe 113b

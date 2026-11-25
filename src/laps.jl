@@ -482,6 +482,7 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
     hbar = zeros(T, length(d.races))
     nm, nc = length(d.machines), length(d.competitors)
     ncv = cond.on ? (ctx.short ? last(COND_KAPPA) : COND_RAIN) : 0   # = length(cond_names(ctx.short)), without allocating
+    rdm = cond.on ? race_age_means(cond, d) : Float64[]             # `racedegc`: each race's mean age, else zeros
     for j in eachindex(d.y)
         st = lap_age(cond, d, j) / 10          # the true tyre age with `tyreage` (#124), else the stint age
         h[j] = a[d.comp[j]] + sl[d.comp[j]] * d.agec[j] + b[d.mach[j]] + dv[d.mach[j]] * d.posc[j] +
@@ -499,7 +500,7 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
         if cond.on          # compound offsets and stint slopes, track temperature, rain (#116)
             k = cond.comp[j]
             k > 1 && (h[j] += cv[COND_OFFSET[k - 1]] + cv[COND_SLOPE[k - 1]] * st)
-            cond.racedeg && (h[j] += cv[ncv + d.race[j]] * st)   # `racedeg` (#124): the race's own stint slope
+            cond.racedeg && (h[j] += cv[ncv + d.race[j]] * (st - rdm[d.race[j]]))   # `racedeg` (#124): the race's own stint slope
             h[j] += cv[COND_TT] * cond.tt[j] + cv[COND_RAIN] * cond.rain[j]
             cond.wetdev && (h[j] += (wv[d.mach[j]] + wv[nm + d.comp[j]] +
                                      (length(wv) > nm + nc ? wv[nm + nc + d.race[j]] : zero(eltype(wv)))) * cond.wet[j])
@@ -516,6 +517,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     gcv, gwv = zeros(length(cv)), zeros(length(wv))
     cshort = cond.on && ctx.short && length(cv) >= last(COND_KAPPA)
     ncvg = cond.on ? (ctx.short ? last(COND_KAPPA) : COND_RAIN) : 0   # `racedeg`'s block starts after the shared terms
+    rdmg = cond.on ? race_age_means(cond, d) : Float64[]
     gxr, rw = zeros(length(xr)), !isempty(rwk.lap)
     gηt, gφ, gsh, gκ = zeros(length(ηt)), zeros(length(φ)), zeros(length(sh)), zeros(length(κ))
     κπ, κλ = ctx.fpace ? (κ[1], κ[end]) : (0.0, 0.0)
@@ -647,7 +649,7 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
         if cond.on
             k = cond.comp[j]
             k > 1 && (gcv[COND_OFFSET[k - 1]] += gh; gcv[COND_SLOPE[k - 1]] += gh * st)
-            cond.racedeg && (gcv[ncvg + d.race[j]] += gh * st)   # `racedeg`
+            cond.racedeg && (gcv[ncvg + d.race[j]] += gh * (st - rdmg[d.race[j]]))   # `racedeg`
             gcv[COND_TT] += gh * cond.tt[j]; gcv[COND_RAIN] += gh * cond.rain[j]
             if cond.wetdev
                 gw = gh * cond.wet[j]
@@ -872,7 +874,10 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
   also has its own stint slope around the shared tyre curve, τ_rd·(u - mean u)·s on every lap,
   τ_rd ~ half-N(0, `RACEDEG_SD`): degradation varies more between races (circuit, temperature,
   the nominated window) than between a race's compounds, whose average slopes are about equal
-  (2021–2026); the drivers' and car-seasons' tyre-management slopes are deviations around it. With `cond.wetdev`, car-season and driver
+  (2021–2026); the drivers' and car-seasons' tyre-management slopes are deviations around it.
+  With `cond.rdcentred` (`racedegc`) the slope multiplies the tyre age minus the race's mean, so it
+  tilts the race's pace without moving its level, which the race intercept and the cars' race-walk
+  states otherwise had to offset (`full124d`: those mixed poorly). With `cond.wetdev`, car-season and driver
   deviations on wet-tyre laps, wv = τ_wet[k]·(u - group mean u), τ_wet ~ half-N(0, 1) (car-
   seasons centred within season, drivers overall): the car's and driver's limit in the wet
   against the dry (#116 steps 1 and 2, without the works pooling). With `cond.wetpool` the
