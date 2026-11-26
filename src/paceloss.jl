@@ -517,7 +517,7 @@ frequency or time lost per incident (first season of each regime):
 const REGIME_STARTS = [1950, 1958, 1961, 1966, 1984, 1989, 1994, 2010, 2014]
 
 """
-    LossCovariates(g::GapData; circuits = nothing)
+    LossCovariates(g::GapData; circuits = nothing, durc = false)
     LossCovariates(g::GapData, spec)
 
 Race-level covariates for the loss component: standardised log race duration
@@ -526,6 +526,13 @@ regulation regime (`REGIME_STARTS`), and season index (for a random walk).
 With `circuits` (a table like `circuit_table()`), also the race's circuit
 covariates (`RaceCircuits`, #81). The second form takes a model spec (see
 `model_spec`) and reads `circuit_table()` when the model has circuit terms.
+
+With `durc = true` (model token `durc`, #154) the standardised log duration is
+centred within each season: 66 % of its variance over 1950–2026 is between seasons
+(winner's times fell from about 159 min in 1950 to about 93 now), which the era
+walks on π and λ also carry, so β_dur traded against them (r ≈ −0.6). Centred, β_dur
+measures a race longer or shorter than its season's norm, and the walks keep the
+season-level change.
 """
 struct LossCovariates
     log_duration::Vector{Float64}   # standardised log(winner's race minutes)
@@ -541,15 +548,20 @@ struct LossCovariates
 end
 LossCovariates(g::GapData, spec) =
     LossCovariates(g; circuits = get(spec, :circ, false) || get(spec, :track, false) ? circuit_table() : nothing,
-                   cars = get(spec, :walk, false) ? car_table() : nothing)
-function LossCovariates(g::GapData; circuits = nothing, cars = nothing)
+                   cars = get(spec, :walk, false) ? car_table() : nothing, durc = get(spec, :durc, false))
+function LossCovariates(g::GapData; circuits = nothing, cars = nothing, durc::Bool = false)
     ld = log.(g.race_minutes)
+    lds = (ld .- mean(ld)) ./ std(ld)
+    if durc         # centred within season, on the same (all-race) scale
+        sm = Dict(s => mean(lds[g.race_season .== s]) for s in unique(g.race_season))
+        lds = lds .- [sm[s] for s in g.race_season]
+    end
     decades = g.race_season .÷ 10
     d0 = minimum(decades)
     regime = [searchsortedlast(REGIME_STARTS, s) for s in g.race_season]
     s0 = minimum(g.race_season)
     data_seasons = sort(unique(g.race_season))         # GapData.mach_season indexes these
-    return LossCovariates((ld .- mean(ld)) ./ std(ld), decades .- d0 .+ 1, maximum(decades) - d0 + 1,
+    return LossCovariates(lds, decades .- d0 .+ 1, maximum(decades) - d0 + 1,
                           regime, length(REGIME_STARTS),
                           g.race_season .- s0 .+ 1, maximum(g.race_season) - s0 + 1,
                           data_seasons[g.mach_season] .- s0 .+ 1,
@@ -1237,12 +1249,13 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
                           works::Bool = false, dinc::Bool = false, ncres::Bool = false, wlev::Bool = false,
                           kc::Bool = false, kst::Bool = false, wst::Bool = false, wstc::Bool = false, wstl::Bool = false,
                           wlevn::Bool = false, circuits = circ || track ? circuit_table() : nothing, cars = walk ? car_table() : nothing,
-                          prior_scale = PriorScale(g))
+                          prior_scale = PriorScale(g), durc::Bool = false)
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     race_hier && race_mean && throw(ArgumentError("race_hier and race_mean are alternatives"))
     (circ || track) && circuits === nothing && throw(ArgumentError("circ and track need a circuit table (circuits)"))
     walk && cars === nothing && throw(ArgumentError("walk needs the car tables (cars)"))
-    cov = LossCovariates(g; circuits = circ || track ? circuits : nothing, cars = walk ? cars : nothing)
+    durc && !loss_duration && throw(ArgumentError("durc centres the duration term: it needs loss_duration"))
+    cov = LossCovariates(g; circuits = circ || track ? circuits : nothing, cars = walk ? cars : nothing, durc)
     (era === :rw || pace_scale) && cov.n_seasons < 2 &&
         throw(ArgumentError("random walks over seasons need at least 2 seasons"))
     age && !pace_scale && throw(ArgumentError("the age curve is implemented for pace-scale models (pace_scale = true)"))
@@ -1281,7 +1294,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
                       race_hier::Bool = false, race_mean::Bool = !race_hier, circ::Bool = false, track::Bool = false,
                       walk::Bool = false, walk1::Bool = false, works::Bool = false, dinc::Bool = false, ncres::Bool = false,
                       wlev::Bool = false, kc::Bool = false, kst::Bool = false, wst::Bool = false, wstc::Bool = false, wstl::Bool = false,
-                      wlevn::Bool = false, circuits = circ || track ? circuit_table() : nothing,
+                      wlevn::Bool = false, durc::Bool = false, circuits = circ || track ? circuit_table() : nothing,
                       cars = walk ? car_table() : nothing, n_samples::Int = 1000, n_chains::Int = 1, ensemble = MCMCSerial(),
                       sampler = gap_sampler(), rng = Random.default_rng(), progress::Bool = true,
                       progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
@@ -1291,7 +1304,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
         throw(ArgumentError("paceloss_effects needs uncompiled ReverseDiff (see gap_sampler)"))
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν,
-                             race_hier, race_mean, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn, circuits, cars)
+                             race_hier, race_mean, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn, circuits, cars, durc)
     cov = model.args.cov
     race_gap = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
                  for r in eachindex(g.races)]
