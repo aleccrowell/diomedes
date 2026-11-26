@@ -1,17 +1,18 @@
 id,name,wet_laps,mean,sd
-2021-02,Emilia Romagna Grand Prix,341,-1.288,0.3841
-2021-15,Russian Grand Prix,49,2.0758,0.562
-2021-16,Turkish Grand Prix,1088,-0.3062,2.3653
-2022-04,Emilia Romagna Grand Prix,215,0.6056,0.3635
-2022-07,Monaco Grand Prix,286,-1.8908,0.4049
-2022-17,Singapore Grand Prix,466,-3.6692,0.4077
-2022-18,Japanese Grand Prix,386,-0.2775,2.3341
-2023-06,Monaco Grand Prix,416,5.266,0.3694
-2023-13,Dutch Grand Prix,190,0.8535,0.3684
-2024-09,Canadian Grand Prix,688,-2.1195,0.4395
-2024-12,British Grand Prix,189,2.0043,0.3812
-2024-21,São Paulo Grand Prix,923,-0.3063,2.3429
-2025-01,Australian Grand Prix,444,-0.9675,0.4011
-2025-12,British Grand Prix,344,0.6052,0.3792
-2026-05,Canadian Grand Prix,1,0.1292,1.3914
-2026-16,Bahrain Grand Prix in Malaysia,4,-0.7148,0.7669
+2021-02,Emilia Romagna Grand Prix,341,-0.4543,0.4084
+2021-15,Russian Grand Prix,49,1.6805,0.5015
+2021-16,Turkish Grand Prix,1088,-0.2241,2.1055
+2022-04,Emilia Romagna Grand Prix,215,0.4746,0.3262
+2022-07,Monaco Grand Prix,286,-1.8928,0.3824
+2022-17,Singapore Grand Prix,466,-4.3936,0.6559
+2022-18,Japanese Grand Prix,386,-0.2232,2.1524
+2023-06,Monaco Grand Prix,416,4.2894,0.3498
+2023-13,Dutch Grand Prix,193,0.0816,0.3311
+2024-09,Canadian Grand Prix,688,-0.197,0.3411
+2024-12,British Grand Prix,189,1.5966,0.335
+2024-21,São Paulo Grand Prix,923,-0.1904,2.1543
+2025-01,Australian Grand Prix,444,-0.05,0.3581
+2025-12,British Grand Prix,344,-0.6691,0.4568
+2026-05,Canadian Grand Prix,1,-0.2772,1.0428
+2026-16,Bahrain Grand Prix in Malaysia,4,-1.132,0.6021
+2026-20,Brazilian Grand Prix,452,1.5811,0.3263
