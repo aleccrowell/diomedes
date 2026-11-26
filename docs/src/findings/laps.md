@@ -25,8 +25,8 @@ recorded pit stops). Besides driver and car effects it has:
 It has no tyre compound or weather terms: those are known only from 2021, and a
 separate 2021–2026 fit with them is [below](#Track-conditions-(2021–2026)).
 
-It is **in development**: per-lap conditions are in progress
-([#116](https://github.com/aleccrowell/diomedes/issues/116), [results so far](#Track-conditions-(2021–2026))).
+It is **in development**. The per-lap conditions are done for 2021 on
+([#116](https://github.com/aleccrowell/diomedes/issues/116), [#124](https://github.com/aleccrowell/diomedes/issues/124)), in that separate fit.
 Its four chains converge to a single mode ([below](#Convergence)). The previous
 fit, 1996–2025 without the #108 and #113 terms, is described in
 [#66](https://github.com/aleccrowell/diomedes/issues/66) and
