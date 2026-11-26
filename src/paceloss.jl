@@ -713,12 +713,30 @@ struct AgeCurveBasis
 end
 AgeCurveBasis(g::GapData) = AgeCurveBasis(g.age_years, g.age_rows)
 # from the age bins (whole years) and the rows per bin; also used by the lap model (#12)
-function AgeCurveBasis(age_years::AbstractVector, age_rows::AbstractVector)
+# The age walk from standardised steps to levels: `order = 1` a random walk of the level; `order = 2` (#124) of
+# the slope, so the curve carries its trend into ages few drivers reach instead of bending freely there (the gaps
+# between bins scale the level steps, slopes per year; the first slope is 0, the projection removing the linear trend)
+function age_walk(age_years::AbstractVector, order::Int)
+    order in (1, 2) || throw(ArgumentError("the age walk's order is 1 or 2"))
     n = length(age_years)
-    walk = tril(ones(n, n - 1), -1)
+    L = tril(ones(n, n - 1), -1)
+    return order == 1 ? L : L * Diagonal(Float64.(diff(age_years))) * tril(ones(n - 1, n - 2), -1)
+end
+
+# With `order = 2` the projected walk is rotated to its singular vectors, proj·walk = U·S·Vᵀ → walk = U·S: the same
+# prior on the curve (Vᵀe ~ N(0, I) for e ~ N(0, I)), but each standardised coordinate moves the curve along its own
+# orthogonal shape. In the plain steps the curve's directions are near-collinear ramps (singular values 0.25–34 on
+# 2021–2026's ages), which a diagonal metric can't follow: full124f adapted to steps of 0.001–0.01 at tree depth 10.
+function AgeCurveBasis(age_years::AbstractVector, age_rows::AbstractVector; order::Int = 1)
+    n = length(age_years)
+    walk = age_walk(age_years, order)
     X = hcat(ones(n), Float64.(age_years))
     W = Diagonal(Float64.(age_rows))
     proj = I - X * ((X' * W * X) \ (X' * W))
+    if order == 2
+        F = svd(proj * walk)
+        walk = F.U * Diagonal(F.S)          # proj·(U·S) = U·S: its columns lie in proj's range
+    end
     return AgeCurveBasis(walk, proj)
 end
 

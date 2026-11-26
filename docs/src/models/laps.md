@@ -114,6 +114,34 @@ y = γ[race] + δ[race]·(frac − mean frac) + driver + car-season + β₁[era]
     its uncertainty grows as its wet laps fall (2021–2026 full fit, #116). Races
     run entirely on wet tyres stay at the prior, their offset not told apart from
     the race's mean lap.
+  - `racedeg`: each race's own stint slope around the shared tyre curve,
+    τ_rd ~ half-N(0, 1), on the stint age centred over all laps (#124). Track
+    surface, temperature and Pirelli's nomination change how fast every compound
+    degrades at a race, and a per-compound slope keyed to the C-number didn't
+    separate them (the labels degrade alike once the race's level is out).
+    `racedegc` puts each race's slope on the age centred within that race instead,
+    so the slope doesn't trade off against the race's mean lap; it is the variant
+    to use (2021–2026 full fits otherwise alike: drivers' R-hat 1.057 → 1.040,
+    age curve 1.112 → 1.077).
+  - `tyreage`: the stint age starts at the tyre's true age from the timing data
+    (OpenF1/FastF1 `tyre_age`, less the 1 lap a new set shows), so a used set
+    starts older. 1,574 of 6,542 stints over 2021–2026 started on used sets
+    (median 2 laps). Extras above 10 laps are treated as unknown: they came from
+    stops the timing data missed.
+  - `pitfix`: reconciles Jolpica's pit stops with the timing data's tyre stints
+    ([`reconcile_pit_stops`](@ref), #151). A tyre change in the timing data adds a
+    stop; a stop the timing data doesn't confirm is dropped under a safety car or
+    red flag (277 over 2021–2026, mostly double records) and kept on green, with
+    the timing age after it treated as unknown (53).
+  - `agemin=k`: pools neighbouring driver-age bins, from the oldest down, until each
+    has at least k distinct drivers, labelled by the lap-weighted mean age. With
+    k = 3 the 27 ages 18–45 become 19 bins (18–19, 34–35, 36–37, 38–40, 41–45
+    merged). Ages 40–45 were Alonso's alone, and the curve there didn't converge
+    (R-hat 1.077); pooled, it reaches 1.032.
+  - `agerw2`: the age curve as a second-order walk, τ_age ~ half-N(0, 0.05),
+    kept for reference. On 2021–2026 the sampler went stiff (step size
+    0.001–0.01 at tree depth 10): the data ask for year-to-year jumps that a
+    smooth curve can't make, even with the tight prior.
 - Driver and car-season effects are centred as in the race model. Every term is
   centred within its race, so γ is the race's mean lap.
 
@@ -157,3 +185,9 @@ chain = fit_laps(d; checkpoint = "output/laps_2011-2019_chain1", seed = 1000)
   car. Its conditions and wet-skill terms converged (R-hat ≤ 1.015).
   `rwrel` removes most of this: with `cond wetallg wetrace keepwet rwrel` the
   maximum R-hat is 1.019, with the age curve now the slowest (minimum ESS 188).
+  Adding `racedegc tyreage pitfix agemin=3` (#124) brings it to 1.032 (drivers,
+  peak and age curve), with minimum ESS 141 on the age curve and about 257
+  leapfrog steps per draw.
+- **Step tuning after warm-up can overshoot:** with `racedeg`, the step size tuned
+  after warm-up gave deeper trees than the warm-up's own. `notune` keeps the
+  warm-up's step.

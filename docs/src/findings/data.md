@@ -142,6 +142,8 @@ at the base rates (a dry race, a car with zero shortfall offsets)</td></tr>
 <td><code>id</code> (constructor_season), <code>wet_laps</code>; <code>mean</code>, <code>sd</code>: the car's deviation on wet-tyre laps from its dry pace, % of lap time, centred over all car-seasons (negative = better in the wet)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps_conditions/wet_races.csv">wet_races.csv</a></td><td>race with a wet-tyre lap</td>
 <td><code>id</code> (season-round), <code>name</code>, <code>wet_laps</code>; <code>mean</code>, <code>sd</code>: how much slower that race's wet-tyre laps were than the average wet race's, % of lap time, centred over these races. Races run entirely on wet tyres stay near 0 with a wide sd: their offset can't be told apart from the race's mean lap</td></tr>
+<tr><td><a class="diomedes-data" data-path="assets/data/laps_conditions/race_degradation.csv">race_degradation.csv</a></td><td>race</td>
+<td><code>id</code> (season-round), <code>name</code>, <code>laps</code>; <code>mean</code>, <code>sd</code>: that race's stint slope against the average race, % of lap time per 10 laps of tyre age, centred over the races (positive = tyres lost pace faster)</td></tr>
 </tbody></table>
 ```
 

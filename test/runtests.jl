@@ -311,6 +311,30 @@ end
         f = age_curve(0.3, randn(Xoshiro(2), length(g.age_years) - 1), B)
         @test abs(sum(g.age_rows .* f)) < 1e-9
         @test abs(sum(g.age_rows .* g.age_years .* f)) < 1e-7
+        # tail age bins pooled until each end has k drivers (#124): laps' whole-year ages, drivers per lap
+        # every age group has at least k drivers, neighbouring ages merged from the oldest down (#124)
+        let lb = [18, 18, 19, 20, 30, 40, 41, 42, 42, 44, -1], cp = [1, 2, 3, 4, 5, 6, 7, 6, 6, 6, 8]
+            g3 = Diomedes.age_groups(lb, cp, 3)
+            # from the top: {44, 42, 41, 40} has drivers 6, 7 only, + 30 (5) → 3 drivers; {20, 19, 18} → 4 drivers
+            @test g3[44] == g3[42] == g3[41] == g3[40] == g3[30] && g3[20] == g3[19] == g3[18] && g3[18] != g3[30]
+            @test g3[18] == round(Int, (18 * 2 + 19 + 20) / 4) && g3[44] == round(Int, (44 + 2 * 42 + 41 + 40 + 30) / 6)
+            @test Diomedes.age_groups(lb, cp, 0) == Dict(a => a for a in (18, 19, 20, 30, 40, 41, 42, 44))
+            g2 = Diomedes.age_groups(lb, cp, 2)
+            @test g2[44] == g2[42] == g2[41] && g2[40] != g2[41] && length(unique(values(Diomedes.age_groups(lb, cp, 20)))) == 1
+        end
+        # the second-order walk (#124): random steps of the slope per year, gaps between bins included
+        let B2 = AgeCurveBasis(g.age_years, g.age_rows; order = 2), n = length(g.age_years), e = randn(Xoshiro(4), n - 2)
+            W2 = Diomedes.age_walk(g.age_years, 2)
+            L = W2 * e
+            @test size(W2) == (n, n - 2) && diff(diff(L) ./ diff(g.age_years)) ≈ e && L[1] == 0
+            # the basis is the projected walk rotated to its singular vectors: the same prior on the curve
+            M = B2.proj * W2
+            @test size(B2.walk) == (n, n - 2) && B2.walk * B2.walk' ≈ M * M' && B2.proj * B2.walk ≈ B2.walk
+            @test abs(sum(B2.walk[:, 1] .* B2.walk[:, 2])) < 1e-8 * sqrt(sum(abs2, B2.walk[:, 1]) * sum(abs2, B2.walk[:, 2]))
+            f2 = age_curve(0.3, e, B2)
+            @test abs(sum(g.age_rows .* f2)) < 1e-9 && abs(sum(g.age_rows .* g.age_years .* f2)) < 1e-7
+            @test_throws ArgumentError AgeCurveBasis(g.age_years, g.age_rows; order = 3)
+        end
         # career rows: each driver's centred ages average zero over their rows
         cr = CareerRows(g)
         comps = vcat(g.t_comp, g.c_comp)
@@ -1719,7 +1743,8 @@ end
         ll8s = sum(Diomedes.paceloss_logpdf(d8.s_y[j] - (θ7.γ1[d8.s_race[j]] + hs8[j] - hs8bar[d8.s_race[j]]), 0.8,
                                             Diomedes.logistic(-1.0), exp(0.5)) for j in eachindex(d8.s_y))
         @test Turing.DynamicPPL.loglikelihood(model8, θ8) ≈ ll8 + ll8s
-        for flags in ((; starts = true, age = true, circuits = true), (; age = true), (; tyres = false, circuits = true),
+        for flags in ((; starts = true, age = true, circuits = true), (; age = true), (; age = true, age_order = 2),
+                      (; tyres = false, circuits = true),
                       (; slopes = true, dev = true, lead = true, tyre_mgmt = true, starts = true, age = true, circuits = true))
             m = lap_effects(d8; flags...)
             rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
@@ -1981,9 +2006,59 @@ end
                 cwr = LapConditions(cshr.comp, cshr.wet, cshr.tt, cshr.rain, true, true, false, true, wmin, wcs, true, wrs, (;))
                 @test Diomedes.wet_car_groups(d9, cglob) == (fill(1, length(wcs)), [length(wcs)]) &&
                       Diomedes.wet_car_groups(d9, cshr) == Diomedes.wet_car_groups(d9, wcs)
+                # `racedeg` (#124): each race's own stint slope, in a block of cv after the shared terms
+                c2 = conds[2]
+                crd = LapConditions(c2.comp, c2.wet, c2.tt, c2.rain, true, c2.wetdev, c2.wetpool, c2.wetcar, c2.wetmin, c2.wetcars,
+                                    c2.wetglobal, c2.wetraces, true, (;))
+                @test crd.racedeg && !c2.racedeg
+                crdc = LapConditions(c2.comp, c2.wet, c2.tt, c2.rain, true, c2.wetdev, c2.wetpool, c2.wetcar, c2.wetmin, c2.wetcars,
+                                     c2.wetglobal, c2.wetraces, true, true, (;))       # `racedegc`: on the race-centred age
+                rmean = [mean(d9.stint[d9.race .== r]) / 10 for r in 1:nr9]
+                @test crdc.rdcentred && Diomedes.race_age_means(crdc, d9) ≈ rmean && all(iszero, Diomedes.race_age_means(crd, d9))
+                # #151: pit stops reconciled with the timing data's tyre stints
+                let ev = "2023-01", pitsx = DataFrame(series = "f1", season = 2023,
+                                                      event_id = ["2023-01", "2023-01", "2023-02", "2019-01", "2023-01", "2023-01"],
+                                                      competitor_id = ["a", "b", "c", "a", "d", "d"], lap = [4, 5, 5, 6, 5, 6],
+                                                      duration_ms = Union{Missing,Float64}[22_000.0, 22_000.0, 22_000.0, 22_000.0, 22_000.0, 22_000.0])
+                    ages = Dict(1 => [1, 2, 3, 4, 1, 2, 3, 1, 2, 3],      # a: stops after laps 4 (Jolpica) and 7 (timing only)
+                                2 => collect(1.0:10),                    # b: Jolpica stop on lap 5, no tyre change, green
+                                3 => collect(1.0:10),                    # c: the same, under a neutralisation (race-wide: another race)
+                                4 => collect(1.0:10))                    # d: a double record (laps 5, 6), no tyre change, green
+                    condx = DataFrame(event_id = String[], driver_number = Int[], lap = Int[], compound = String[], tyre_age = Float64[],
+                                      neutral = Int[])
+                    for (num, a) in ages, l in 1:10
+                        push!(condx, (num == 3 ? "2023-02" : ev, num, l, "MEDIUM", a[l], num == 3 && l == 5 ? 1 : 0))
+                    end
+                    numsx = Dict((ev, 1) => "a", (ev, 2) => "b", ("2023-02", 3) => "c", (ev, 4) => "d")
+                    rc = reconcile_pit_stops(pitsx, condx, numsx)
+                    st(e, c) = sort(rc.stops.lap[(rc.stops.event_id .== e) .& (rc.stops.competitor_id .== c)])
+                    @test st(ev, "a") == [4, 7] && st(ev, "b") == [5] && st("2023-02", "c") == Int[] && st("2019-01", "a") == [6] &&
+                          st(ev, "d") == [5, 6]
+                    @test rc.noage == union(Set((ev, "b", l) for l in 6:10), Set((ev, "d", l) for l in 7:10)) &&
+                          ismissing(only(rc.stops.duration_ms[rc.stops.lap .== 7]))
+                    @test rc.report[:added] == 1 && rc.report[:kept_unconfirmed] == 3 && rc.report[:dropped_neutral] == 1 &&
+                          rc.report[:unchecked] == 1 && rc.report[:stops] == 6
+                end
+                # `tyreage` (#124): a stint's earlier laps are its median offset of the source's age over the stint age,
+                # less the new-set offset (the mode: here 1); a stint without a source age keeps its stint age
+                let st = [1, 2, 3, 1, 2, 1, 2, 1, 2], src = [2.0, 3, 4, 6, 7, NaN, NaN, 32, 33], seg = [1, 1, 1, 2, 2, 3, 3, 4, 4]
+                    tg, ex, base, dropped = Diomedes.true_tyre_age(st, src, seg)
+                    # stint 4's 30 earlier laps: the sources disagree about it, so its stint age
+                    @test base == 1 && tg == [1, 2, 3, 5, 6, 1, 2, 1, 2] && ex == Dict(1 => 0.0, 2 => 4.0) && dropped == 1
+                end
+                extra = Float64.(3 .* (d9.race .% 2))                      # every lap of every other race 3 laps older
+                function tcond(tg)
+                    s10 = tg ./ 10
+                    cdv = s10 .- [mean(s10[d9.comp .== d9.comp[j]]) for j in 1:n]
+                    cmv = s10 .- [mean(s10[d9.mach .== d9.mach[j]]) for j in 1:n]
+                    LapConditions(c2.comp, c2.wet, c2.tt, c2.rain, true, c2.wetdev, c2.wetpool, c2.wetcar, c2.wetmin, c2.wetcars,
+                                  c2.wetglobal, c2.wetraces, false, false, tg, cdv, cmv, (;))
+                end
+                ctg0, ctg = tcond(Float64.(d9.stint)), tcond(d9.stint .+ extra)
+                @test ctg0.tage_cd ≈ d9.stint_cd && ctg0.tage_cm ≈ d9.stint_cm
                 # zero condition effects: the model without them
                 m0 = lap_effects(d9)
-                for c in (conds..., cpool, cdrv, cshr, cglob, cwr)
+                for c in (conds..., cpool, cdrv, cshr, cglob, cwr, crd, crdc, ctg0)
                     mc = lap_effects(d9; cond = c, cars = fc)
                     θc = merge(θ, (; z_cond = zeros(length(Diomedes.cond_names(false)))),
                                c.wetpool ? (; σ0_wet = 0.5, τ_wws = 0.2, z_wet = zeros(length(wcw9.chassis.prev)), τ_wetd = 0.3,
@@ -1991,7 +2066,8 @@ end
                                !c.wetcar ? (; τ_wetd = 0.3, u_wetd = zeros(nc9)) :
                                c.wetmin > 0 ? merge((; τ_wetc = 0.2, u_wetc = zeros(length(c.wetcars)), τ_wetd = 0.3, u_wetd = zeros(nc9)),
                                                     isempty(c.wetraces) ? (;) : (; τ_wr = 0.5, u_wr = zeros(length(c.wetraces)))) :
-                               c.wetdev ? (; τ_wet = [0.3, 0.4], u_wet = zeros(nm9 + nc9)) : (;))
+                               c.wetdev ? (; τ_wet = [0.3, 0.4], u_wet = zeros(nm9 + nc9)) : (;),
+                               c.racedeg ? (; τ_rd = 0.3, u_rd = fill(0.7, nr9)) : (;))   # equal u: centred to 0
                     @test Turing.DynamicPPL.loglikelihood(mc, θc) ≈ Turing.DynamicPPL.loglikelihood(m0, θ)
                 end
                 # `wetshr` gives the same likelihood as `wetdev` with the same deviations: its car-seasons'
@@ -2029,6 +2105,24 @@ end
                     @test h3 ≈ h0 .+ [(wv3[d9.mach[j]] + wv3[nm9 + d9.comp[j]] + wv3[nm9 + nc9 + d9.race[j]] -
                                        wv[d9.mach[j]] - wv[nm9 + d9.comp[j]]) * c.wet[j] for j in 1:n]
                 end
+                # `racedeg`: every lap adds its race's slope times the stint age; with `short` the block starts after 14
+                for (cx, nsh) in ((LapContext(), 10), (ctxs[3], 14))
+                    cvx = vcat(cv, randn(rng, nsh - 10), randn(rng, nr9))
+                    nη, nφ = cx.traffic ? length(cx.tnames) : 1, cx.fpace ? nm9 : 1
+                    hc(cvv, c) = first(Diomedes.lap_h(z(nc9), z(nm9), z(2length(d9.eras)), z(nc9), z(nm9), z(1), z(nc9), z(nm9),
+                                                      z(length(d9.age_years)), z(nm9 * size(d9.race_x, 2)), z(1), z(nη), z(nφ),
+                                                      cvv, wv, RaceWalk(), cx, c, d9))
+                    @test hc(cvx, crd) ≈ hc(cvx[1:nsh], c2) .+ [cvx[nsh + d9.race[j]] * d9.stint[j] / 10 for j in 1:n]
+                    @test hc(cvx, crdc) ≈ hc(cvx[1:nsh], c2) .+ [cvx[nsh + d9.race[j]] * (d9.stint[j] / 10 - rmean[d9.race[j]]) for j in 1:n]
+                end
+                # `tyreage`: the tyre curve and the tyre-management slopes take the true age and its centred versions
+                let β = randn(rng, 2length(d9.eras)), td = randn(rng, nc9), tm = randn(rng, nm9)
+                    ht, _ = Diomedes.lap_h(z(nc9), z(nm9), β, z(nc9), z(nm9), z(1), td, tm, z(length(d9.age_years)),
+                                           z(nm9 * size(d9.race_x, 2)), z(1), z(1), z(1), z(10), z(nm9 + nc9), RaceWalk(), LapContext(), ctg, d9)
+                    s = ctg.tage ./ 10
+                    @test ht ≈ [β[2d9.era[j] - 1] * s[j] + β[2d9.era[j]] * s[j]^2 + td[d9.comp[j]] * ctg.tage_cd[j] +
+                                tm[d9.mach[j]] * ctg.tage_cm[j] for j in 1:n]
+                end
                 # gradients against ForwardDiff, with and without the shortfall terms; layout
                 # pooled: each car-season takes its works' centred walk state
                 let z = randn(rng, length(wcw9.chassis.prev))
@@ -2036,7 +2130,7 @@ end
                     xc = Diomedes.center_by(x, wcw9.chassis.season, wcw9.chassis.counts)
                     @test Diomedes.wet_car_walk(0.5, 0.2, z, wcw9) == xc[wcw9.row_ch]
                 end
-                for c in (conds..., cpool, cdrv, cshr, cglob, cwr), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
+                for c in (conds..., cpool, cdrv, cshr, cglob, cwr, crd, crdc, ctg), cx in (LapContext(), ctxs[1], ctxs[3]), flags in ((;), (; big = true, dinc = true))
                     m = lap_effects(d9; flags..., cars = fc, ctx = cx, cond = c)
                     rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())
                     rg = NamedTuple(getfield(rdm, :_varname_ranges))
@@ -2045,7 +2139,8 @@ end
                           haskey(rg, :z_wet) == c.wetpool && haskey(rg, :u_wetd) == (c.wetpool || !c.wetcar || c.wetmin > 0) &&
                           haskey(rg, :u_wetc) == (c.wetmin > 0) && (c.wetmin == 0 || length(rg.u_wetc.range) == length(c.wetcars))
                     xw = 0.5 .* randn(rng, LDP.dimension(rdm))
-                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd, :τ_wetc, :τ_wr)
+                    @test haskey(rg, :u_rd) == c.racedeg && (!c.racedeg || length(rg.u_rd.range) == nr9)
+                    for k in (:σ_comp, :σ_mach, :σ, :τ_δ, :τ_dinc, :δ_λ2, :τ_fp, :τ_sh, :τ_wet, :σ0_wet, :τ_wws, :τ_wetd, :τ_wetc, :τ_wr, :τ_rd)
                         haskey(rg, k) && (xw[rg[k].range] .= 0.2 .+ rand(rng, length(rg[k].range)))
                     end
                     @test LDP.logdensity_and_gradient(rdm, xw)[2] ≈ LDP.logdensity_and_gradient(fdm, xw)[2]

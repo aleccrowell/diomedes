@@ -3,7 +3,7 @@
 #   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc] [data=jolpica1950-2026+partial]
 #   julia --project scripts/export_site.jl retire [prefix=retire]
 #   julia --project scripts/export_site.jl laps [tag=laps_2011-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_keepslow] [source=jolpica]
-#   julia --project scripts/export_site.jl laps_conditions [tag=laps_2021-2026_recorded_…_short_cond_wetallg_wetrace_keepslow_keepwet]
+#   julia --project scripts/export_site.jl laps_conditions [tag=laps_2021-2026_recorded_…_short_cond_wetallg_wetrace_racedegc_tyreage_pitfix_agemin3_keepslow_keepwet]
 #   julia --project scripts/export_site.jl wrc [model=pl_dur_rw_kappa_cdrv_tdrv_fgam]
 #
 # Run from the repository root with the fits in output/. Each mode writes compact
@@ -535,7 +535,7 @@ function export_retire(pre)
     src = jol === nothing ? "F1 1950–2019 (Ergast CSV)" :
           "F1 $(jol[1])–$(jol[2]) (Jolpica API; retirements with no recorded cause count under the total hazard)"
     write_manifest(dir, (; model = "retirement_effects (competing risks: mechanical, incident, collision)",
-                         fit = pre, data = src * ": " * inner(first(readlines(log))), convergence = log_convergence(log),
+                         fit = pre, data = src * ": " * inner(dataline), convergence = log_convergence(log),
                          exported_by = "scripts/export_site.jl retire"))
     println("wrote $dir")
 end
@@ -666,7 +666,7 @@ function export_laps(tag; source = nothing)
     terms = join(["notyres" in sfx ? String[] : ["stint age"]; [term_names[s] for s in sfx if s != "notyres"]], ", ")
     modes = export_lap_modes(tag, dir)
     write_manifest(dir, (; model = "lap_effects" * (isempty(terms) ? "" : " ($(terms))"), fit = tag,
-                         data = "F1 $(first_y)–$(last_y) clean laps ($(src), $(m[3]) pit stops): " * inner(first(readlines(log))),
+                         data = "F1 $(first_y)–$(last_y) clean laps ($(src), $(m[3]) pit stops): " * inner(dataline),
                          race_model = JSON3.read(read(joinpath(race, "manifest.json"), String)).model,
                          convergence = log_convergence(log),
                          (modes === nothing ? (;) : (; modes = modes.modes, kept_modes = modes.kept,
@@ -700,9 +700,11 @@ const COND_LABELS = [
     ("τ_wetd", "wet skill", "Spread of drivers' wet-tyre deviations", "% of lap time"),
     ("β_fp", "field pace", "Field-pace slope", "per % of field pace"),
     ("σ", "noise", "Lap noise σ", "% of lap time")]
-# in some fits only: the car-seasons' wet spread (`wetshr`, `wetall`, `wetallg`) and the races' (`wetrace`)
+# in some fits only: the car-seasons' wet spread (`wetshr`, `wetall`, `wetallg`), the races' (`wetrace`)
+# and the spread of the races' stint slopes (`racedeg`, `racedegc`)
 const COND_LABELS_OPT = [("τ_wetc", "wet skill", "Spread of car-seasons' wet-tyre deviations", "% of lap time"),
-                         ("τ_wr", "wet skill", "Spread of races' wet-tyre offsets", "% of lap time")]
+                         ("τ_wr", "wet skill", "Spread of races' wet-tyre offsets", "% of lap time"),
+                         ("τ_rd", "stint", "Spread of races' own stint slopes", "% per 10 laps")]
 function export_laps_conditions(tag)
     dir = joinpath(OUT, "laps_conditions")
     mkpath(dir)
@@ -739,14 +741,28 @@ function export_laps_conditions(tag)
     else
         rm(joinpath(dir, "wet_races.csv"); force = true)
     end
+    # races' own stint slopes (`racedeg`, `racedegc`), with each race's name
+    rd = "output/$(tag)_race_degradation.csv"
+    if isfile(rd)
+        r = round_floats!(CSV.read(rd, DataFrame; types = Dict(:race => String)))
+        ss = parse.(Int, unique(first.(r.race, 4)))
+        ev = unique(select(fetch_results(JolpicaF1(), ss), :event_id => :race, :event_name => :name))
+        CSV.write(joinpath(dir, "race_degradation.csv"), rename!(select(leftjoin(r, ev; on = :race), :race, :name, Not(:race, :name)), :race => :id))
+    else
+        rm(joinpath(dir, "race_degradation.csv"); force = true)
+    end
     m = match(r"^laps_(\d{4})-(\d{4})_(recorded|inferred)", tag)
     m === nothing && error("not a lap fit tag: $tag")
+    # the combine log opens with the data line and the conditions line; with `pitfix` a pit-stop line comes first
+    loglines = readlines(log)
+    dataline = loglines[findfirst(startswith("LapData("), loglines)]
+    condline = loglines[findfirst(startswith("LapConditions("), loglines)]
     write_manifest(dir, (; model = "lap_effects with per-lap conditions (compound, track temperature, rain) and wet-tyre deviations" *
                                  (isfile(wc) ? " of drivers and car-seasons" : " of drivers") * (isfile(wr) ? ", with each wet race's offset" : ""),
                          fit = tag,
                          data = "F1 $(m[1])–$(m[2]) clean laps (Jolpica lap times, $(m[3]) pit stops), conditions from FastF1 (2021–2022) and OpenF1 (2023 on): " *
-                                inner(first(readlines(log))),
-                         conditions = strip(readlines(log)[2]),
+                                inner(dataline),
+                         conditions = strip(condline),
                          convergence = log_convergence(log),
                          exported_by = "scripts/export_site.jl laps_conditions"))
     println("wrote $dir")
@@ -778,7 +794,7 @@ elseif mode == "retire"
 elseif mode == "laps"
     export_laps(get(ARGS, 2, "laps_2011-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_keepslow"); source = get(ARGS, 3, "jolpica"))
 elseif mode == "laps_conditions"
-    export_laps_conditions(get(ARGS, 2, "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_rwrel_traffic_fpace_short_cond_wetallg_wetrace_keepslow_keepwet"))
+    export_laps_conditions(get(ARGS, 2, "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_rwrel_traffic_fpace_short_cond_wetallg_wetrace_racedegc_tyreage_pitfix_agemin3_keepslow_keepwet"))
 elseif mode == "wrc"
     export_wrc(get(ARGS, 2, "pl_dur_rw_kappa_cdrv_tdrv_fgam"))
 else

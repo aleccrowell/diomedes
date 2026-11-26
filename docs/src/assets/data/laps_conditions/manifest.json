@@ -1,88 +1,88 @@
 {
     "model": "lap_effects with per-lap conditions (compound, track temperature, rain) and wet-tyre deviations of drivers and car-seasons, with each wet race's offset",
-    "fit": "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_rwrel_traffic_fpace_short_cond_wetallg_wetrace_keepslow_keepwet",
-    "data": "F1 2021–2026 clean laps (Jolpica lap times, recorded pit stops), conditions from FastF1 (2021–2022) and OpenF1 (2023 on): 124480 laps, 36 drivers, 61 machine-seasons, 130 races; excluded lap1 2580, no_machine 0, pit 6824, slow_race 10527, stoppage 0",
-    "conditions": "LapConditions(124480 laps: matched 0.997, lap time agrees 1.0, compound known 0.996 (240 filled from the stint), wet tyres 0.048, rain 0.029, track temp known 0.997; wet deviations, 52 car-seasons with ≥ 1 wet laps, centred over all; wet-lap offsets for 16 races)",
+    "fit": "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_rwrel_traffic_fpace_short_cond_wetallg_wetrace_racedegc_tyreage_pitfix_agemin3_keepslow_keepwet",
+    "data": "F1 2021–2026 clean laps (Jolpica lap times, recorded pit stops), conditions from FastF1 (2021–2022) and OpenF1 (2023 on): 128632 laps, 38 drivers, 61 machine-seasons, 134 races; excluded lap1 2666, no_machine 0, pit 7062, slow_race 10998, stoppage 0",
+    "conditions": "LapConditions(128632 laps: matched 0.997, lap time agrees 1.0, compound known 0.997 (249 filled from the stint), wet tyres 0.05, rain 0.028, track temp known 0.997; wet deviations, 61 car-seasons with ≥ 1 wet laps, centred over all; wet-lap offsets for 17 races; a stint slope per race (on the race-centred age); true tyre age: 1574 of 6542 stints on used sets (median 2.0 earlier laps; new-set offset 1.0; 8 with > 10 treated as unknown), 22.4% of laps aged)",
     "convergence": {
-        "max_rhat": 1.019,
-        "min_ess": 188,
+        "max_rhat": 1.032,
+        "min_ess": 141,
         "divergences": 0,
         "groups": {
             "race walk": {
-                "max_rhat": 1.015,
-                "min_ess": 334
+                "max_rhat": 1.022,
+                "min_ess": 200
             },
             "tyre (drv)": {
-                "max_rhat": 1.003,
-                "min_ess": 1604
+                "max_rhat": 1.002,
+                "min_ess": 3165
             },
             "start (car)": {
-                "max_rhat": 1.005,
-                "min_ess": 1891
+                "max_rhat": 1.004,
+                "min_ess": 1000
             },
             "incidents": {
                 "max_rhat": 1.004,
-                "min_ess": 1430
+                "min_ess": 1550
             },
             "fpace car": {
-                "max_rhat": 1.003,
-                "min_ess": 3766
+                "max_rhat": 1.004,
+                "min_ess": 5070
             },
             "drivers": {
-                "max_rhat": 1.015,
-                "min_ess": 219
+                "max_rhat": 1.032,
+                "min_ess": 177
             },
             "slopes": {
-                "max_rhat": 1.017,
-                "min_ess": 291
+                "max_rhat": 1.02,
+                "min_ess": 183
             },
             "age curve": {
-                "max_rhat": 1.019,
-                "min_ess": 188
+                "max_rhat": 1.032,
+                "min_ess": 141
             },
             "scalars": {
-                "max_rhat": 1.007,
-                "min_ess": 690
+                "max_rhat": 1.021,
+                "min_ess": 358
             },
             "tyre (car)": {
-                "max_rhat": 1.004,
-                "min_ess": 1518
+                "max_rhat": 1.002,
+                "min_ess": 3389
             },
             "wet drv": {
                 "max_rhat": 1.004,
-                "min_ess": 3716
+                "min_ess": 3449
             },
             "cars": {
-                "max_rhat": 1.015,
-                "min_ess": 311
+                "max_rhat": 1.023,
+                "min_ess": 191
             },
             "circuits": {
-                "max_rhat": 1.004,
-                "min_ess": 1439
+                "max_rhat": 1.009,
+                "min_ess": 829
             },
             "peak": {
-                "max_rhat": 1.015,
-                "min_ess": 219
+                "max_rhat": 1.032,
+                "min_ess": 179
             },
             "short q": {
                 "max_rhat": 1.002,
-                "min_ess": 2603
+                "min_ess": 2559
             },
             "short λ": {
-                "max_rhat": 1.003,
-                "min_ess": 3072
+                "max_rhat": 1.002,
+                "min_ess": 2869
             },
             "short car": {
                 "max_rhat": 1.003,
-                "min_ess": 3099
+                "min_ess": 3090
             },
             "wet car": {
-                "max_rhat": 1.004,
-                "min_ess": 3615
+                "max_rhat": 1.002,
+                "min_ess": 3207
             }
         }
     },
     "exported_by": "scripts/export_site.jl laps_conditions",
-    "export_commit": "93665d0",
-    "date": "2026-11-15"
+    "export_commit": "fbe505f",
+    "date": "2026-11-26"
 }
