@@ -59,7 +59,7 @@ posterior draws in which the driver ranks fastest, in the top 3, in the top 10 a
 <td><code>mode</code> (chains grouped by where the loss mixture settled; see <code>modes.csv</code>), then the columns of
 <code>seasons.csv</code> over that mode's draws</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/race/modes.csv">modes.csv</a></td><td>chain × quantity</td>
-<td><code>chain</code>, <code>mode</code>; <code>quantity</code>, <code>label</code>: <code>sigma</code> (pace noise σ, %),
+<td><code>chain</code>, <code>mode</code>, <code>kept</code> (whether the mode is kept in the published draws); <code>quantity</code>, <code>label</code>: <code>sigma</code> (pace noise σ, %),
 <code>pi_base</code> (routine-loss probability), <code>lambda_base</code> (routine-loss mean, %), <code>rho</code> (big-loss share of
 incidents), <code>lambda_big</code> (big-loss mean, %), from the intercepts (average race duration, before the season paths);
 <code>mean</code>, <code>q05</code>, <code>q95</code> over that chain's draws</td></tr>
@@ -94,7 +94,7 @@ Only its shape is identified: it has no constant or linear part</td></tr>
 ## Lap-model files
 
 ```@raw html
-<p>F1 2011–2026, green-flag laps (Jolpica), recorded pit stops. Effects are % of the race's median clean lap; start effects are % of lap 1.
+<p>F1 2021–2026, green-flag laps (Jolpica), pit stops checked against the timing data, with the per-lap track conditions. Effects are % of the race's median clean lap; start effects are % of lap 1.
 <a class="diomedes-data" data-path="assets/data/laps/manifest.json">manifest.json</a></p>
 <table>
 <thead><tr><th>File</th><th>One row per</th><th>Columns</th></tr></thead>
@@ -107,9 +107,6 @@ Only its shape is identified: it has no constant or linear part</td></tr>
 <td><code>id</code>, <code>mean</code>, <code>sd</code>: the car-season's mean level, its team's race-to-race walk averaged over its laps and centred within the season, <code>laps</code>;
 <code>tyre_mean</code>, <code>tyre_sd</code>: as for drivers; <code>starts</code>, <code>start_mean</code>, <code>start_sd</code>: start effect, % of lap 1 against the car's pace (negative = better starts);
 <code>speed_mean</code>, <code>speed_sd</code>, <code>street_mean</code>, <code>street_sd</code>, <code>temp_mean</code>, <code>temp_sd</code>: circuit slopes, % of lap time per sd of average lap speed, street score and race-time temperature, centred within the season (positive = relatively slower)</td></tr>
-<tr><td><a class="diomedes-data" data-path="assets/data/laps/age_curve.csv">age_curve.csv</a></td><td>age (years)</td>
-<td><code>age</code>, <code>laps</code>; <code>mean</code>, <code>sd</code>, <code>q05</code>, <code>q95</code>: population age curve on clean laps, % of lap time.
-Only its shape is identified: it has no constant or linear part</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/peak.csv">peak.csv</a></td><td>driver</td>
 <td><code>driver</code>, <code>name</code>, <code>laps</code>; <code>peak</code>, <code>peak_sd</code>: peak pace (the clean-lap edge); <code>mean_pace</code>;
 <code>short_mean</code>, <code>short_mean_sd</code>: expected shortfall, how often × how far; <code>short_sd</code>, <code>short_sd_sd</code>: its standard deviation;
@@ -120,7 +117,7 @@ at the base rates (a dry race, a car with zero shortfall offsets)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/modes.csv">modes.csv</a></td><td>chain × quantity</td>
 <td><code>chain</code>, <code>mode</code>, <code>kept</code>, <code>quantity</code>, <code>label</code>, <code>mean</code>, <code>q05</code>, <code>q95</code>: the scalars that split the chains into modes</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/vs_race_drivers.csv">vs_race_drivers.csv</a></td><td>driver in both models</td>
-<td><code>lap_mean</code>, <code>lap_sd</code>: lap model (mean pace); <code>race_mean</code>, <code>race_sd</code>: race model (whole career)</td></tr>
+<td><code>id</code>, <code>name</code>, <code>laps</code>; <code>lap_mean</code>, <code>lap_sd</code>: lap model (mean pace); <code>race_mean</code>, <code>race_sd</code>: race model (whole career)</td></tr>
 <tr><td><a class="diomedes-data" data-path="assets/data/laps/vs_race_cars.csv">vs_race_cars.csv</a></td><td>car-season in both models</td>
 <td><code>lap_mean</code>, <code>lap_sd</code>, <code>race_mean</code>, <code>race_sd</code>, <code>constructor</code>, <code>season</code>, <code>laps</code></td></tr>
 </tbody></table>

@@ -36,8 +36,8 @@ have ended is unknown ([#42](https://github.com/aleccrowell/diomedes/issues/42))
   ``\sigma_\text{car}`` = 0.50 ± 0.02 on the log-hazard scale, and driver
   proneness with ``\sigma_\text{drv}`` = 0.45 ± 0.04.
 - **Slow and unreliable go together.** Slower drivers are more incident-prone
-  (correlation 0.43 over 149 drivers with at least 50 starts), and slower
-  car-seasons less reliable (0.47 over 675 with at least 20 starts).
+  (correlation 0.41 over 149 drivers with at least 50 starts), and slower
+  car-seasons less reliable (0.48 over 675 with at least 20 starts).
 
 ## Do the dropped retirements bias the pace effects?
 

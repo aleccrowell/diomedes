@@ -82,6 +82,14 @@ end
 
 # "RetireData(22478 starts: …)" -> "22478 starts: …"
 inner(s) = something(match(r"^\w+\((.*)\)$", s), (s,))[1]
+# a lap fit's combine log opens with its data line (and with `cond` its conditions line); with
+# `pitfix` a pit-stop line comes first, so lines are found by their prefix
+function lap_log_line(log, prefix)
+    ls = readlines(log)
+    i = findfirst(startswith(prefix), ls)
+    i === nothing && error("no $(prefix)…) line in $log")
+    return ls[i]
+end
 
 # Convergence block of a combine log: lines "<group>  <max R-hat>  <min ESS>" after
 # "convergence", and the "divergences: n" line.
@@ -535,7 +543,7 @@ function export_retire(pre)
     src = jol === nothing ? "F1 1950–2019 (Ergast CSV)" :
           "F1 $(jol[1])–$(jol[2]) (Jolpica API; retirements with no recorded cause count under the total hazard)"
     write_manifest(dir, (; model = "retirement_effects (competing risks: mechanical, incident, collision)",
-                         fit = pre, data = src * ": " * inner(dataline), convergence = log_convergence(log),
+                         fit = pre, data = src * ": " * inner(first(readlines(log))), convergence = log_convergence(log),
                          exported_by = "scripts/export_site.jl retire"))
     println("wrote $dir")
 end
@@ -632,10 +640,14 @@ function export_laps(tag; source = nothing)
         src = "output/$(tag)_$(f).csv"
         isfile(src) ? CSV.write(joinpath(dir, out), round_floats!(CSV.read(src, DataFrame))) : rm(joinpath(dir, out); force = true)
     end
-    # population age curve (#12), if the fit has it
+    # population age curve (#12), if the fit has it and covers enough seasons to identify it:
+    # over a few seasons each driver spans a few ages, and the curve's shape mixes age with
+    # who the drivers are (2021–2026, #124), so it isn't published
     ac = "output/$(tag)_age_curve.csv"
-    isfile(ac) ? CSV.write(joinpath(dir, "age_curve.csv"), round_floats!(CSV.read(ac, DataFrame))) :
-                 rm(joinpath(dir, "age_curve.csv"); force = true)
+    ys = match(r"^laps_(\d{4})-(\d{4})", tag)
+    long = ys !== nothing && parse(Int, ys[2]) - parse(Int, ys[1]) >= 10
+    isfile(ac) && long ? CSV.write(joinpath(dir, "age_curve.csv"), round_floats!(CSV.read(ac, DataFrame))) :
+                         rm(joinpath(dir, "age_curve.csv"); force = true)
     # the same levels in the race model (export `race` first)
     race = joinpath(OUT, "race")
     rd = CSV.read(joinpath(race, "drivers.csv"), DataFrame)
@@ -660,13 +672,20 @@ function export_laps(tag; source = nothing)
                       "works" => "works term", "big" => "big losses", "rwalk" => "race-level chassis walk",
                       "nostartdrv" => "no driver start effects", "dinc1" => "lap-1 incident proneness",
                       "traffic" => "traffic", "fpace" => "field pace", "short" => "peak pace and shortfall",
-                      "keepslow" => "slow laps kept", "probe" => "probe")
-    unknown = setdiff(sfx, ["notyres"; collect(keys(term_names))])
+                      "keepslow" => "slow laps kept", "probe" => "probe",
+                      # per-lap conditions and tyres (#116, #124, #151)
+                      "rwrel" => "race walk relative to drivers", "cond" => "per-lap conditions", "wetdrv" => "drivers' wet skill",
+                      "wetall" => "car-season wet effects", "wetallg" => "car-season wet effects", "wetrace" => "race wet offsets",
+                      "racedeg" => "per-race stint slopes", "racedegc" => "per-race stint slopes", "tyreage" => "true tyre age",
+                      "pitfix" => "reconciled pit stops", "keepwet" => "wet laps kept")
+    tname(s) = (m2 = match(r"^agemin(\d+)$", s); m2 === nothing ? get(term_names, s, nothing) : "age bins of ≥ $(m2[1]) drivers")
+    unknown = filter(s -> s != "notyres" && tname(s) === nothing, sfx)
     isempty(unknown) || error("unknown tag suffix(es) in $tag: $(join(unknown, ", "))")
-    terms = join(["notyres" in sfx ? String[] : ["stint age"]; [term_names[s] for s in sfx if s != "notyres"]], ", ")
+    terms = join(unique(["notyres" in sfx ? String[] : ["stint age"]; [tname(s) for s in sfx if s != "notyres"]]), ", ")
     modes = export_lap_modes(tag, dir)
     write_manifest(dir, (; model = "lap_effects" * (isempty(terms) ? "" : " ($(terms))"), fit = tag,
-                         data = "F1 $(first_y)–$(last_y) clean laps ($(src), $(m[3]) pit stops): " * inner(dataline),
+                         data = "F1 $(first_y)–$(last_y) clean laps ($(src), $(m[3]) pit stops" *
+                                ("pitfix" in sfx ? ", reconciled with the timing data" : "") * "): " * inner(lap_log_line(log, "LapData(")),
                          race_model = JSON3.read(read(joinpath(race, "manifest.json"), String)).model,
                          convergence = log_convergence(log),
                          (modes === nothing ? (;) : (; modes = modes.modes, kept_modes = modes.kept,
@@ -754,9 +773,7 @@ function export_laps_conditions(tag)
     m = match(r"^laps_(\d{4})-(\d{4})_(recorded|inferred)", tag)
     m === nothing && error("not a lap fit tag: $tag")
     # the combine log opens with the data line and the conditions line; with `pitfix` a pit-stop line comes first
-    loglines = readlines(log)
-    dataline = loglines[findfirst(startswith("LapData("), loglines)]
-    condline = loglines[findfirst(startswith("LapConditions("), loglines)]
+    dataline, condline = lap_log_line(log, "LapData("), lap_log_line(log, "LapConditions(")
     write_manifest(dir, (; model = "lap_effects with per-lap conditions (compound, track temperature, rain) and wet-tyre deviations" *
                                  (isfile(wc) ? " of drivers and car-seasons" : " of drivers") * (isfile(wr) ? ", with each wet race's offset" : ""),
                          fit = tag,

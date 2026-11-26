@@ -135,3 +135,4 @@ Hard stop: iteration 100 by <time> (100 × 1023 × <gradient time> + 5 %).
 | lap model, 2011–2026 (316k laps) with every #108 and #113 term, warm-started | about 9 h per chain (1,000 draws) |
 | lap model, 2021–2026 (124k laps) with the conditions terms (#116), warm-started | 6–23 h per chain (1,000 draws), depending on the step size the chain adapts |
 | lap model, 2021–2026 with conditions, car and race wet terms and `rwrel` (#116), warm-started, fixed step | 13.5–14 h per chain (1,000 draws) |
+| lap model, 2021–2026 (129k laps), the published fit (#124: per-race stint slopes, true tyre age, reconciled pit stops), warm-started, `notune` | about 11.3 h per chain (1,000 draws) |

@@ -9,15 +9,17 @@
   Ferrari was faster than the 1988 McLaren, only how far each was ahead of its
   own field.
 - **Separating a driver from their car** relies on team-mates and team changes.
-  It is the main remaining source of slow mixing ([#20](https://github.com/aleccrowell/diomedes/issues/20)), and it is weakest
-  for drivers who spent their careers with one team.
+  It is weakest for drivers who spent their careers with one team. In the published
+  race fit the driver and car levels mix well (bulk ESS ≥ 696); the slowest direction
+  is the split of a car's form between its season residual and the chassis walk
+  ([#142](https://github.com/aleccrowell/diomedes/issues/142)).
 - **A dominant car can pass some of its advantage to its star driver.** In simulations
   without walks, a car about 2 % ahead gave 0.15–0.21 % of it to the star who drove it
   ([#143](https://github.com/aleccrowell/diomedes/pull/143)). With walks it was 0.08 %
   ([#145](https://github.com/aleccrowell/diomedes/pull/145)). See
   [Checks against known answers](@ref).
 - **Career slopes are conservative.** In simulations they are shrunk towards zero (slope
-  of estimate on truth 0.2–0.8), so a fast improver is likely understated
+  of estimate on truth 0.2–0.7), so a fast improver is likely understated
   ([#143](https://github.com/aleccrowell/diomedes/pull/143)).
 - **The age curve's peak isn't identified,** only its shape; career slopes are
   relative to the average driver ([#22](https://github.com/aleccrowell/diomedes/issues/22), [#24](https://github.com/aleccrowell/diomedes/issues/24)).
@@ -53,7 +55,7 @@
   identified mostly by those races: pooling over a works' seasons cut posterior
   sds by only about 10% ([#91](https://github.com/aleccrowell/diomedes/issues/91), [#95](https://github.com/aleccrowell/diomedes/issues/95)).
 - **The race model's rain flag is per race,** dry, mixed or wet. It doesn't say when in the
-  race it rained or how hard, and 48 of the calls are marked uncertain in the
+  race it rained or how hard, and 51 of the calls are marked uncertain in the
   [reference table](https://github.com/aleccrowell/diomedes/tree/master/reference/circuits).
   The lap model's conditions terms have rain per lap, from 2021 only.
 - **The lap model's shortfall can't tell choice from limits.** A driver managing
@@ -65,8 +67,8 @@
   separate compound choice (for example, the 2014–21 rule that the top 10
   qualifiers start on their Q2 tyres) from pace ([#12](https://github.com/aleccrowell/diomedes/issues/12)).
   From 2021 the timing data gives each lap's compound, track temperature and rain,
-  and a 2021–2026 fit uses them; the published lap rankings, over 2011–2026, don't
-  ([#116](https://github.com/aleccrowell/diomedes/issues/116)).
+  and the published lap fit uses them, which is why it covers 2021–2026 only
+  ([#116](https://github.com/aleccrowell/diomedes/issues/116), [#124](https://github.com/aleccrowell/diomedes/issues/124)).
 - **Rallying lacks covariates.** The WRC fit has no road order or surface
   terms, and its driver effects are relative to a 641-driver field that is
   mostly amateurs ([#33](https://github.com/aleccrowell/diomedes/issues/33), [#28](https://github.com/aleccrowell/diomedes/issues/28)).

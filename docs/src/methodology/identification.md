@@ -111,18 +111,18 @@ The fix was to sample along the ridge rather than across it. `rwrel` samples eac
 walk state relative to its drivers, ``\tilde x = x + W a``, with ``W`` each
 driver's share of the state's laps. This shear has Jacobian 1, so the model is
 unchanged. Moving a team's drivers no longer drags its states with them, and the
-minimum ESS of the drivers rose from 81 to 219 in the full fit. Adding the career
+minimum ESS of the drivers rose from 81 to 219 in that full fit. Adding the career
 slopes to the shear (`rwrels`) moved the slow direction onto the age curve
 instead, so it isn't used.
 
 ## Effects that rest on a few races
 
 Effects measured on a small part of the data, such as wet-weather skill (about 5 %
-of laps, from 16 races), can go wrong in three ways the well-measured effects don't
+of laps, from 17 races), can go wrong in three ways the well-measured effects don't
 ([#116](https://github.com/aleccrowell/diomedes/issues/116)):
 
 - **They absorb what the races have in common.** Wet races differ: the lap model's
-  per-race wet offsets spread with an sd of 2.4 % of lap time. Without them, a
+  per-race wet offsets spread with an sd of 2.1 % of lap time. Without them, a
   car-season with wet laps from one or two races took those races' severity:
   Williams 2023 came out at +2.6 % to +3.2 % against about −0.2 % in a raw same-lap
   comparison. Give such an effect a per-race term, partially pooled, so units are

@@ -53,8 +53,12 @@ per-season Spearman correlation over the cars in both.
 | model | seasons | median Spearman |
 |---|---|---|
 | race (total car effects) | 67 | 0.89: 0.64 in the 1950s, rising to 0.95–0.96 from 2010 |
-| lap (2011–2026) | 14 | 0.94 |
+| lap, published fit (2021–2026, with track conditions) | 5 | 0.83 |
+| lap, previous fit (2011–2026) | 14 | 0.94 (0.85 over 2021–2025) |
 
 Points also reward reliability, strategy and the drivers, so the agreement can't be
-perfect. Few cars from 2011 differ by 3 or more places. The lap model puts McLaren 2022–23
-and Williams 2025 faster than their points.
+perfect. Over the five seasons both cover, the race model agrees more closely (median
+0.96). The published lap fit agrees less than the previous one did over the same
+seasons (0.83 against 0.85), and puts some cars well away from their points: Mercedes
+2024 fastest of the field (P4), Haas 2025 fourth (P8) and AlphaTauri 2021–22 three
+places ahead, with McLaren 2022 and Red Bull 2025 three places behind.
