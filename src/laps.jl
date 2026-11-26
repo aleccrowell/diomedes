@@ -866,7 +866,8 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
 - Population age curve (`age = true`, #12; `AgeCurveBasis` as in the race
   model): a shared curve over the drivers' season ages in one-year bins,
   fage = proj·walk·(τ_age·e_age), e_age ~ N(0, 1), τ_age ~ half-N(0, 0.2) in %; with `age_order = 2` the
-  walk is second-order (random steps of the slope, per year), so ages few drivers reach follow the trend
+  walk is second-order (random steps of the slope, per year), so ages few drivers reach follow the trend, with
+  τ_age ~ half-N(0, `AGE_RW2_SD`) (smooth: year-to-year jumps go to the driver effects)
   per year of age. Only its shape is identified: the constant goes into the
   driver effects and the linear part into the race intercepts and career slopes
   (age–period–cohort), so it is projected onto curves with neither. With it, the
@@ -986,7 +987,9 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         a_λ1 ~ Normal(0, 1)
     end
     if age
-        τ_age ~ truncated(Normal(0, 0.2); lower = 0)
+        # the second-order walk's scale is the slope's change per year: half-N(0, AGE_RW2_SD) keeps the curve smooth
+        rw2 = size(age_basis.walk, 2) == length(d.age_years) - 2
+        τ_age ~ truncated(Normal(0, rw2 ? AGE_RW2_SD : 0.2); lower = 0)
         e_age ~ StdNormalVec(size(age_basis.walk, 2))   # n - 1 steps, or n - 2 with the second-order walk (`agerw2`)
         fage = age_curve(τ_age, e_age, age_basis)
     else
@@ -1381,6 +1384,11 @@ end
 
 const START_PARAMS = (:γ1, :τ_sd, :u_sd, :τ_sc, :u_sc, :g1, :σ1, :a_π1, :a_λ1)
 const AGE_PARAMS = (:τ_age, :e_age)
+# Prior scale of the second-order age walk's τ_age (#124): on 2021–2026's ages the basis's largest singular value is
+# ~34, so a curve's per-age amplitude is ~τ·34/√27 ≈ 6.5τ, and 0.05 allows ~0.3 %. With half-N(0, 0.2) the data pulled
+# τ to ~0.27 (amplitude ~1.7 %) to fit the first-order curve's year-to-year jumps of ~0.4 %, which look like driver
+# composition, and the posterior was too stiff to sample (full124f).
+const AGE_RW2_SD = 0.05
 const CIRCUIT_PARAMS = (:τ_cx, :u_cx)
 const TRACK_PARAMS = (:β_track_π, :β_track_λ)
 const DINC_PARAMS = (:τ_dinc, :u_dinc)
