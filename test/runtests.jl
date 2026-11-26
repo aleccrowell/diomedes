@@ -311,6 +311,17 @@ end
         f = age_curve(0.3, randn(Xoshiro(2), length(g.age_years) - 1), B)
         @test abs(sum(g.age_rows .* f)) < 1e-9
         @test abs(sum(g.age_rows .* g.age_years .* f)) < 1e-7
+        # tail age bins pooled until each end has k drivers (#124): laps' whole-year ages, drivers per lap
+        # every age group has at least k drivers, neighbouring ages merged from the oldest down (#124)
+        let lb = [18, 18, 19, 20, 30, 40, 41, 42, 42, 44, -1], cp = [1, 2, 3, 4, 5, 6, 7, 6, 6, 6, 8]
+            g3 = Diomedes.age_groups(lb, cp, 3)
+            # from the top: {44, 42, 41, 40} has drivers 6, 7 only, + 30 (5) → 3 drivers; {20, 19, 18} → 4 drivers
+            @test g3[44] == g3[42] == g3[41] == g3[40] == g3[30] && g3[20] == g3[19] == g3[18] && g3[18] != g3[30]
+            @test g3[18] == round(Int, (18 * 2 + 19 + 20) / 4) && g3[44] == round(Int, (44 + 2 * 42 + 41 + 40 + 30) / 6)
+            @test Diomedes.age_groups(lb, cp, 0) == Dict(a => a for a in (18, 19, 20, 30, 40, 41, 42, 44))
+            g2 = Diomedes.age_groups(lb, cp, 2)
+            @test g2[44] == g2[42] == g2[41] && g2[40] != g2[41] && length(unique(values(Diomedes.age_groups(lb, cp, 20)))) == 1
+        end
         # the second-order walk (#124): random steps of the slope per year, gaps between bins included
         let B2 = AgeCurveBasis(g.age_years, g.age_rows; order = 2), n = length(g.age_years), e = randn(Xoshiro(4), n - 2)
             W2 = Diomedes.age_walk(g.age_years, 2)

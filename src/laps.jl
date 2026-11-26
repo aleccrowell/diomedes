@@ -182,24 +182,35 @@ function Base.show(io::IO, d::LapData)
 end
 
 """
-    age_bounds(lapbin, comp, k) -> (lo, hi)
+    age_groups(lapbin, comp, rows, k) -> Dict{Int,Int}
 
-The age bins to pool the tails into (#124): `lo` the youngest age with at least `k` distinct drivers
-(`comp`) at it or younger, `hi` the oldest with at least `k` at it or older, over the laps' whole-year
-ages `lapbin` (negative: unknown). Ages below `lo` are pooled into `lo`, above `hi` into `hi`. With
-`k = 0` (or too few drivers) every age keeps its own bin.
+The age bins pooled so that each has at least `k` distinct drivers (#124): the laps' whole-year ages
+(`lapbin`, negative: unknown) are merged into groups of neighbouring ages, from the oldest down, each
+closed once its drivers (`comp`) number `k`; a youngest group with fewer joins the next older one. Each
+age maps to its group's lap-weighted mean age, rounded (the youngest age in the group if that would
+not keep the groups in order). With `k = 0` every age is its own group. On 2021–2026 with `k = 3`:
+41–45 (Alonso, Hamilton, Räikkönen), 38–40, 36–37, 34–35 and 18–19 are pooled, the other ages kept.
 """
-function age_bounds(lapbin::AbstractVector{<:Integer}, comp::AbstractVector{<:Integer}, k::Int)
+function age_groups(lapbin::AbstractVector{<:Integer}, comp::AbstractVector{<:Integer}, k::Int)
     ages = sort(unique(filter(>=(0), lapbin)))
-    isempty(ages) && return (0, typemax(Int))
-    lo, hi = first(ages), last(ages)
-    k <= 0 && return (lo, hi)
-    drivers(f) = length(unique(comp[[j for j in eachindex(lapbin) if lapbin[j] >= 0 && f(lapbin[j])]]))
-    length(unique(comp[lapbin .>= 0])) < k && return (lo, hi)
-    lo = first(a for a in ages if drivers(y -> y <= a) >= k)
-    hi = last(a for a in ages if drivers(y -> y >= a) >= k)
-    lo >= hi && return (first(ages), last(ages))
-    return (lo, hi)
+    k <= 0 && return Dict(a => a for a in ages)
+    drv = Dict(a => Set(comp[[j for j in eachindex(lapbin) if lapbin[j] == a]]) for a in ages)
+    nl = Dict(a => count(==(a), lapbin) for a in ages)
+    groups = Vector{Vector{Int}}()
+    cur, seen = Int[], Set{Int}()
+    for a in reverse(ages)
+        push!(cur, a); union!(seen, drv[a])
+        if length(seen) >= k
+            push!(groups, cur); cur, seen = Int[], Set{Int}()
+        end
+    end
+    if !isempty(cur)                            # the youngest ages lack k drivers: into the next older group
+        isempty(groups) ? push!(groups, cur) : append!(groups[end], cur)
+    end
+    reverse!(groups)                            # youngest first
+    labels = [round(Int, sum(a * nl[a] for a in g) / sum(nl[a] for a in g)) for g in groups]
+    issorted(labels; lt = <=) || (labels = [minimum(g) for g in groups])
+    return Dict(a => labels[i] for (i, g) in enumerate(groups) for a in g)
 end
 
 """
@@ -355,17 +366,18 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
     # age bins (population age curve, #12): the driver's season age in whole years
     sage_ks = Dict(k => ssum[k] / sn[k] for k in keys(ssum))           # (driver, season) => season age
     lapbin = [isnan(a) ? -1 : floor(Int, a) for a in sage]
-    # the youngest and oldest bins pooled until each has `age_min_drivers` drivers (#124): an age only one or two
-    # drivers reach is that driver's effect, not the population's (full124e: ages 40–45, mostly Alonso alone)
-    alo, ahi = age_bounds(lapbin, comp, age_min_drivers)
-    lapbin = [y < 0 ? -1 : clamp(y, alo, ahi) for y in lapbin]
+    # ages pooled into groups of neighbouring ages with at least `age_min_drivers` drivers each (#124): an age only one
+    # or two drivers reach is those drivers' effect, not the population's (full124e: ages 40–45, mostly Alonso alone)
+    agrp = age_groups(lapbin, comp, age_min_drivers)
+    agemap(y) = y < 0 ? -1 : get(agrp, y, isempty(agrp) ? y : agrp[argmin(a -> abs(a - y), collect(keys(agrp)))])
+    lapbin = [agemap(y) for y in lapbin]
     age_years = sort(unique(filter(>=(0), lapbin)))
     abi = Dict(y => i for (i, y) in enumerate(age_years))
     abin = [y < 0 ? 0 : abi[y] for y in lapbin]
     age_rows = [Float64(count(==(i), abin)) for i in eachindex(age_years)]
     s_abin = [begin
                   a = get(sage_ks, (ci[c], seasons[race_season[ri[e]]]), NaN)
-                  isnan(a) ? 0 : get(abi, clamp(floor(Int, a), alo, ahi), 0)
+                  isnan(a) ? 0 : get(abi, agemap(floor(Int, a)), 0)
               end for (c, e) in zip(start.competitor_id, start.event_id)]
     # circuit covariates (#14), one row per race
     if circuits === nothing

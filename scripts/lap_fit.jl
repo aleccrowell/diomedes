@@ -126,7 +126,7 @@ wetdev && !condf && error("wetdev / wetwalk need cond")
 δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
 tune_step = "notune" ∉ ARGS
 agemin = something(tryparse(Int, something(findfirst(a -> startswith(a, "agemin="), ARGS) |> i -> i === nothing ? "0" : split(ARGS[i], "=")[2], "0")), 0)
-# `agemin=<k>` (#124; tag _agemin<k>): the youngest and oldest age bins pooled until each has k drivers
+# `agemin=<k>` (#124; tag _agemin<k>): neighbouring age bins pooled so that each has at least k drivers
 steparg = findfirst(a -> startswith(a, "step="), ARGS)
 step_kw = steparg === nothing ? (;) : (; fixed_step = parse(Float64, split(ARGS[steparg], "=")[2]))
 drawsarg = findfirst(a -> startswith(a, "draws="), ARGS)
