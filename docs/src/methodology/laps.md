@@ -10,9 +10,11 @@ y = 100\log\frac{t}{\text{median clean lap}} = \gamma_r + \delta_r\,(f - \bar f_
 
 with ``f`` the lap's fraction of the race distance (fuel burn, track
 evolution), ``s`` the tyres' stint age, and the same pace + loss noise as the
-race model. The current fit (2011–2026, recorded pit stops;
+race model. The current fit (2021–2026, pit stops checked against the timing data;
 [#108](https://github.com/aleccrowell/diomedes/issues/108),
-[#113](https://github.com/aleccrowell/diomedes/issues/113)) adds:
+[#113](https://github.com/aleccrowell/diomedes/issues/113),
+[#116](https://github.com/aleccrowell/diomedes/issues/116),
+[#124](https://github.com/aleccrowell/diomedes/issues/124)) adds:
 - **peak pace and shortfall** ([#113](https://github.com/aleccrowell/diomedes/issues/113)): the
   small-loss part of the noise becomes each driver's shortfall from their peak.
   Its probability and size get driver and car-season offsets, so a driver has a
@@ -22,9 +24,12 @@ race model. The current fit (2011–2026, recorded pit stops;
 - **traffic**: shared effects of the gap to the car ahead on track (dirty air),
   of lapped cars ahead and blue flags, of a car close behind on the same lap
   (defending), and of leading by over 5 s (cruising), from cumulative lap times;
-- **conditions**, in a separate 2021–2026 fit only
-  ([#116](https://github.com/aleccrowell/diomedes/issues/116)): the tyre compound, track
-  temperature and rain on each lap, and drivers' deviations on wet tyres;
+- **track conditions** ([#116](https://github.com/aleccrowell/diomedes/issues/116),
+  [#124](https://github.com/aleccrowell/diomedes/issues/124)), from the F1 timing data,
+  which is why the fit starts in 2021: the tyre compound, track temperature and rain on
+  each lap; drivers', car-seasons' and races' offsets on wet tyres; a stint slope for
+  each race; and each stint's true tyre age, with pit stops reconciled against the
+  timing data's tyre changes ([#151](https://github.com/aleccrowell/diomedes/issues/151));
 - **field pace**: the field's median lap, smoothed over neighbouring laps, beyond
   the race's mean and trend, with a slope per car-season, for conditions that change within a race (a drying track, rain
   arriving). It also moves the shortfall's probability and size, but not the edge;
@@ -43,7 +48,9 @@ race model. The current fit (2011–2026, recorded pit stops;
   effects, with its own noise. Per-driver start effects are off, because they
   were barely identified;
 - the race model's population age curve, shared by all drivers
-  ([#12](https://github.com/aleccrowell/diomedes/issues/12));
+  ([#12](https://github.com/aleccrowell/diomedes/issues/12)). Over 2021–2026 it isn't
+  identified (each driver covers at most six ages, and the career slopes take any
+  steady change), so it isn't published;
 - car-season slopes on three circuit dimensions, centred within each season:
   average lap speed, street score and race-time air temperature
   ([#14](https://github.com/aleccrowell/diomedes/issues/14)). The covariates come
@@ -53,7 +60,7 @@ It is fitted to green-flag laps.
 Excluded:
 - lap 1 from the pace term (it enters the start term);
 - safety-car, VSC and red-flag laps, detected as race-wide slow laps;
-- pit in- and out-laps (recorded).
+- pit in- and out-laps (Jolpica's recorded stops, reconciled with the timing data).
 
 No lap is dropped for its own size: a per-car cut on slow laps, like inferred
 pit stops, would also drop a car's largest incidents (about 5 per 1,000 laps,
@@ -82,7 +89,7 @@ slope of lap-model driver effects on race-model ones stayed about 0.41 over
 
 ## Status
 
-This model is in development. The published fit has the [#108](https://github.com/aleccrowell/diomedes/issues/108) and [#113](https://github.com/aleccrowell/diomedes/issues/113) terms; per-lap conditions are in progress in [#116](https://github.com/aleccrowell/diomedes/issues/116).
+This model is in development. The published fit (2021–2026) has the [#108](https://github.com/aleccrowell/diomedes/issues/108), [#113](https://github.com/aleccrowell/diomedes/issues/113), [#116](https://github.com/aleccrowell/diomedes/issues/116) and [#124](https://github.com/aleccrowell/diomedes/issues/124) terms. Earlier fits, below, covered longer spans without the track conditions.
 
 - **Pit laps can be inferred from lap times.** Over 2011–2019, excluding
   inferred pit laps instead of Ergast's recorded ones gives the same effects:
@@ -110,7 +117,7 @@ This model is in development. The published fit has the [#108](https://github.co
   model (0.954 before), drivers 0.761 (0.718 before). Its effects correlate 0.989
   (cars) and 0.954 (drivers) with the previous fit. The circuit slopes vary by
   about 0.16 % per sd of speed and of street score, and 0.11 % for temperature.
-- **2011–2026 with the #108 and #113 terms (the current fit).** One mode, max
+- **2011–2026 with the #108 and #113 terms (the previous published fit).** One mode, max
   R-hat 1.018, no divergences, 4 × 1,000 draws. Car-seasons correlate 0.97 with the
   race model, drivers' mean pace 0.66 (drivers with at least 500 laps). Peak pace
   carries most of the driver spread: across drivers with at least 2,000 laps the
@@ -118,12 +125,17 @@ This model is in development. The published fit has the [#108](https://github.co
   unrelated. The field pace moves the edge only weakly (slope 0.17, where 1 would
   mean conditions slow the limit fully), and wet and mixed laps go mostly to the
   shortfall ([#116](https://github.com/aleccrowell/diomedes/issues/116)).
-- **2021–2026 with per-lap conditions** ([#116](https://github.com/aleccrowell/diomedes/issues/116)).
-  Tyre compound, track temperature and rain from the F1 timing data, and drivers'
-  deviations on wet tyres. INTERMEDIATE laps are 7.3 % and WET laps 14.2 % slower
-  than SOFT ones. Rain goes to the shortfall rather than the peak. Drivers' wet
-  deviations spread with an sd of 0.73 %, but carry their car's wet performance:
-  the cars' own couldn't be identified from so few wet races. The field-pace slope
-  stays at 0.13 with these terms in. The conditions terms converge; the driver and
-  car levels don't yet (R-hat 1.08–1.09), so the rankings stay on the 2011–2026 fit
-  ([results](@ref "Track conditions (2021–2026)")).
+- **2021–2026 with per-lap conditions, first fit** ([#116](https://github.com/aleccrowell/diomedes/issues/116)).
+  Tyre compound, track temperature and rain, and drivers' deviations on wet tyres.
+  Drivers' wet deviations spread with an sd of 0.73 %, but carried their car's wet
+  performance and how wet their races were. The driver and car levels didn't
+  converge (R-hat 1.08–1.09).
+- **2021–2026 with car and race wet terms, and the race walk sampled relative to
+  each car's drivers** ([#116](https://github.com/aleccrowell/diomedes/issues/116)).
+  Every group converged (max R-hat 1.019). Drivers' wet spread fell to 0.29 %.
+- **2021–2026 with per-race tyre wear, true tyre age, reconciled pit stops and
+  pooled age bins (the current fit;** [#124](https://github.com/aleccrowell/diomedes/issues/124)**).**
+  One mode, max R-hat 1.032, no divergences, 4 × 1,000 draws. Car-seasons correlate
+  0.94 with the race model, drivers' mean pace 0.64 (drivers with at least 500 laps).
+  The compounds' own stint slopes go to about zero once each race has its own; the
+  field-pace slope is 0.12 ([results](@ref "Track conditions")).

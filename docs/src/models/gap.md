@@ -24,8 +24,9 @@ y ∈ [100·log(L/l), 100·log(L/(l−1)))
 ```
 
 Lapped cars are identified by status ("+N Laps", "Lapped"), not by position.
-Retirements are dropped (the selection check below shows this barely moves the
-effects).
+Retirements are dropped by default (the selection check below shows this barely
+moves the effects). The published fit adds them back from 1996 as partial gaps
+(`with_partial_rows`, below).
 
 ```jldoctest
 julia> g = prepare_gaps(fetch_results(ErgastCSV(FIXTURE), 2019))
@@ -140,7 +141,7 @@ are in their own season's units. Per-row career offsets are
 
 ## Retirements and selection
 
-The pace models drop retirements. If cars that retire were running slower than
+By default the pace models drop retirements. If cars that retire were running slower than
 their effects predict, the finishers are a selected sample. `src/partial.jl` and
 `scripts/selection_check.jl` test this using lap times (F1, 1996–):
 

@@ -23,9 +23,12 @@ The chance that a car running a full race distance retires from each cause
 retirements per race distance raced, as 1 − e<sup>−rate</sup>, so a short
 race or an early retirement counts for its share of a distance. Each cause is
 shown on its own, as if it were the only risk. Over a full race distance, a
-1950s car had close to an even chance of a mechanical failure; since 2011 the
-chance has been under 10%. Collisions were rarely recorded as a
-cause before about 1990, and the season-level random walks absorb that.
+1950s car had close to an even chance of a mechanical failure; through the 2010s
+it was about 9–12%, and since 2019 under 8%. Collisions were rarely recorded as a
+cause before about 1990, and the season-level random walks absorb that. From 2023
+most retirements are recorded only as "Retired", with no cause, so the observed
+points by cause drop to or near zero there; those retirements count towards the total but
+not towards any one cause ([methodology](@ref "Retirements and selection bias")).
 
 ```@raw html
 <div id="fig-retire-seasons" class="diomedes-figure"></div>
@@ -136,9 +139,9 @@ diomedesFigure("fig-retire-drivers", {
 </script>
 ```
 
-Slower drivers tend to be more incident-prone (correlation 0.43 with the race
+Slower drivers tend to be more incident-prone (correlation 0.41 with the race
 model's driver effects, over 149 drivers with at least 50 starts), and slower
-car-seasons less reliable (0.47 over 675 with at least 20 starts), as in the
+car-seasons less reliable (0.48 over 675 with at least 20 starts), as in the
 1950–2019 fit ([#42](https://github.com/aleccrowell/diomedes/pull/42)).
 
 ## Download the data

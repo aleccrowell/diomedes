@@ -80,7 +80,7 @@ practice, qualifying, sprints and annulled starts don't count):
 
 Every wet or mixed row is backed by a report of that race: Wikipedia, Motor Sport (to 1984),
 grandprix.com and German Wikipedia (1985–2005). Rows where sources conflict or the call is
-borderline start their notes with "Uncertain:" (48 rows, mostly wet against mixed, or light rain
+borderline start their notes with "Uncertain:" (51 rows, mostly wet against mixed, or light rain
 that may not have wetted the track). 206 dry rows rest only on no rain being mentioned. The rest
 have a positive statement, such as an infobox reading dry or sunny, or a report saying so.
 

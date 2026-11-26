@@ -2,7 +2,7 @@
 
 [`lap_effects`](@ref) / [`fit_laps`](@ref): per-lap pace instead of whole-race
 times (#12). It uses partial races before a retirement and has far more data
-per driver–car pair. It is **in development**: the published fit has the #108 and #113 terms, and per-lap conditions are in progress in #116.
+per driver–car pair. It is **in development**: the published fit covers 2021–2026, with the #108 and #113 terms and the per-lap track conditions (#116, #124).
 
 ## Outcome and clean laps
 
@@ -177,7 +177,7 @@ chain = fit_laps(d; checkpoint = "output/laps_2011-2019_chain1", seed = 1000)
 - **Conditions go to the shortfall:** in the 2011–2026 fit the field pace moves the
   edge with a slope of only 0.17, and wet and mixed laps are read mostly as
   shortfall rather than a slower limit. The conditions terms (#116) cover 2021 on
-  only. With them, over 2021–2026, the slope is 0.13, so they don't explain it; a
+  only. With them, over 2021–2026, the slope is 0.12, so they don't explain it; a
   2021–2026 fit without them, to compare like for like, hasn't been run.
 - **Driver and car levels mix slowly with the conditions terms:** the 2021–2026 fit
   with `cond wetdrv` reached R-hat 1.08–1.09 on drivers, car-seasons and the race
@@ -187,7 +187,11 @@ chain = fit_laps(d; checkpoint = "output/laps_2011-2019_chain1", seed = 1000)
   maximum R-hat is 1.019, with the age curve now the slowest (minimum ESS 188).
   Adding `racedegc tyreage pitfix agemin=3` (#124) brings it to 1.032 (drivers,
   peak and age curve), with minimum ESS 141 on the age curve and about 257
-  leapfrog steps per draw.
+  leapfrog steps per draw. This is the published fit.
+- **The age curve isn't identified over 2021–2026:** each driver covers at most six
+  ages and the career slopes take any steady change, so the curve's shape mixes age
+  with who the drivers are. It isn't published, and a refit without it is planned
+  ([#159](https://github.com/aleccrowell/diomedes/issues/159)).
 - **Step tuning after warm-up can overshoot:** with `racedeg`, the step size tuned
   after warm-up gave deeper trees than the warm-up's own. `notune` keeps the
   warm-up's step.

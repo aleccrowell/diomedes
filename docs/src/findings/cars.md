@@ -9,7 +9,7 @@ other cars **in the same season**: the model can't compare cars across seasons
 Choose a season to see its cars with 90% intervals. Each effect is the sum of
 a chassis part, an engine part, a works-team part and a residual (see
 [Chassis and engines](@ref)); the tooltip splits it. 2026 has the 17 races run
-so far.
+when it was fitted.
 
 ```@raw html
 <div id="fig-car-season" class="diomedes-figure"></div>
