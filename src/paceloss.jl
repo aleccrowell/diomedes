@@ -713,9 +713,14 @@ struct AgeCurveBasis
 end
 AgeCurveBasis(g::GapData) = AgeCurveBasis(g.age_years, g.age_rows)
 # from the age bins (whole years) and the rows per bin; also used by the lap model (#12)
-function AgeCurveBasis(age_years::AbstractVector, age_rows::AbstractVector)
+# `order = 2` (#124): a second-order walk, the steps of the slope random rather than of the level, so the curve
+# carries its trend into ages few drivers reach instead of bending freely there; the gaps between bins scale
+# the level steps (slopes per year), and the first slope is 0 (the projection removes the linear trend anyway)
+function AgeCurveBasis(age_years::AbstractVector, age_rows::AbstractVector; order::Int = 1)
+    order in (1, 2) || throw(ArgumentError("the age walk's order is 1 or 2"))
     n = length(age_years)
-    walk = tril(ones(n, n - 1), -1)
+    walk = order == 1 ? tril(ones(n, n - 1), -1) :
+           tril(ones(n, n - 1), -1) * Diagonal(Float64.(diff(age_years))) * tril(ones(n - 1, n - 2), -1)
     X = hcat(ones(n), Float64.(age_years))
     W = Diagonal(Float64.(age_rows))
     proj = I - X * ((X' * W * X) \ (X' * W))

@@ -68,7 +68,8 @@
 # curve, pooled (combine writes <tag>_race_degradation.csv); `racedegc` the same on the tyre age
 # centred within the race (…_racedegc), so the slope doesn't move the race's level. `tyreage` (with `cond`; …_tyreage):
 # the tyre's true age, counting the laps a used set had before the stint (the conditions data's
-# tyre_age), in place of the stint age in every tyre term. `pitfix` (with `cond` and recorded pits;
+# tyre_age), in place of the stint age in every tyre term. `agerw2` (with `age`; …_agerw2): the
+# population age curve as a second-order walk, so ages few drivers reach follow the curve's trend. `pitfix` (with `cond` and recorded pits;
 # …_pitfix, #151): the pit stops reconciled with the timing data's tyre stints
 # (`reconcile_pit_stops`) before the stints are built. `warmlast=<event_id>` (e.g. 2026-17)
 # limits the warmfrom= fit's data to the races up to that one, for a warm start from a fit made
@@ -112,6 +113,8 @@ racedegc = "racedegc" ∈ ARGS      # … on the tyre age centred within the rac
 racedeg = "racedeg" ∈ ARGS || racedegc   # each race's own stint slope around the shared tyre curve, with cond (#124)
 tyreage = "tyreage" ∈ ARGS        # the true tyre age (a used set's earlier laps counted), with cond (#124)
 pitfix = "pitfix" ∈ ARGS          # pit stops reconciled with the timing data's tyre stints, with cond (#151)
+agerw2 = "agerw2" ∈ ARGS          # the age curve as a second-order walk (slope steps random), with age (#124)
+age_order = agerw2 ? 2 : 1
 wetallg = "wetallg" ∈ ARGS        # as wetall, the car-seasons' deviations centred over all of them, not within season (#116)
 wetall = "wetall" ∈ ARGS || wetallg   # as wetshr, every car-season with a wet lap: the prior alone shrinks them (#116)
 wetshr = "wetshr" ∈ ARGS || wetall   # drivers', and car-seasons' with ≥ WETSHR_MIN wet laps, spread shrunk (#116 option 2)
@@ -122,6 +125,8 @@ wetdev && !condf && error("wetdev / wetwalk need cond")
 δarg = findfirst(a -> startswith(a, "delta="), ARGS)
 δ = δarg === nothing ? 0.8 : parse(Float64, split(ARGS[δarg], "=")[2])
 tune_step = "notune" ∉ ARGS
+agemin = something(tryparse(Int, something(findfirst(a -> startswith(a, "agemin="), ARGS) |> i -> i === nothing ? "0" : split(ARGS[i], "=")[2], "0")), 0)
+# `agemin=<k>` (#124; tag _agemin<k>): the youngest and oldest age bins pooled until each has k drivers
 steparg = findfirst(a -> startswith(a, "step="), ARGS)
 step_kw = steparg === nothing ? (;) : (; fixed_step = parse(Float64, split(ARGS[steparg], "=")[2]))
 drawsarg = findfirst(a -> startswith(a, "draws="), ARGS)
@@ -132,8 +137,8 @@ n_block = blockarg === nothing ? (probe ? 25 : 100) : parse(Int, split(ARGS[bloc
 # missing from this list was read as the chain count, and warm= had to be 5th).
 FLAGS = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
          "walk", "works", "big", "keepslow", "keepwet", "rwalk", "rwrel", "rwrels", "nostartdrv", "dinc1", "notune", "probe",
-         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "racedeg", "racedegc", "tyreage", "pitfix")
-KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "warmlast", "n")
+         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "racedeg", "racedegc", "tyreage", "pitfix", "agerw2")
+KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "warmlast", "agemin", "n")
 optkey(a) = (i = findfirst('=', a); i === nothing ? nothing : a[1:prevind(a, i)])
 badkeys = [a for a in ARGS if optkey(a) !== nothing && optkey(a) ∉ KEYS]
 isempty(badkeys) || error("unknown option(s): $(join(badkeys, ", ")); known: $(join(KEYS .* "=", ", "))")
@@ -158,7 +163,7 @@ flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev
 flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1)
 ctx_sfx = (traffic ? "_traffic" : "") * (fpace ? "_fpace" : "") * (short ? "_short" : "") *   # #113, after the others
           (condf ? "_cond" : "") * (wetwalk ? "_wetwalk" : wetdrv ? "_wetdrv" : wetallg ? "_wetallg" : wetall ? "_wetall" : wetshr ? "_wetshr" : wetdev ? "_wetdev" : "") *
-          (wetrace ? "_wetrace" : "") * (racedegc ? "_racedegc" : racedeg ? "_racedeg" : "") * (tyreage ? "_tyreage" : "") * (pitfix ? "_pitfix" : "")   # #116, #124, #151
+          (wetrace ? "_wetrace" : "") * (racedegc ? "_racedegc" : racedeg ? "_racedeg" : "") * (tyreage ? "_tyreage" : "") * (pitfix ? "_pitfix" : "") * (agerw2 ? "_agerw2" : "") * (agemin > 0 ? "_agemin$(agemin)" : "")   # #116, #124, #151
 tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (rwrels ? "_rwrels" : rwrel ? "_rwrel" : "") * ctx_sfx * (keepslow ? "_keepslow" : "") * (keepwet ? "_keepwet" : "") * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
@@ -175,7 +180,8 @@ wetkeep = keepwet ? Diomedes.wet_green_laps(read_lap_conditions()) : nothing
 (pitfix && !(condf && pits === :recorded)) && error("pitfix needs cond and recorded pit stops")
 rec = pitfix ? reconcile_pit_stops(sd.pits, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons))) : nothing
 pitfix && (println("pit stops reconciled (#151): ", rec.report); flush(stdout))
-d = prepare_laps(sd.laps, res; pits, pit_stops = pitfix ? rec.stops : sd.pits, circuits = circ, stoppage = !keepslow, keep_laps = wetkeep)
+d = prepare_laps(sd.laps, res; pits, pit_stops = pitfix ? rec.stops : sd.pits, circuits = circ, stoppage = !keepslow, keep_laps = wetkeep,
+                 age_min_drivers = agemin)
 println(d); flush(stdout)
 ctx = traffic || fpace || short ? LapContext(d, sd.laps; traffic, fpace, short) : LapContext()
 cnd = condf ? LapConditions(d, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons)); wetdev,
@@ -215,7 +221,9 @@ if action == "chain"
         orec = occursin("_pitfix", wtag) ?
                reconcile_pit_stops(od.pits, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(wseasons))) : nothing
         orec === nothing || (od = (res = od.res, laps = od.laps, pits = orec.stops))
+        wam = match(r"_agemin(\d+)", wtag)
         d_old = prepare_laps(od.laps, od.res; pits = wpits, pit_stops = od.pits, circuits = circ,
+                             age_min_drivers = wam === nothing ? 0 : parse(Int, wam[1]),
                              stoppage = !occursin("_keepslow", wtag),
                              keep_laps = occursin("_keepwet", wtag) ? Diomedes.wet_green_laps(read_lap_conditions()) : nothing)
         ctx_old = traffic || fpace || short ? LapContext(d_old, od.laps; traffic, fpace, short) : LapContext()
@@ -235,14 +243,15 @@ if action == "chain"
                                                                 circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1,
                                                                 ctx = ctx_old, cond = cond_old,
                                                                 rwk = rwalk ? RaceWalk(d_old) : nothing,
-                                                                rwrel = occursin("_rwrel", wtag)))
+                                                                rwrel = occursin("_rwrel", wtag),
+                                                                age_order = occursin("_agerw2", wtag) ? 2 : 1))
         wmiss = fpace && length(Diomedes.lap_adapted(wst).Minv) == nold - 2 ? (:κ_fp,) : ()
         ws = lap_warm_start(wst, d_old, d; tyres_old = tyres, slopes_old = slopes, dev_old = dev,
                             lead_old = lead, tyre_mgmt_old = tyre_mgmt, starts_old = starts, age_old = age,
                             circuits_old = circuits, track_old = track, dinc_old = dinc, walk_old = walk, works_old = works,
                             big_old = big, rwalk_old = rwalk, sdrv_old = sdrv, dinc1_old = dinc1, ctx_old, ctx_new = ctx,
                             missing_old = wmiss, cond_old, cond_new = cnd, rwrel_old = occursin("_rwrel", wtag),
-                            rwrel_new = rwrel)
+                            rwrel_new = rwrel, age_order_old = occursin("_agerw2", wtag) ? 2 : 1, age_order_new = age_order)
         n_adapts = 300
         println("warm start from $(basename(wfile)): step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
     end
@@ -300,13 +309,13 @@ if action == "chain"
                                       dinc_new = dinc, walk_new = walk, works_new = works, big_old = old_flags[13],
                                       big_new = big, rwalk_old = old_flags[14], rwalk_new = rwalk, sdrv_old = old_flags[15],
                                       sdrv_new = sdrv, dinc1_old = old_flags[16], dinc1_new = dinc1, ctx_new = ctx,
-                                      cond_new = cnd, rwrel_new = rwrel), 300
+                                      cond_new = cnd, rwrel_new = rwrel, age_order_new = age_order), 300
         println("warm start from $last_block: step size $(round(ws.ϵ; sigdigits = 3))"); flush(stdout)
         if ws_from !== nothing
             Minv = let M = copy(ws.Minv), o = 0
                 for (name, (n, _)) in Diomedes.lap_layout(d; tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits,
                                                           track, dinc, walk, works, big, rwalk, sdrv, dinc1, ctx, cond = cnd,
-                                                          rwrel)
+                                                          rwrel, age_order)
                     name in (:η_tr, Diomedes.FPACE_PARAMS..., Diomedes.SHORT_PARAMS..., Diomedes.COND_PARAMS...,
                              Diomedes.WETDEV_PARAMS...) &&
                         (M[(o + 1):(o + n)] .= ws_from.Minv[(o + 1):(o + n)])
@@ -321,7 +330,7 @@ if action == "chain"
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k, n_samples = n_draws,
                                   block = n_block, progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, lead,
                                   tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1, ctx,
-                                  cond = cnd, rwrel, rwrels, δ, tune_step,
+                                  cond = cnd, rwrel, rwrels, age_order, δ, tune_step,
                                   step_kw...)
     # adapted metric and step size, for warm starts of later fits (see above)
     try
@@ -444,7 +453,7 @@ tmv = tyre_mgmt ? collect3((i, c) -> chain[:τ_tm][i, c] .* sum_to_zero_by(chain
 slo = slopes ? collect3((i, c) -> career_slopes(chain[:τ_slope][i, c], chain[:u_slope][i, c])) : nothing
 dvt = dev ? collect3((i, c) -> chain[:τ_dev][i, c] .* sum_to_zero_by(chain[:u_dev][i, c], d.mach_season, mc)) : nothing
 # population age curve per bin, and the circuit slopes (machine-major per covariate, as in the model)
-agebasis = age ? AgeCurveBasis(d.age_years, d.age_rows) : nothing
+agebasis = age ? AgeCurveBasis(d.age_years, d.age_rows; order = age_order) : nothing
 agev = age ? collect3((i, c) -> age_curve(chain[:τ_age][i, c], chain[:e_age][i, c], agebasis)) : nothing
 nmach, nk = length(d.machines), size(d.race_x, 2)
 cxv = circuits ? collect3((i, c) -> reduce(vcat, [chain[:τ_cx][i, c][k] .*

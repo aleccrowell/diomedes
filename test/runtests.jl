@@ -311,6 +311,14 @@ end
         f = age_curve(0.3, randn(Xoshiro(2), length(g.age_years) - 1), B)
         @test abs(sum(g.age_rows .* f)) < 1e-9
         @test abs(sum(g.age_rows .* g.age_years .* f)) < 1e-7
+        # the second-order walk (#124): random steps of the slope per year, gaps between bins included
+        let B2 = AgeCurveBasis(g.age_years, g.age_rows; order = 2), n = length(g.age_years), e = randn(Xoshiro(4), n - 2)
+            L = B2.walk * e
+            @test size(B2.walk) == (n, n - 2) && diff(diff(L) ./ diff(g.age_years)) ≈ e && L[1] == 0
+            f2 = age_curve(0.3, e, B2)
+            @test abs(sum(g.age_rows .* f2)) < 1e-9 && abs(sum(g.age_rows .* g.age_years .* f2)) < 1e-7
+            @test_throws ArgumentError AgeCurveBasis(g.age_years, g.age_rows; order = 3)
+        end
         # career rows: each driver's centred ages average zero over their rows
         cr = CareerRows(g)
         comps = vcat(g.t_comp, g.c_comp)
@@ -1719,7 +1727,8 @@ end
         ll8s = sum(Diomedes.paceloss_logpdf(d8.s_y[j] - (θ7.γ1[d8.s_race[j]] + hs8[j] - hs8bar[d8.s_race[j]]), 0.8,
                                             Diomedes.logistic(-1.0), exp(0.5)) for j in eachindex(d8.s_y))
         @test Turing.DynamicPPL.loglikelihood(model8, θ8) ≈ ll8 + ll8s
-        for flags in ((; starts = true, age = true, circuits = true), (; age = true), (; tyres = false, circuits = true),
+        for flags in ((; starts = true, age = true, circuits = true), (; age = true), (; age = true, age_order = 2),
+                      (; tyres = false, circuits = true),
                       (; slopes = true, dev = true, lead = true, tyre_mgmt = true, starts = true, age = true, circuits = true))
             m = lap_effects(d8; flags...)
             rdm, fdm = LDF(m; adtype = Diomedes.gap_sampler().adtype), LDF(m; adtype = AutoForwardDiff())

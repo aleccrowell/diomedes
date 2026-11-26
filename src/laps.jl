@@ -182,6 +182,27 @@ function Base.show(io::IO, d::LapData)
 end
 
 """
+    age_bounds(lapbin, comp, k) -> (lo, hi)
+
+The age bins to pool the tails into (#124): `lo` the youngest age with at least `k` distinct drivers
+(`comp`) at it or younger, `hi` the oldest with at least `k` at it or older, over the laps' whole-year
+ages `lapbin` (negative: unknown). Ages below `lo` are pooled into `lo`, above `hi` into `hi`. With
+`k = 0` (or too few drivers) every age keeps its own bin.
+"""
+function age_bounds(lapbin::AbstractVector{<:Integer}, comp::AbstractVector{<:Integer}, k::Int)
+    ages = sort(unique(filter(>=(0), lapbin)))
+    isempty(ages) && return (0, typemax(Int))
+    lo, hi = first(ages), last(ages)
+    k <= 0 && return (lo, hi)
+    drivers(f) = length(unique(comp[[j for j in eachindex(lapbin) if lapbin[j] >= 0 && f(lapbin[j])]]))
+    length(unique(comp[lapbin .>= 0])) < k && return (lo, hi)
+    lo = first(a for a in ages if drivers(y -> y <= a) >= k)
+    hi = last(a for a in ages if drivers(y -> y >= a) >= k)
+    lo >= hi && return (first(ages), last(ages))
+    return (lo, hi)
+end
+
+"""
     prepare_laps(laps, results; pits = :recorded, pit_stops = nothing, machine_key, circuits = nothing) -> LapData
 
 Clean laps (see the file header) from `laps` (`LAP_SCHEMA`) with each car's
@@ -200,7 +221,7 @@ Every race must be in the table.
 """
 function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits::Symbol = :recorded,
                       pit_stops = nothing, machine_key = r -> string(r.machine_id, "_", r.season),
-                      circuits = nothing, stoppage::Bool = true, keep_laps = nothing)
+                      circuits = nothing, stoppage::Bool = true, keep_laps = nothing, age_min_drivers::Int = 0)
     pits in (:recorded, :inferred) || throw(ArgumentError("pits must be :recorded or :inferred"))
     pits === :recorded && pit_stops === nothing && throw(ArgumentError("pits = :recorded needs pit_stops"))
     mkey = Dict((r.event_id, r.competitor_id) => machine_key(r) for r in eachrow(results))
@@ -334,13 +355,17 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
     # age bins (population age curve, #12): the driver's season age in whole years
     sage_ks = Dict(k => ssum[k] / sn[k] for k in keys(ssum))           # (driver, season) => season age
     lapbin = [isnan(a) ? -1 : floor(Int, a) for a in sage]
+    # the youngest and oldest bins pooled until each has `age_min_drivers` drivers (#124): an age only one or two
+    # drivers reach is that driver's effect, not the population's (full124e: ages 40–45, mostly Alonso alone)
+    alo, ahi = age_bounds(lapbin, comp, age_min_drivers)
+    lapbin = [y < 0 ? -1 : clamp(y, alo, ahi) for y in lapbin]
     age_years = sort(unique(filter(>=(0), lapbin)))
     abi = Dict(y => i for (i, y) in enumerate(age_years))
     abin = [y < 0 ? 0 : abi[y] for y in lapbin]
     age_rows = [Float64(count(==(i), abin)) for i in eachindex(age_years)]
     s_abin = [begin
                   a = get(sage_ks, (ci[c], seasons[race_season[ri[e]]]), NaN)
-                  isnan(a) ? 0 : get(abi, floor(Int, a), 0)
+                  isnan(a) ? 0 : get(abi, clamp(floor(Int, a), alo, ahi), 0)
               end for (c, e) in zip(start.competitor_id, start.event_id)]
     # circuit covariates (#14), one row per race
     if circuits === nothing
@@ -840,7 +865,8 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
   pace + loss noise (σ1, a_π1, a_λ1). Pit-lane starts are left out.
 - Population age curve (`age = true`, #12; `AgeCurveBasis` as in the race
   model): a shared curve over the drivers' season ages in one-year bins,
-  fage = proj·walk·(τ_age·e_age), e_age ~ N(0, 1), τ_age ~ half-N(0, 0.2) in %
+  fage = proj·walk·(τ_age·e_age), e_age ~ N(0, 1), τ_age ~ half-N(0, 0.2) in %; with `age_order = 2` the
+  walk is second-order (random steps of the slope, per year), so ages few drivers reach follow the trend
   per year of age. Only its shape is identified: the constant goes into the
   driver effects and the linear part into the race intercepts and career slopes
   (age–period–cohort), so it is projected onto curves with neither. With it, the
@@ -961,7 +987,7 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     end
     if age
         τ_age ~ truncated(Normal(0, 0.2); lower = 0)
-        e_age ~ StdNormalVec(length(d.age_years) - 1)
+        e_age ~ StdNormalVec(size(age_basis.walk, 2))   # n - 1 steps, or n - 2 with the second-order walk (`agerw2`)
         fage = age_curve(τ_age, e_age, age_basis)
     else
         fage = zeros(length(d.age_years))
@@ -1206,7 +1232,7 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
                      track::Bool = false, dinc::Bool = false, walk::Bool = false, works::Bool = false,
                      big::Bool = false, rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
                      cars = walk || rwalk ? car_table() : nothing, ctx = LapContext(), cond = LapConditions(),
-                     rwrel::Bool = false, rwrels::Bool = false)
+                     rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1)
     rwrel && !rwalk && throw(ArgumentError("rwrel reparametrises the race walk: it needs rwalk"))
     rwrels && !(rwrel && slopes) && throw(ArgumentError("rwrels adds the career slopes to rwrel: it needs rwrel and slopes"))
     (ctx.traffic || ctx.fpace) && size(ctx.tbin, 1) != length(d.y) &&
@@ -1221,7 +1247,7 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
     dinc1 && !(dinc && starts) && throw(ArgumentError("dinc1 needs dinc and starts"))
     pool = cond.on && cond.wetdev && cond.wetpool
     pool && cars === nothing && (cars = car_table())
-    basis = age ? AgeCurveBasis(d.age_years, d.age_rows) : nothing
+    basis = age ? AgeCurveBasis(d.age_years, d.age_rows; order = age_order) : nothing
     return lap_effects(d, lap_mach_counts(d), basis, tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc,
                        walk ? CarWalks(d, cars) : nothing, works, big,
                        rwalk ? (rwk = RaceWalk(d, cars); (; rwk, cw = CarWalks(d, cars), W = rwrel ? walk_driver_shares(d, rwk) : nothing,
@@ -1252,12 +1278,12 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                   age::Bool = false, circuits::Bool = false, track::Bool = false, dinc::Bool = false,
                   walk::Bool = false, works::Bool = false, big::Bool = false, rwalk::Bool = false, sdrv::Bool = true,
                   dinc1::Bool = false, cars = walk || rwalk ? car_table() : nothing, ctx = LapContext(),
-                  cond = LapConditions(), rwrel::Bool = false, rwrels::Bool = false, δ::Real = 0.8, kwargs...)
+                  cond = LapConditions(), rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1, δ::Real = 0.8, kwargs...)
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     warm_start === nothing || checkpoint !== nothing ||
         throw(ArgumentError("warm_start is implemented for checkpointed fits"))
     model = lap_effects(d; tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk,
-                        sdrv, dinc1, cars, ctx, cond, rwrel, rwrels)
+                        sdrv, dinc1, cars, ctx, cond, rwrel, rwrels, age_order)
     cw = model.args.cw
     rwm = model.args.rw
     wcw = model.args.wcw
@@ -1299,7 +1325,7 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                                         u_sc = 0.1 .* randn(rng, length(d.machines)), g1 = 0.1 .* randn(rng, 2),
                                         σ1 = (isempty(d.s_y) ? 1.0 : 1.4826 * median(abs.(d.s_y .- median(d.s_y)))) * (0.9 + 0.2 * rand(rng)),
                                         a_π1 = -1.5 + 0.1 * randn(rng), a_λ1 = 0.1 * randn(rng)) : (;),
-                            age ? (; τ_age = 0.02 + 0.02 * rand(rng), e_age = 0.1 .* randn(rng, length(d.age_years) - 1)) : (;),
+                            age ? (; τ_age = 0.02 + 0.02 * rand(rng), e_age = 0.1 .* randn(rng, length(d.age_years) - age_order)) : (;),
                             circuits ? (; τ_cx = 0.05 .+ 0.05 .* rand(rng, size(d.race_x, 2)),
                                           u_cx = 0.1 .* randn(rng, length(d.machines) * size(d.race_x, 2))) : (;),
                             track ? (; β_track_π = 0.1 .* randn(rng, size(d.race_track, 2)),
@@ -1379,7 +1405,7 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
            rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
            cw = walk || rwalk ? CarWalks(d) : nothing, rwk = rwalk ? RaceWalk(d) : nothing, ctx = LapContext(),
            cond = LapConditions(), wcw = cond.on && cond.wetdev && cond.wetpool ? CarWalks(d) : nothing, rwrel::Bool = false,
-           rwrels::Bool = false) =
+           rwrels::Bool = false, age_order::Int = 1) =
     filter(p -> (tyres || first(p) !== :β) && (slopes || first(p) ∉ (:τ_slope, :u_slope)) &&
                 (dev || first(p) ∉ (:τ_dev, :u_dev)) && (lead || first(p) !== :η) &&
                 (tyre_mgmt || first(p) ∉ (:τ_td, :u_td, :τ_tm, :u_tm)) &&
@@ -1415,7 +1441,7 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :g1 => (2, nothing), :σ1 => (1, nothing), :a_π1 => (1, nothing), :a_λ1 => (1, nothing),
                           # age-curve steps are labelled by the bin they lead to, circuit slopes by
                           # covariate and car-season, so warm starts map them across fits
-                          :τ_age => (1, nothing), :e_age => (max(length(d.age_years) - 1, 0), string.(d.age_years[2:end])),
+                          :τ_age => (1, nothing), :e_age => (max(length(d.age_years) - age_order, 0), string.(d.age_years[(age_order + 1):end])),
                           :τ_cx => (size(d.race_x, 2), string.(d.race_x_names)),
                           :u_cx => (length(d.machines) * size(d.race_x, 2),
                                     [string(k, "|", m) for k in d.race_x_names for m in d.machines]),
@@ -1508,18 +1534,19 @@ function lap_warm_start(state, d_old::LapData, d_new::LapData; tyres_old::Bool =
                         big_new::Bool = big_old, rwalk_old::Bool = false, rwalk_new::Bool = rwalk_old,
                         sdrv_old::Bool = true, sdrv_new::Bool = sdrv_old, dinc1_old::Bool = false,
                         dinc1_new::Bool = dinc1_old, ctx_old = LapContext(), ctx_new = ctx_old, missing_old = (),
-                        cond_old = LapConditions(), cond_new = cond_old, rwrel_old::Bool = false, rwrel_new::Bool = rwrel_old)
+                        cond_old = LapConditions(), cond_new = cond_old, rwrel_old::Bool = false, rwrel_new::Bool = rwrel_old,
+                        age_order_old::Int = 1, age_order_new::Int = age_order_old)
     ad = lap_adapted(state)
     Mo = ad.Minv
     lo = lap_layout(d_old; tyres = tyres_old, slopes = slopes_old, dev = dev_old, lead = lead_old, tyre_mgmt = tyre_mgmt_old,
                     starts = starts_old, age = age_old, circuits = circuits_old, track = track_old, dinc = dinc_old,
                     walk = walk_old, works = works_old, big = big_old, rwalk = rwalk_old, sdrv = sdrv_old, dinc1 = dinc1_old,
-                    ctx = ctx_old, cond = cond_old, rwrel = rwrel_old)
+                    ctx = ctx_old, cond = cond_old, rwrel = rwrel_old, age_order = age_order_old)
     lo = filter(p -> first(p) ∉ missing_old, lo)
     ln = lap_layout(d_new; tyres = tyres_new, slopes = slopes_new, dev = dev_new, lead = lead_new, tyre_mgmt = tyre_mgmt_new,
                     starts = starts_new, age = age_new, circuits = circuits_new, track = track_new, dinc = dinc_new,
                     walk = walk_new, works = works_new, big = big_new, rwalk = rwalk_new, sdrv = sdrv_new, dinc1 = dinc1_new,
-                    ctx = ctx_new, cond = cond_new, rwrel = rwrel_new)
+                    ctx = ctx_new, cond = cond_new, rwrel = rwrel_new, age_order = age_order_new)
     sum(first(last(p)) for p in lo) == length(Mo) || throw(DimensionMismatch("state does not match d_old"))
     scale = length(d_old.y) / length(d_new.y)
     old = Dict{Symbol,Tuple{UnitRange{Int},Any}}()
