@@ -1441,7 +1441,8 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :g1 => (2, nothing), :σ1 => (1, nothing), :a_π1 => (1, nothing), :a_λ1 => (1, nothing),
                           # age-curve steps are labelled by the bin they lead to, circuit slopes by
                           # covariate and car-season, so warm starts map them across fits
-                          :τ_age => (1, nothing), :e_age => (max(length(d.age_years) - age_order, 0), string.(d.age_years[(age_order + 1):end])),
+                          :τ_age => (1, nothing), :e_age => (max(length(d.age_years) - age_order, 0),
+                                      age_order == 1 ? string.(d.age_years[2:end]) : ["mode $k" for k in 1:max(length(d.age_years) - 2, 0)]),
                           :τ_cx => (size(d.race_x, 2), string.(d.race_x_names)),
                           :u_cx => (length(d.machines) * size(d.race_x, 2),
                                     [string(k, "|", m) for k in d.race_x_names for m in d.machines]),

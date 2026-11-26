@@ -313,8 +313,13 @@ end
         @test abs(sum(g.age_rows .* g.age_years .* f)) < 1e-7
         # the second-order walk (#124): random steps of the slope per year, gaps between bins included
         let B2 = AgeCurveBasis(g.age_years, g.age_rows; order = 2), n = length(g.age_years), e = randn(Xoshiro(4), n - 2)
-            L = B2.walk * e
-            @test size(B2.walk) == (n, n - 2) && diff(diff(L) ./ diff(g.age_years)) ≈ e && L[1] == 0
+            W2 = Diomedes.age_walk(g.age_years, 2)
+            L = W2 * e
+            @test size(W2) == (n, n - 2) && diff(diff(L) ./ diff(g.age_years)) ≈ e && L[1] == 0
+            # the basis is the projected walk rotated to its singular vectors: the same prior on the curve
+            M = B2.proj * W2
+            @test size(B2.walk) == (n, n - 2) && B2.walk * B2.walk' ≈ M * M' && B2.proj * B2.walk ≈ B2.walk
+            @test abs(sum(B2.walk[:, 1] .* B2.walk[:, 2])) < 1e-8 * sqrt(sum(abs2, B2.walk[:, 1]) * sum(abs2, B2.walk[:, 2]))
             f2 = age_curve(0.3, e, B2)
             @test abs(sum(g.age_rows .* f2)) < 1e-9 && abs(sum(g.age_rows .* g.age_years .* f2)) < 1e-7
             @test_throws ArgumentError AgeCurveBasis(g.age_years, g.age_rows; order = 3)
