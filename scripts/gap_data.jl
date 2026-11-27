@@ -32,9 +32,29 @@ end
 The saved chains of `gap_fit.jl <mode> <model>` (output/gap_<mode>_<model>_chain<k>.jls).
 """
 function gap_chains(mode, model)
-    files = filter(isfile, ["output/gap_$(mode)_$(model)_chain$(k).jls" for k in 1:8])
-    isempty(files) && error("no saved chains for gap_$(mode)_$(model)")
-    return reduce(hcat, rehash_chain!.(deserialize.(files)))
+    return reduce(hcat, gap_chain_list(mode, model))
+end
+
+"""
+    gap_chain_list(mode, model) -> Vector
+
+Each chain of `gap_fit.jl <mode> <model>` on its own: a whole-chain file
+(output/gap_<mode>_<model>_chain<k>.jls) or, for fits run in blocks (`block=`, #137),
+its saved blocks concatenated, trimmed to the shortest chain so they can be joined.
+"""
+function gap_chain_list(mode, model)
+    fit = "gap_$(mode)_$(model)"
+    files = filter(isfile, ["output/$(fit)_chain$(k).jls" for k in 1:8])
+    isempty(files) || return rehash_chain!.(deserialize.(files))
+    chs = []
+    for k in 1:8
+        bs = sort(filter(f -> occursin(Regex("^\\Q$(fit)_chain$(k)_block\\E\\d+\\.jls\$"), f), readdir("output")),
+                  by = f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]))
+        isempty(bs) || push!(chs, reduce(vcat, [Diomedes.block_chain(joinpath("output", f)) for f in bs]))
+    end
+    isempty(chs) && error("no saved chains or blocks for $fit")
+    n = minimum(size(c[:σ], 1) for c in chs)
+    return [c[iter = 1:n] for c in chs]
 end
 
 function gap_data(mode; io = stdout)

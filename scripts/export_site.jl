@@ -208,9 +208,7 @@ function export_race(model, source)
         error("export_site expects a pace + loss model with random-walk eras and a pace scale (pl…_rw_kappa…)")
     res, g = gap_data(source)
     fit = "gap_$(source)_$(model)"
-    files = filter(isfile, ["output/$(fit)_chain$(k).jls" for k in 1:8])
-    isempty(files) && error("no saved chains for $fit")
-    chs = rehash_chain!.(deserialize.(files))
+    chs = gap_chain_list(source, model)          # whole-chain files, or saved blocks (#137)
     outdir = joinpath(OUT, "race")
     mkpath(outdir)
     # chains grouped by where the loss mixture settled; the tables below use the
