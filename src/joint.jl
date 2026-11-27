@@ -47,24 +47,86 @@ end
 Base.show(io::IO, jd::JointDrivers) = print(io, "JointDrivers($(length(jd.ids)) drivers: $(length(jd.race_idx)) race, ",
                                               "$(length(jd.lap_idx)) lap, $(length(jd.both)) in both)")
 
-# the submodels with their drivers given: rebuilt from the stored arguments (a DynamicPPL
+"""
+    joint_ages(rm, lm, jd::JointDrivers) -> (rm, lm, lapage)
+
+The two submodels with their drivers' ages centred on one reference age per driver, for the
+shared career slopes (#128).
+- **Reference:** each driver's mean age, weighted by races, over their race results and their
+  lap seasons.
+- **Why:** each model alone centres on its own data (the race model on the driver's race
+  results, the lap model on their laps), and a shared slope with two centres would give the
+  level two meanings.
+- **`lapage`:** each lap age bin as an index into the race model's age bins, so the lap part
+  uses the race part's age curve.
+
+Both models must have the age curve and career slopes on.
+"""
+function joint_ages(rm, lm, jd::JointDrivers)
+    g, d = rm.args.g, lm.args.d
+    cr = rm.args.career_rows
+    (cr !== nothing && cr.slopes && rm.args.age_basis !== nothing) ||
+        throw(ArgumentError("the joint model's race part needs the age curve and career slopes (age, slopes)"))
+    (lm.args.slopes && lm.args.age) || throw(ArgumentError("the joint model's lap part needs the age curve and career slopes (age, slopes)"))
+    rows = cr.rows
+    n = length(jd.ids)
+    s, w = zeros(n), zeros(n)
+    yrs = [Float64(g.age_years[b]) for b in rows.bin]
+    for k in eachindex(rows.comp)            # race results: one per race
+        rows.known[k] > 0 || continue
+        i = jd.race_idx[rows.comp[k]]
+        s[i] += yrs[k]; w[i] += 1
+    end
+    nraces = zeros(length(d.competitors))    # lap seasons: weighted by the driver's races with laps
+    for (c, r) in unique(zip(d.comp, d.race)); nraces[c] += 1; end
+    for c in eachindex(d.competitors)
+        isnan(d.comp_age[c]) && continue
+        i = jd.lap_idx[c]
+        s[i] += nraces[c] * d.comp_age[c]; w[i] += nraces[c]
+    end
+    ref = s ./ max.(w, 1)
+    agec_r = [rows.known[k] * (yrs[k] - ref[jd.race_idx[rows.comp[k]]]) / 10 for k in eachindex(rows.comp)]
+    rm2 = paceloss_effects(values(merge(rm.args, (; career_rows = (; rows = CareerRows(rows.bin, rows.known, rows.comp, agec_r),
+                                                                    slopes = cr.slopes))))...)
+    # the lap model's agec is (season age - its own centre) / 10: moved to the shared centre where the age is known
+    agec_l = [d.abin[j] > 0 ? d.agec[j] + (d.comp_age[d.comp[j]] - ref[jd.lap_idx[d.comp[j]]]) / 10 : 0.0 for j in eachindex(d.y)]
+    lm2 = lap_effects(values(merge(lm.args, (; d = @set(d.agec = agec_l))))...)
+    pos = Dict(y => k for (k, y) in enumerate(g.age_years))
+    miss = filter(y -> !haskey(pos, y), d.age_years)
+    isempty(miss) || throw(ArgumentError("lap ages outside the race data's age bins: $(join(miss, ", "))"))
+    return rm2, lm2, [pos[y] for y in d.age_years]
+end
+
+# the submodels with their driver terms given: rebuilt from the stored arguments (a DynamicPPL
 # Model can't be updated in place)
-race_with_drivers(rm, a) = paceloss_effects(values(merge(rm.args, (; ext = merge(rm.args.ext, (; drivers = a)))))...)
-lap_with_drivers(lm, a) = lap_effects(values(merge(lm.args, (; drv = a)))...)
+race_given(rm, a, fage, sl) = paceloss_effects(values(merge(rm.args, (; ext = merge(rm.args.ext, (; drivers = a, fage, slopes = sl)))))...)
+lap_given(lm, a, sl, fage) = lap_effects(values(merge(lm.args, (; drv = a, sl_ext = sl, fage_ext = fage)))...)
 
 """
     joint_effects(rm, lm, jd::JointDrivers)
 
 The joint model (see the file header). `rm` is a race model from `paceloss_effects(g; …)` and
 `lm` a lap model from `lap_effects(d; …)`, each built as for its own fit, on seasons that
-don't overlap; their own driver terms are replaced by the shared ones.
+don't overlap, both with the age curve and career slopes on.
 
-Priors: σ_a ~ half-N(0, 2s), with s the race data's gap scale (as the race model's σ_comp);
-τ_r, τ_l ~ half-N(0, 0.5).
+Shared:
+- **The driver's level**, with deviations for drivers in both. Priors: σ_a ~ half-N(0, 2s),
+  with s the race data's gap scale (as the race model's σ_comp); τ_r, τ_l ~ half-N(0, 0.5).
+- **The career slope**, one per driver, on a common age centre (`joint_ages`); prior as the race
+  model's.
+- **The age curve**, on the race data's age bins; prior as the race model's.
+
+Their own versions of these terms are replaced by the shared ones.
 """
-@model function joint_effects(rm, lm, jd::JointDrivers)
+function joint_effects(rm, lm, jd::JointDrivers)
+    rm2, lm2, lapage = joint_ages(rm, lm, jd)
+    return joint_model(rm2, lm2, jd, lapage)
+end
+
+@model function joint_model(rm, lm, jd::JointDrivers, lapage::Vector{Int})
     nb = length(jd.both)
-    σ_a ~ truncated(Normal(0, 2rm.args.ps.s); lower = 0)
+    ps = rm.args.ps
+    σ_a ~ truncated(Normal(0, 2ps.s); lower = 0)
     # centred, as the lap model's drivers (#28): non-centred, a = σ·z ties σ to every well-measured z
     # (a funnel), and the joint smoke runs diverged on every iteration (#128). σ_a is pinned by every
     # driver, so the few-result drivers don't funnel it the other way.
@@ -73,11 +135,18 @@ Priors: σ_a ~ half-N(0, 2s), with s the race data's gap scale (as the race mode
     δ_r ~ IsoNormalVec(0.0, τ_r, nb)
     τ_l ~ truncated(Normal(0, 0.5); lower = 0)
     δ_l ~ IsoNormalVec(0.0, τ_l, nb)
+    # shared age curve (the race data's bins) and career slopes (one per driver, centred across them)
+    τ_age ~ truncated(Normal(0, 0.2ps.s); lower = 0)
+    e_age ~ StdNormalVec(length(rm.args.g.age_years) - 1)
+    fage = age_curve(τ_age, e_age, rm.args.age_basis)
+    τ_slope ~ truncated(Normal(0, 0.5ps.s); lower = 0)
+    u_slope ~ StdNormalVec(length(jd.ids))
+    sl = career_slopes(τ_slope, u_slope)
     a_race = jd.Sr * a .+ jd.Pr * δ_r
     a_lap = jd.Sl * a .+ jd.Pl * δ_l
-    race ~ to_submodel(race_with_drivers(rm, a_race))
-    lap ~ to_submodel(lap_with_drivers(lm, a_lap))
-    return (; a, a_race, a_lap)
+    race ~ to_submodel(race_given(rm, a_race, fage, jd.Sr * sl))
+    lap ~ to_submodel(lap_given(lm, a_lap, jd.Sl * sl, fage[lapage]))
+    return (; a, a_race, a_lap, fage, sl)
 end
 
 # a chain's draw `i` as a NamedTuple of its parameters (vectors as vectors)
@@ -96,6 +165,7 @@ model's parameters: a fit's draw via `draw_params`, or `paceloss_init_values`).
 - **Lap-only drivers:** their lap effect.
 - **Drivers in both:** the lap deviation makes a + δ_lap the lap draw's own effect, with τ_l
   its spread.
+- **Age curve and career slopes:** from the race draw, with lap-only drivers' slopes at 0.
 """
 joint_init(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers) =
     InitFromParams(joint_init_values(race_draw, lap_draw, jd))
@@ -110,9 +180,14 @@ function joint_init_values(race_draw::NamedTuple, lap_draw::NamedTuple, jd::Join
     lap_of = Dict(i => r for (r, i) in enumerate(jd.lap_idx))
     dl = [al[lap_of[i]] - a[i] for i in jd.both]
     τ_l = isempty(dl) || length(dl) < 2 ? 0.1 : max(std(dl), 0.02)
-    race = NamedTuple(k => v for (k, v) in pairs(race_draw) if k ∉ (:σ_comp, :z_comp, :a_comp))
-    lap = NamedTuple(k => v for (k, v) in pairs(lap_draw) if k ∉ (:σ_comp, :a_comp))
-    return (; σ_a, a, τ_r = 0.1, δ_r = zeros(length(jd.both)), τ_l, δ_l = dl, race, lap)
+    shared = (:σ_comp, :z_comp, :a_comp, :τ_slope, :u_slope, :τ_age, :e_age)
+    race = NamedTuple(k => v for (k, v) in pairs(race_draw) if k ∉ shared)
+    lap = NamedTuple(k => v for (k, v) in pairs(lap_draw) if k ∉ shared)
+    # the age curve from the race draw; each driver's slope from the race draw, 0 for lap-only drivers
+    u = zeros(length(jd.ids))
+    u[jd.race_idx] .= race_draw.u_slope .- mean(race_draw.u_slope)
+    return (; σ_a, a, τ_r = 0.1, δ_r = zeros(length(jd.both)), τ_l, δ_l = dl, τ_age = race_draw.τ_age,
+            e_age = race_draw.e_age, τ_slope = race_draw.τ_slope, u_slope = u, race, lap)
 end
 
 # name => range of each variable in a model's sampler (linked) vector

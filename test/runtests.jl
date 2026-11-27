@@ -1433,16 +1433,21 @@ end
         res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
         res2 = copy(res); res2.season .= 2020; res2.event_id .= replace.(res2.event_id, "2019" => "2020")
         g = prepare_gaps(vcat(res, res2))
-        # laps (a later season, as in the joint fit) for three of the race's drivers and a rookie, in two cars
+        # laps (a later season, as in the joint fit) for three of the race's drivers and a rookie, in two cars,
+        # with ages inside the race data's bins
         drv = [g.competitors[1:3]; "rookie"]
+        birth = Dict(r.competitor_id => r.competitor_birth for r in eachrow(res))
+        bd = [get(birth, c, Date(2000, 1, 1)) for c in drv]
         rows = DataFrame(series = "f1", season = 2021, event_id = repeat(["2021-01", "2021-02"]; inner = 4),
-                         competitor_id = repeat(drv, 2), machine_id = repeat(["m1", "m1", "m2", "m2"], 2))
+                         competitor_id = repeat(drv, 2), machine_id = repeat(["m1", "m1", "m2", "m2"], 2),
+                         competitor_birth = repeat(bd, 2), event_date = repeat([Date(2019, 3, 17), Date(2019, 3, 31)]; inner = 4))
         lt = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
                        time_ms = Float64[], position = Union{Missing,Int}[])
         for e in ("2021-01", "2021-02"), (k, c) in enumerate(drv), l in 1:12
             push!(lt, ("f1", 2021, e, c, l, 90_000.0 * (1 + 0.002k + 0.001randn(rng)) * (l == 1 ? 1.1 : 1.0), missing))
         end
         d = prepare_laps(lt, rows; pits = :inferred)
+        @test all(!isnan, d.comp_age) && length(d.age_years) >= 3
         jd = JointDrivers(g, d)
         nr, nl = length(g.competitors), length(d.competitors)
         @test jd.ids == [g.competitors; "rookie"] && length(jd.both) == 3
@@ -1450,36 +1455,69 @@ end
         @test jd.Sr * collect(1.0:length(jd.ids)) == jd.race_idx && jd.Sl * collect(1.0:length(jd.ids)) == jd.lap_idx
         @test size(jd.Pr) == (nr, 3) && size(jd.Pl) == (nl, 3) && sum(jd.Pr) == 3 && sum(jd.Pl) == 3
 
-        rm = Diomedes.paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true)
-        lm = lap_effects(d)
+        rm = Diomedes.paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, age = true, slopes = true)
+        lm = lap_effects(d; slopes = true, age = true)
+        @test_throws ArgumentError joint_effects(Diomedes.paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true), lm, jd)
+        @test_throws ArgumentError joint_effects(rm, lap_effects(d), jd)
+        # the common age centre: a race-only driver keeps the race model's own; the rookie the lap model's;
+        # a driver in both has race results and lap seasons balanced around one reference
+        rm2, lm2, lapage = Diomedes.joint_ages(rm, lm, jd)
+        cr0, cr2 = rm.args.career_rows.rows, rm2.args.career_rows.rows
+        ro = findfirst(c -> c ∉ drv, g.competitors)
+        @test cr2.agec[cr2.comp .== ro] ≈ cr0.agec[cr0.comp .== ro]
+        rk = findfirst(==("rookie"), d.competitors)
+        @test lm2.args.d.agec[d.comp .== rk] ≈ d.agec[d.comp .== rk]
+        b = 1                                                        # g.competitors[1], in both
+        bl = findfirst(==(g.competitors[b]), d.competitors)
+        nlr = length(unique(d.race[d.comp .== bl]))
+        @test sum(cr2.agec[cr2.comp .== b]) + nlr * mean(lm2.args.d.agec[d.comp .== bl]) ≈ 0 atol = 1e-9
+        @test g.age_years[lapage] == d.age_years
+
         jm = joint_effects(rm, lm, jd)
         vns = string.(collect(keys(Turing.DynamicPPL.VarInfo(jm))))
-        @test "σ_a" in vns && "τ_l" in vns && "race.σ" in vns && "lap.σ" in vns && !("λ" in vns)
-        @test !("race.σ_comp" in vns) && !("race.z_comp" in vns) && !("lap.σ_comp" in vns) && !("lap.a_comp" in vns)
-        # the joint log density = the shared priors + each submodel's with its drivers given
+        @test all(in(vns), ["σ_a", "a", "τ_l", "τ_age", "e_age", "τ_slope", "u_slope", "race.σ", "lap.σ"])
+        @test !any(in(vns), ["race.σ_comp", "race.z_comp", "race.τ_slope", "race.u_slope", "race.τ_age", "race.e_age",
+                             "lap.σ_comp", "lap.a_comp", "lap.τ_slope", "lap.u_slope", "lap.τ_age", "lap.e_age"])
+        # the joint log density = the shared priors + each submodel's with its driver terms given
         θr = (; σ_mach = 0.4, σ = 0.3, γ = 0.1 .* randn(rng, length(g.races)), μ_γ = 0.0, a_π = -1.5, a_λ = 0.5,
               β_dur_π = 0.05, β_dur_λ = -0.05, τ_π_rw = 0.1, τ_λ_rw = 0.1, e_π_rw = [0.2], e_λ_rw = [-0.1], τ_κ = 0.1,
               e_κ = [0.1], b_mach = 0.1 .* randn(rng, length(g.machines)))
         nrl = length(d.races)
         θl = (; σ_mach = 0.3, σ = 0.5, b_mach = 0.1 .* randn(rng, length(d.machines)), μ_γ = 0.1,
               γ = 0.2 .* randn(rng, nrl), μ_δ = -1.0, τ_δ = 0.3, δ = randn(rng, nrl), β = [0.02, 0.01], a_π = -1.2, a_λ = 0.3)
+        na = length(g.age_years)
         θj = (; σ_a = 0.6, a = 0.5 .* randn(rng, length(jd.ids)), τ_r = 0.2, δ_r = 0.2 .* randn(rng, 3), τ_l = 0.1,
-              δ_l = 0.1 .* randn(rng, 3))
+              δ_l = 0.1 .* randn(rng, 3), τ_age = 0.1, e_age = randn(rng, na - 1), τ_slope = 0.3, u_slope = randn(rng, length(jd.ids)))
         a = θj.a
         ar = a[jd.race_idx] .+ jd.Pr * θj.δ_r
         al = a[jd.lap_idx] .+ jd.Pl * θj.δ_l
         @test al[end] == a[end]          # the rookie: lap effect = shared ability
-        lp_shared = logpdf(Turing.truncated(Normal(0, 2rm.args.ps.s); lower = 0), θj.σ_a) + sum(logpdf.(Normal(0, θj.σ_a), θj.a)) +
-                    logpdf(Turing.truncated(Normal(0, 0.5); lower = 0), θj.τ_r) + sum(logpdf.(Normal(0, θj.τ_r), θj.δ_r)) +
-                    logpdf(Turing.truncated(Normal(0, 0.5); lower = 0), θj.τ_l) + sum(logpdf.(Normal(0, θj.τ_l), θj.δ_l))
-        want = lp_shared + logjoint(Diomedes.race_with_drivers(rm, ar), θr) + logjoint(Diomedes.lap_with_drivers(lm, al), θl)
+        fage = Diomedes.age_curve(θj.τ_age, θj.e_age, rm.args.age_basis)
+        sl = Diomedes.career_slopes(θj.τ_slope, θj.u_slope)
+        H(s) = Turing.truncated(Normal(0, s); lower = 0)
+        s0 = rm.args.ps.s
+        lp_shared = logpdf(H(2s0), θj.σ_a) + sum(logpdf.(Normal(0, θj.σ_a), θj.a)) +
+                    logpdf(H(0.5), θj.τ_r) + sum(logpdf.(Normal(0, θj.τ_r), θj.δ_r)) +
+                    logpdf(H(0.5), θj.τ_l) + sum(logpdf.(Normal(0, θj.τ_l), θj.δ_l)) +
+                    logpdf(H(0.2s0), θj.τ_age) + sum(logpdf.(Normal(), θj.e_age)) +
+                    logpdf(H(0.5s0), θj.τ_slope) + sum(logpdf.(Normal(), θj.u_slope))
+        want = lp_shared + logjoint(Diomedes.race_given(rm2, ar, fage, jd.Sr * sl), θr) +
+               logjoint(Diomedes.lap_given(lm2, al, jd.Sl * sl, fage[lapage]), θl)
         @test logjoint(jm, (; θj..., race = θr, lap = θl)) ≈ want
-        # given drivers: the race model takes them as σ_comp·(z - z̄) with σ_comp = 1, the lap model as a_comp
-        rfree = merge(θr, (; σ_comp = 1.0, z_comp = ar))
-        @test Turing.DynamicPPL.loglikelihood(Diomedes.race_with_drivers(rm, ar), θr) ≈ Turing.DynamicPPL.loglikelihood(rm, rfree)
-        lfree = merge(θl, (; σ_comp = 1.0, a_comp = al))
-        @test Turing.DynamicPPL.loglikelihood(Diomedes.lap_with_drivers(lm, al), θl) ≈ Turing.DynamicPPL.loglikelihood(lm, lfree)
-        @test_throws DimensionMismatch logjoint(Diomedes.lap_with_drivers(lm, al[1:2]), θl)
+        # given terms: each model as if it had sampled them (σ_comp = 1 and z = the drivers; a slope vector
+        # with mean 0 as τ·(u - ū) with τ = 1; the age curve from the same steps on the model's own basis)
+        slr = randn(rng, nr); slr .-= mean(slr)
+        fr = Diomedes.age_curve(0.1, θj.e_age, rm.args.age_basis)
+        @test Turing.DynamicPPL.loglikelihood(Diomedes.race_given(rm, ar, fr, slr), θr) ≈
+              Turing.DynamicPPL.loglikelihood(rm, merge(θr, (; σ_comp = 1.0, z_comp = ar, τ_age = 0.1, e_age = θj.e_age,
+                                                               τ_slope = 1.0, u_slope = slr)))
+        sll = randn(rng, nl); sll .-= mean(sll)
+        el = randn(rng, length(d.age_years) - 1)
+        fl = Diomedes.age_curve(0.05, el, lm.args.age_basis)
+        @test Turing.DynamicPPL.loglikelihood(Diomedes.lap_given(lm, al, sll, fl), θl) ≈
+              Turing.DynamicPPL.loglikelihood(lm, merge(θl, (; σ_comp = 1.0, a_comp = al, τ_slope = 1.0, u_slope = sll,
+                                                               τ_age = 0.05, e_age = el)))
+        @test_throws DimensionMismatch logjoint(Diomedes.lap_given(lm, al[1:2], sll, fl), θl)
         # the gradient through both submodels (ReverseDiff, as the sampler) against ForwardDiff
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
@@ -1489,12 +1527,16 @@ end
             x = 0.3 .* randn(rng, LDP.dimension(rd))
             @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
         end
-        # starting values: race drivers from the race draw, the rookie from the lap draw, the
-        # drivers in both with lap deviations that reproduce the lap draw
-        rdraw = merge(θr, (; σ_comp = 0.5, z_comp = randn(rng, nr)))
-        ldraw = merge(θl, (; σ_comp = 0.3, a_comp = 0.2 .* randn(rng, nl)))
+        # starting values: race drivers, age curve and slopes from the race draw, the rookie from the lap draw,
+        # the drivers in both with lap deviations that reproduce the lap draw
+        rdraw = merge(θr, (; σ_comp = 0.5, z_comp = randn(rng, nr), τ_age = 0.1, e_age = randn(rng, na - 1), τ_slope = 0.4,
+                             u_slope = randn(rng, nr)))
+        ldraw = merge(θl, (; σ_comp = 0.3, a_comp = 0.2 .* randn(rng, nl), τ_slope = 0.2, u_slope = randn(rng, nl)))
         p = Diomedes.joint_init_values(rdraw, ldraw, jd)
-        @test p.σ_a == 0.5 && all(iszero, p.δ_r) && !haskey(p.race, :z_comp) && !haskey(p.lap, :a_comp)
+        @test p.σ_a == 0.5 && all(iszero, p.δ_r) && p.τ_age == 0.1 && p.e_age == rdraw.e_age && p.τ_slope == 0.4
+        @test !any(haskey(p.race, k) for k in (:z_comp, :τ_slope, :u_slope, :τ_age, :e_age))
+        @test !any(haskey(p.lap, k) for k in (:a_comp, :τ_slope, :u_slope))
+        @test p.u_slope[jd.race_idx] ≈ rdraw.u_slope .- mean(rdraw.u_slope) && p.u_slope[end] == 0
         aj = p.a
         @test aj[jd.race_idx] ≈ 0.5 .* (rdraw.z_comp .- mean(rdraw.z_comp))
         alj = aj[jd.lap_idx] .+ jd.Pl * p.δ_l
@@ -1503,8 +1545,10 @@ end
                            progress = false, initial_params = joint_init(rdraw, ldraw, jd))
         @test size(ch[:τ_l]) == (10, 1) && all(isfinite, Array(ch[:τ_l]))
         # the race model's starting values as a function (shared with fit_paceloss)
-        iv = Diomedes.paceloss_init_values(g, rm; rng = Xoshiro(2), loss_duration = true, era = :rw, pace_scale = true)
-        @test length(iv.z_comp) == nr && haskey(iv, :b_mach) && !haskey(iv, :z_mach) && length(iv.e_κ) == 1
+        iv = Diomedes.paceloss_init_values(g, rm; rng = Xoshiro(2), loss_duration = true, era = :rw, pace_scale = true,
+                                           age = true, slopes = true)
+        @test length(iv.z_comp) == nr && haskey(iv, :b_mach) && !haskey(iv, :z_mach) && length(iv.e_κ) == 1 &&
+              length(iv.u_slope) == nr
     end
 
     @testset "all laps for the joint model's lap part (#128)" begin

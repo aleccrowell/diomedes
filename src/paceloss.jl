@@ -1145,7 +1145,9 @@ effects are then comparable across eras.
             b_mach ~ IndepNormal(σ_mach .* κs[cov.mach_season])   # centred car effects (vectorised, #102)
         end
         fage = nothing
-        if age_basis !== nothing
+        if age_basis !== nothing && get(ext, :fage, nothing) !== nothing
+            fage = ext.fage         # given from outside (the joint model's shared age curve, #128)
+        elseif age_basis !== nothing
             τ_age ~ truncated(Normal(0, 0.2ps.s); lower = 0)
             e_age ~ StdNormalVec(length(g.age_years) - 1)
             fage = age_curve(τ_age, e_age, age_basis)
@@ -1155,7 +1157,9 @@ effects are then comparable across eras.
             δ_λ2 ~ truncated(Normal(log(10), 1); lower = 0)         # λ2 = λ_baseline·e^δ > λ_baseline
         end
         slope = nothing
-        if career_rows !== nothing && career_rows.slopes     # per-driver career slopes (#15 stage 2b)
+        if career_rows !== nothing && career_rows.slopes && get(ext, :slopes, nothing) !== nothing
+            slope = ext.slopes      # given from outside (the joint model's shared career slopes, #128)
+        elseif career_rows !== nothing && career_rows.slopes     # per-driver career slopes (#15 stage 2b)
             τ_slope ~ truncated(Normal(0, 0.5ps.s); lower = 0)
             u_slope ~ StdNormalVec(length(g.competitors))
             slope = career_slopes(τ_slope, u_slope)

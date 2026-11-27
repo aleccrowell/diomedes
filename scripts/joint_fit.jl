@@ -55,7 +55,7 @@ function lap_model()
                         racedeg = true, racedegc = true, tyreage = true, noage = rec.noage)
     kw = (; slopes = true, lead = true, tyre_mgmt = true, starts = true, age = false, circuits = true, track = true,
           dinc = true, big = true, rwalk = true, sdrv = false, ctx, cond = cnd, rwrel = true)
-    lm = lap_effects(d; kw..., alllaps)
+    lm = lap_effects(d; kw..., age = true, alllaps)   # its age curve and slopes come from the joint model's shared ones
     # the lap model as the lap fit had it (clean laps only): its layout maps that fit's adapted metric
     lm_std = lap_effects(d; kw...)
     return d, lm, lm_std
@@ -128,10 +128,10 @@ elseif action == "check"
     vi = DP.VarInfo(jm)
     vi = last(DP.init!!(jm, vi, Turing.InitFromParams(v), DP.UnlinkAll()))
     @printf("log prior %.1f, log likelihood %.1f\n", DP.getlogprior(vi), DP.getloglikelihood(vi))
-    ar = jd.Sr * v.a .+ jd.Pr * v.δ_r
-    al = jd.Sl * v.a .+ jd.Pl * v.δ_l
+    rv = Turing.DynamicPPL.returned(jm, Turing.InitFromParams(v))
     @printf("race part log lik %.1f; lap part log lik %.1f\n",
-            DP.loglikelihood(Diomedes.race_with_drivers(rm, ar), v.race), DP.loglikelihood(Diomedes.lap_with_drivers(lm, al), v.lap))
+            DP.loglikelihood(Diomedes.race_given(jm.args.rm, rv.a_race, rv.fage, jd.Sr * rv.sl), v.race),
+            DP.loglikelihood(Diomedes.lap_given(jm.args.lm, rv.a_lap, jd.Sl * rv.sl, rv.fage[jm.args.lapage]), v.lap))
     xl = lm.args.xl
     println("other laps: ", length(d.x_y), " in ", length(d.group_type), " groups; types ",
             [Diomedes.LAP_TYPES[t] for t in xl.types], "; μ_x ", round.(v.lap.μ_x; digits = 1), "; σ_x ", round.(v.lap.σ_x; digits = 2))

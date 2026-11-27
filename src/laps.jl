@@ -132,6 +132,7 @@ struct LapData
     x_group::Vector{Int}          # index into the groups below
     group_type::Vector{Int}       # each group's type
     group_label::Vector{String}   # "<race>/<type>[/lap <l>]"
+    comp_age::Vector{Float64}     # each driver's mean season age over their laps (years, NaN if unknown): agec's centre
 end
 
 """
@@ -362,6 +363,7 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
         isnan(a) || (asum[k] += a; an[k] += 1)
     end
     amean = asum ./ max.(an, 1)
+    comp_age = [an[k] > 0 ? amean[k] : NaN for k in eachindex(amean)]   # each driver's mean season age over their laps
     agec = [isnan(a) ? 0.0 : (a - amean[k]) / 10 for (k, a) in zip(comp, sage)]
     # season position of each race (0 at the season's first round in the data, 1 at
     # its last), centred on each car's mean over its laps (in-season development)
@@ -455,7 +457,7 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
                    abin, s_abin, age_years, age_rows, race_x, race_x_raw, race_x_names, race_track, race_track_names,
                    [100 * log(r.time_ms / medclean[r.event_id]) for r in eachrow(other)],
                    [ci[c] for c in other.competitor_id], [mi[m] for m in other.machine_key], [ri[e] for e in other.event_id],
-                   other.type, [gi[g] for g in other.group], gtype, glabels)
+                   other.type, [gi[g] for g in other.group], gtype, glabels, comp_age)
 end
 
 """
@@ -980,7 +982,8 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
                             lead::Bool, tyre_mgmt::Bool, starts::Bool, age::Bool, circuits::Bool, track::Bool = false,
                             dinc::Bool = false, cw = nothing, works::Bool = false, big::Bool = false,
                             rw = nothing, sdrv::Bool = true, dinc1::Bool = false, ctx = LapContext(),
-                            cond = LapConditions(), wcw = nothing, drv = nothing, xl = nothing)
+                            cond = LapConditions(), wcw = nothing, drv = nothing, xl = nothing, sl_ext = nothing,
+                            fage_ext = nothing)
     # `drv`: driver effects given from outside (the joint race + lap model, #128), in place
     # of the sampled a_comp and its spread σ_comp
     drv === nothing && (σ_comp ~ truncated(Normal(0, 2); lower = 0))
@@ -1005,7 +1008,9 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     else
         β = zeros(2length(d.eras))
     end
-    if slopes
+    if slopes && sl_ext !== nothing
+        sl = sl_ext             # given from outside (the joint model's shared career slopes, #128)
+    elseif slopes
         τ_slope ~ truncated(Normal(0, 0.5); lower = 0)
         u_slope ~ StdNormalVec(length(d.competitors))
         sl = career_slopes(τ_slope, u_slope)
@@ -1047,7 +1052,9 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         a_π1 ~ Normal(-1.5, 1)
         a_λ1 ~ Normal(0, 1)
     end
-    if age
+    if age && fage_ext !== nothing
+        fage = fage_ext         # given from outside (the joint model's shared age curve, #128), per d.age_years
+    elseif age
         # the second-order walk's scale is the slope's change per year: half-N(0, AGE_RW2_SD) keeps the curve smooth
         rw2 = size(age_basis.walk, 2) == length(d.age_years) - 2
         τ_age ~ truncated(Normal(0, rw2 ? AGE_RW2_SD : 0.2); lower = 0)
