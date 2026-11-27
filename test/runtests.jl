@@ -1506,6 +1506,54 @@ end
         @test length(iv.z_comp) == nr && haskey(iv, :b_mach) && !haskey(iv, :z_mach) && length(iv.e_κ) == 1
     end
 
+    @testset "all laps for the joint model's lap part (#128)" begin
+        # 2 cars × 10 laps: a stop for car "a" at lap 4, a safety car on lap 7
+        rows = DataFrame(series = "f1", season = 2019, event_id = "2019-01", competitor_id = ["a", "b"], machine_id = ["m1", "m2"])
+        lt = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
+                       time_ms = Float64[], position = Union{Missing,Int}[])
+        for (c, base) in (("a", 90_000.0), ("b", 91_000.0)), l in 1:10
+            x = base * (l == 1 ? 1.1 : l == 7 ? 1.4 : 1.0) + (c == "a" && l == 4 ? 5_000 : c == "a" && l == 5 ? 18_000 : 0)
+            push!(lt, ("f1", 2019, "2019-01", c, l, x, missing))
+        end
+        ps = DataFrame(series = "f1", season = 2019, event_id = "2019-01", competitor_id = "a", lap = 4,
+                       duration_ms = Union{Missing,Float64}[23_000])
+        d0 = prepare_laps(lt, rows; pits = :recorded, pit_stops = ps)
+        d = prepare_laps(lt, rows; pits = :recorded, pit_stops = ps, alllaps = true)
+        @test d.y == d0.y && isempty(d0.x_y)                 # the clean laps are unchanged
+        T = Diomedes.LAP_TYPES
+        @test [(d.competitors[d.x_comp[k]], T[d.x_type[k]]) for k in eachindex(d.x_y)] ==
+              [("a", :inlap), ("a", :outlap), ("a", :neutral), ("a", :restart), ("b", :neutral), ("b", :restart)]
+        @test d.group_label[d.x_group] == ["2019-01/inlap", "2019-01/outlap", "2019-01/neutral/lap 7",
+                                           "2019-01/restart/lap 8", "2019-01/neutral/lap 7", "2019-01/restart/lap 8"]
+        m = median(d0.rows.time_ms)                           # the race's median clean lap: y's scale
+        @test d.x_y[1] ≈ 100 * log(95_000 / m) && d.x_y[3] ≈ 100 * log(1.4 * 90_000 / m)
+        @test_throws ArgumentError lap_effects(d0; alllaps = true)
+        # the other laps' likelihood against a direct sum, and its gradient
+        lm0, lm1 = lap_effects(d), lap_effects(d; alllaps = true)
+        xl = lm1.args.xl
+        @test [T[t] for t in xl.types] == [:neutral, :restart, :inlap, :outlap] && xl.gt == [3, 4, 1, 2] && all(iszero, xl.state)
+        rng = Xoshiro(3)
+        nr = length(d.races)
+        θ = (; σ_comp = 0.3, σ_mach = 0.3, σ = 0.5, a_comp = 0.2 .* randn(rng, 2), b_mach = 0.1 .* randn(rng, 2), μ_γ = 0.0,
+             γ = 0.1 .* randn(rng, nr), μ_δ = 0.0, τ_δ = 0.3, δ = randn(rng, nr), β = [0.02, 0.01], a_π = -1.2, a_λ = 0.3)
+        θx = (; μ_x = 10 .* randn(rng, 4), τ_x = fill(2.0, 4), u_x = randn(rng, 4), σ_x = fill(1.5, 4))
+        a, b = θ.a_comp .- mean(θ.a_comp), θ.b_mach .- mean(θ.b_mach)
+        hb = [mean(a[d.comp[d.race .== r]] .+ b[d.mach[d.race .== r]]) for r in 1:nr]
+        ν = θx.μ_x[xl.gt] .+ θx.τ_x[xl.gt] .* θx.u_x
+        ll = sum(logpdf(Distributions.LocationScale(θ.γ[d.x_race[k]] + ν[d.x_group[k]] + a[d.x_comp[k]] + b[d.x_mach[k]] -
+                                                    hb[d.x_race[k]], θx.σ_x[xl.xt[k]], Distributions.TDist(4)), d.x_y[k])
+                 for k in eachindex(d.x_y))
+        @test Turing.DynamicPPL.loglikelihood(lm1, merge(θ, θx)) - Turing.DynamicPPL.loglikelihood(lm0, θ) ≈ ll
+        LDF = Turing.DynamicPPL.LogDensityFunction
+        LDP = Turing.DynamicPPL.LogDensityProblems
+        rd = LDF(lm1, Turing.DynamicPPL.getlogjoint_internal, Turing.DynamicPPL.LinkAll(); adtype = Diomedes.gap_sampler().adtype)
+        fd = LDF(lm1, Turing.DynamicPPL.getlogjoint_internal, Turing.DynamicPPL.LinkAll(); adtype = AutoForwardDiff())
+        for _ in 1:3
+            x = 0.3 .* randn(rng, LDP.dimension(rd))
+            @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
+        end
+    end
+
     @testset "lap-time model (#12)" begin
         # pit inference: 90 s laps, a stop with in-lap +5 s and out-lap +18 s at laps 20/21, a spin (+8 s) at 40
         t = fill(90_000.0, 60); t[20] += 5_000; t[21] += 18_000; t[40] += 8_000

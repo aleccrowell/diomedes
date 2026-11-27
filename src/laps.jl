@@ -980,7 +980,7 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
                             lead::Bool, tyre_mgmt::Bool, starts::Bool, age::Bool, circuits::Bool, track::Bool = false,
                             dinc::Bool = false, cw = nothing, works::Bool = false, big::Bool = false,
                             rw = nothing, sdrv::Bool = true, dinc1::Bool = false, ctx = LapContext(),
-                            cond = LapConditions(), wcw = nothing, drv = nothing)
+                            cond = LapConditions(), wcw = nothing, drv = nothing, xl = nothing)
     # `drv`: driver effects given from outside (the joint race + lap model, #128), in place
     # of the sampled a_comp and its spread σ_comp
     drv === nothing && (σ_comp ~ truncated(Normal(0, 2); lower = 0))
@@ -1217,6 +1217,14 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     end
     @addlogprob! lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, cv, wv, rwk,
                             ctx, cond, d)
+    if xl !== nothing       # every other lap (`alllaps`, the joint model's lap part, #128)
+        nt = length(xl.types)
+        μ_x ~ IsoNormalVec(0.0, 20.0, nt)                         # each lap type's mean shift, % of the clean lap
+        τ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # spread of its groups' shifts
+        u_x ~ StdNormalVec(length(d.group_type))
+        σ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # each type's lap noise (Student-t(4) scale)
+        @addlogprob! other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl, d)
+    end
     if starts
         sd = sdrv ? career_slopes(τ_sd, u_sd) : 0 .* a_π .+ zeros(length(d.competitors))   # τ·(u - mean u)
         sc = τ_sc .* center_by(u_sc, d.mach_season, mach_counts)
@@ -1296,7 +1304,7 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
                      track::Bool = false, dinc::Bool = false, walk::Bool = false, works::Bool = false,
                      big::Bool = false, rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
                      cars = walk || rwalk ? car_table() : nothing, ctx = LapContext(), cond = LapConditions(),
-                     rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1, drv = nothing)
+                     rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1, drv = nothing, alllaps::Bool = false)
     rwrel && !rwalk && throw(ArgumentError("rwrel reparametrises the race walk: it needs rwalk"))
     rwrels && !(rwrel && slopes) && throw(ArgumentError("rwrels adds the career slopes to rwrel: it needs rwrel and slopes"))
     (ctx.traffic || ctx.fpace) && size(ctx.tbin, 1) != length(d.y) &&
@@ -1317,7 +1325,77 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
                        rwalk ? (rwk = RaceWalk(d, cars); (; rwk, cw = CarWalks(d, cars), W = rwrel ? walk_driver_shares(d, rwk) : nothing,
                                                          Ws = rwrels ? walk_driver_shares(d, rwk; age = true) : nothing)) :
                                nothing, sdrv, dinc1, ctx, cond,
-                       pool ? CarWalks(d, cars) : nothing, drv)
+                       pool ? CarWalks(d, cars) : nothing, drv,
+                       alllaps ? OtherLaps(d, rwalk ? RaceWalk(d, cars) : nothing) : nothing)
+end
+
+"""
+    OtherLaps(d::LapData, rwk)
+
+What the other laps' likelihood (`other_lap_loglik`, `alllaps`, #128) needs beyond `d`:
+- `types`: the lap types present (indices into `LAP_TYPES`);
+- `gt`, `xt`: each group's and each lap's index among them;
+- `state`: each lap's race-walk state, from a clean lap of the same car in the same race (0
+  without the race walk);
+- `Wa`, `Wb`, `Wx`: each race's clean-lap shares of its drivers, cars and walk states, for
+  the race's mean driver and car term.
+"""
+struct OtherLaps
+    types::Vector{Int}
+    gt::Vector{Int}
+    xt::Vector{Int}
+    state::Vector{Int}
+    Wa::Matrix{Float64}
+    Wb::Matrix{Float64}
+    Wx::Matrix{Float64}
+end
+function OtherLaps(d::LapData, rwk)
+    isempty(d.x_y) && throw(ArgumentError("alllaps needs prepare_laps(…; alllaps = true)"))
+    types = sort(unique(d.group_type))
+    ti = Dict(t => i for (i, t) in enumerate(types))
+    nr, N = length(d.races), length(d.y)
+    Wa, Wb = zeros(nr, length(d.competitors)), zeros(nr, length(d.machines))
+    for j in 1:N
+        Wa[d.race[j], d.comp[j]] += 1 / d.race_n[d.race[j]]
+        Wb[d.race[j], d.mach[j]] += 1 / d.race_n[d.race[j]]
+    end
+    if rwk === nothing
+        state, Wx = zeros(Int, length(d.x_y)), zeros(nr, 0)
+    else
+        st = Dict{Tuple{Int,Int},Int}()
+        Wx = zeros(nr, length(rwk.prev))
+        for j in 1:N
+            st[(d.race[j], d.mach[j])] = rwk.lap[j]
+            Wx[d.race[j], rwk.lap[j]] += 1 / d.race_n[d.race[j]]
+        end
+        miss = [k for k in eachindex(d.x_y) if !haskey(st, (d.x_race[k], d.x_mach[k]))]
+        isempty(miss) || throw(ArgumentError("$(length(miss)) other laps of a car with no clean lap in that race"))
+        state = [st[(d.x_race[k], d.x_mach[k])] for k in eachindex(d.x_y)]
+    end
+    return OtherLaps(types, [ti[t] for t in d.group_type], [ti[t] for t in d.x_type], state, Wa, Wb, Wx)
+end
+
+"""
+    other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl::OtherLaps, d::LapData)
+
+Log likelihood of the other laps (`alllaps`, #128): lap k of driver c, car m, race r and group g,
+
+    y_k ~ μ_k + σ_t·t(4),   μ_k = γ_r + ν_g + a_c + b_m + x_s - (the race's clean-lap mean of a + b + x),
+
+with ν_g = μ_x[t] + τ_x[t]·u_g the group's shift (pooled by lap type t) and x_s the car's race-walk
+state at that race. The drivers' and cars' effects are on every lap, as the race model's are on the
+whole race time; the race-mean term puts them on the clean laps' centring (each clean lap's terms
+enter relative to its race's mean), and the group shifts take the rest.
+"""
+function other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl::OtherLaps, d::LapData)
+    ν = μ_x[xl.gt] .+ τ_x[xl.gt] .* u_x
+    rw = size(xl.Wx, 2) > 0
+    hb = xl.Wa * a .+ xl.Wb * b .+ (rw ? xl.Wx * xr : zeros(size(xl.Wa, 1)))
+    car = rw ? b[d.x_mach] .+ xr[xl.state] : b[d.x_mach]
+    μ = γ[d.x_race] .+ ν[d.x_group] .+ a[d.x_comp] .+ car .- hb[d.x_race]
+    s = σ_x[xl.xt]
+    z = (d.x_y .- μ) ./ s
+    return sum(-2.5 .* log1p.(z .^ 2 ./ 4) .- log.(s)) + length(z) * (loggamma(2.5) - loggamma(2.0) - 0.5 * log(4π))
 end
 
 """
