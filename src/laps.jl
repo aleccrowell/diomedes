@@ -121,7 +121,25 @@ struct LapData
     # incident covariates (#108, as the race model's track terms, #81): per race
     race_track::Matrix{Float64}   # races × covariates (0 columns without circuits)
     race_track_names::Vector{Symbol}  # :tight (walls score / 2), :mixed, :wet
+    # the other laps (`alllaps`, the joint model's lap part, #128): every lap the clean-lap model
+    # leaves out but lap 1 (the start model's), each with its type (`LAP_TYPES`) and the
+    # field-level group whose shift it shares; empty without `alllaps`
+    x_y::Vector{Float64}          # % of the race's median clean lap, as y
+    x_comp::Vector{Int}
+    x_mach::Vector{Int}
+    x_race::Vector{Int}
+    x_type::Vector{Int}           # index into LAP_TYPES
+    x_group::Vector{Int}          # index into the groups below
+    group_type::Vector{Int}       # each group's type
+    group_label::Vector{String}   # "<race>/<type>[/lap <l>]"
 end
+
+"""
+The lap types the clean-lap model leaves out (`prepare_laps(…; alllaps = true)`, #128):
+neutralised (the field's median over SLOW_RACE × the race's: safety car, VSC, red flag) and
+restart laps share a shift per race-lap; the others a shift per race.
+"""
+const LAP_TYPES = (:neutral, :restart, :inlap, :outlap, :inlap_neutral, :outlap_neutral, :stoppage)
 
 """
     RaceWalk(d::LapData, cars = car_table())
@@ -232,7 +250,8 @@ Every race must be in the table.
 """
 function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits::Symbol = :recorded,
                       pit_stops = nothing, machine_key = r -> string(r.machine_id, "_", r.season),
-                      circuits = nothing, stoppage::Bool = true, keep_laps = nothing, age_min_drivers::Int = 0)
+                      circuits = nothing, stoppage::Bool = true, keep_laps = nothing, age_min_drivers::Int = 0,
+                      alllaps::Bool = false)
     pits in (:recorded, :inferred) || throw(ArgumentError("pits must be :recorded or :inferred"))
     pits === :recorded && pit_stops === nothing && throw(ArgumentError("pits = :recorded needs pit_stops"))
     mkey = Dict((r.event_id, r.competitor_id) => machine_key(r) for r in eachrow(results))
@@ -254,6 +273,9 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
                       grid = Int[])
     keep = DataFrame(season = Int[], event_id = String[], competitor_id = String[], machine_key = String[],
                      lap = Int[], time_ms = Float64[], frac = Float64[], stint = Int[], lead = Float64[])
+    # the other laps, with `alllaps` (#128): type and field-level group key
+    other = DataFrame(event_id = String[], competitor_id = String[], machine_key = String[], lap = Int[],
+                      time_ms = Float64[], type = Int[], group = String[])
     for ev in groupby(laps, :event_id)
         L = maximum(ev.lap)
         base = median(ev.time_ms)
@@ -283,7 +305,16 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
                 reason = l == 1 ? :lap1 : l in skip ? :slow_race : stoppage && times[l] > STOPPAGE * med ? :stoppage :
                          l in pitlaps ? :pit : nothing
                 if reason !== nothing
-                    excl[reason] += 1; continue
+                    excl[reason] += 1
+                    if alllaps && reason !== :lap1          # lap 1 stays the start model's
+                        ip, op, neu = l in stops, l - 1 in stops, l in skip
+                        t = ip ? (neu ? :inlap_neutral : :inlap) : op ? (neu ? :outlap_neutral : :outlap) :
+                            l in slow ? :neutral : l in skip ? :restart : :stoppage
+                        ti = findfirst(==(t), LAP_TYPES)
+                        grp = t in (:neutral, :restart) ? "$(k[1])/$(t)/lap $(l)" : "$(k[1])/$(t)"
+                        push!(other, (k[1], k[2], mkey[k], l, times[l], ti, grp))
+                    end
+                    continue
                 end
                 last = findlast(<(l), stops)
                 stint = last === nothing ? l - 1 : l - stops[last] - 1     # laps since the out-lap, from 1
@@ -294,7 +325,9 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
     end
     # outcome relative to each race's median clean lap
     keep.y = zeros(nrow(keep))
+    medclean = Dict{String,Float64}()
     for g in groupby(keep, :event_id)
+        medclean[first(g.event_id)] = median(g.time_ms)
         g.y .= 100 .* log.(g.time_ms ./ median(g.time_ms))
     end
     seasons = sort(unique(keep.season))
@@ -409,11 +442,20 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
     eralab = [s in REFUEL_SEASONS ? :refuel : :norefuel for s in keep.season]
     eras = [e for e in (:refuel, :norefuel) if e in eralab]
     era = [findfirst(==(e), eras) for e in eralab]
+    # the other laps (#128): for the drivers, cars and races with clean laps, on the same scale
+    filter!(r -> haskey(ci, r.competitor_id) && haskey(mi, r.machine_key) && haskey(ri, r.event_id), other)
+    glabels = unique(other.group)
+    gi = Dict(l => i for (i, l) in enumerate(glabels))
+    gtype = zeros(Int, length(glabels))
+    for r in eachrow(other); gtype[gi[r.group]] = r.type; end
     return LapData(keep.y, comp, mach,
                    race, keep.frac, keep.frac .- fbar[race], Float64.(keep.stint), agec, posc, keep.lead, stint_cd, stint_cm,
                    era, eras, s_y, [ci[c] for c in start.competitor_id], [mi[m] for m in start.machine_key], s_race,
                    (start.grid .- 1) ./ 10, s_race_n, mach_season, race_season, seasons, comps, machs, races, race_n, keep, excl,
-                   abin, s_abin, age_years, age_rows, race_x, race_x_raw, race_x_names, race_track, race_track_names)
+                   abin, s_abin, age_years, age_rows, race_x, race_x_raw, race_x_names, race_track, race_track_names,
+                   [100 * log(r.time_ms / medclean[r.event_id]) for r in eachrow(other)],
+                   [ci[c] for c in other.competitor_id], [mi[m] for m in other.machine_key], [ri[e] for e in other.event_id],
+                   other.type, [gi[g] for g in other.group], gtype, glabels)
 end
 
 """
