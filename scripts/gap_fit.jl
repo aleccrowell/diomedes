@@ -41,18 +41,21 @@ using Turing: FlexiChains, NUTS
 #                last block of output/<tag>_chain<k> (a fit of the same model and data, e.g. its
 #                probe; the parameter count must match)
 # The flag `probe` adds _probe to the output names, so a short test run never mixes with a fit.
+# The flag `dense` (with block=) samples with a metric dense over the scalars and diagonal
+# elsewhere (#154, `block_nuts`), adapted in warm-up; it adds _dense to the output names.
 KEYS = ("delta", "block", "step", "draws", "warmup", "warm")
 opt(key) = (i = findfirst(a -> startswith(a, key * "="), ARGS); i === nothing ? nothing : split(ARGS[i], "="; limit = 2)[2])
 for a in ARGS
     occursin('=', a) && split(a, "=")[1] ∉ KEYS && error("unknown option $a (known: $(join(KEYS, ", ")))")
 end
 δ = something(tryparse(Float64, something(opt("delta"), "")), 0.8)
-args = filter(a -> !occursin('=', a) && a != "probe", ARGS)
+args = filter(a -> !occursin('=', a) && a ∉ ("probe", "dense"), ARGS)
 probe = "probe" in ARGS
+dense = "dense" in ARGS
 mode = get(args, 1, "jolpica1950-2025+partial")
 model = get(args, 2, "t4")
 action = get(args, 3, "serial")
-tag = "gap_$(mode)_$(model)" * (probe ? "_probe" : "")
+tag = "gap_$(mode)_$(model)" * (dense ? "_dense" : "") * (probe ? "_probe" : "")
 chain_path(k) = "output/$(tag)_chain$(k).jls"
 block_files(k) = sort(filter(f -> occursin(Regex("^\\Q$(tag)_chain$(k)_block\\E\\d+\\.jls\$"), f), readdir("output")),
                       by = f -> parse(Int, match(r"_block(\d+)\.jls$", f)[1]))
@@ -65,7 +68,7 @@ fit(; kw...) = spec.family === :t4 ? fit_gaps(g; sampler, kw...) :
     fit_paceloss(g; loss_duration = spec.loss_duration, era = spec.era, pace_scale = spec.pace_scale,
                  age = spec.age, big_loss = spec.big_loss, slopes = spec.slopes, dev = spec.dev,
                  centred_drivers = spec.centred_drivers, driver_ν = spec.driver_ν,
-                 race_hier = spec.race_hier, race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl, wlevn = spec.wlevn, sampler, kw...)
+                 race_hier = spec.race_hier, race_mean = spec.race_mean, circ = spec.circ, track = spec.track, walk = spec.walk, walk1 = spec.walk1, works = spec.works, dinc = spec.dinc, ncres = spec.ncres, wlev = spec.wlev, kc = spec.kc, kst = spec.kst, wst = spec.wst, wstc = spec.wstc, wstl = spec.wstl, wlevn = spec.wlevn, durc = spec.durc, sampler, kw...)
 
 include("gap_data.jl")
 res, g = gap_data(mode)
@@ -76,13 +79,17 @@ n_samples = parse(Int, something(opt("draws"), "1000"))
 if action == "chain"
     k = parse(Int, args[4])
     t = if opt("block") === nothing
-        opt("step") === nothing && opt("warm") === nothing || error("step= and warm= need block=")
+        opt("step") === nothing && opt("warm") === nothing && !dense || error("step=, warm= and dense need block=")
         @elapsed chain = fit(; rng = Xoshiro(k), progress = false, progress_log = stdout, n_samples)
     else
         kw = (; checkpoint = "output/$(tag)_chain$(k)", seed = k, block = parse(Int, opt("block")), n_samples, δ,
               fixed_step = opt("step") === nothing ? nothing : parse(Float64, opt("step")))
         if opt("warm") === nothing
-            kw = (; kw..., n_adapts = parse(Int, something(opt("warmup"), "500")))
+            kw = (; kw..., n_adapts = parse(Int, something(opt("warmup"), "500")), dense_scalars = dense)
+        elseif dense
+            wa = Diomedes.checkpoint_adapted("output/$(opt("warm"))_chain$(k)")
+            println("warm start (dense scalars) from output/$(opt("warm"))_chain$(k): step size $(round(wa.ϵ; digits = 4))"); flush(stdout)
+            kw = (; kw..., n_adapts = parse(Int, something(opt("warmup"), "300")), dense_scalars = true, warm = wa)
         else
             wa = Diomedes.checkpoint_adapted("output/$(opt("warm"))_chain$(k)")
             println("warm start from output/$(opt("warm"))_chain$(k): step size $(round(wa.ϵ; digits = 4))"); flush(stdout)

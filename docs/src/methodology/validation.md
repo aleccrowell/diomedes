@@ -52,7 +52,7 @@ per-season Spearman correlation over the cars in both.
 
 | model | seasons | median Spearman |
 |---|---|---|
-| race (total car effects) | 67 | 0.89: 0.64 in the 1950s, rising to 0.95–0.96 from 2010 |
+| race (total car effects) | 67 | 0.88: 0.64 in the 1950s, rising to 0.95–0.96 from 2010 |
 | lap, published fit (2021–2026, with track conditions) | 5 | 0.83 |
 | lap, previous fit (2011–2026) | 14 | 0.94 (0.85 over 2021–2025) |
 

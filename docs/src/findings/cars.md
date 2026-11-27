@@ -8,7 +8,7 @@ other cars **in the same season**: the model can't compare cars across seasons
 
 Choose a season to see its cars with 90% intervals. Each effect is the sum of
 a chassis part, an engine part, a works-team part and a residual (see
-[Chassis and engines](@ref)); the tooltip splits it. 2026 has the 17 races run
+[Chassis and engines](@ref)); the tooltip splits it. 2026 has the 21 races run
 when it was fitted.
 
 ```@raw html
@@ -220,9 +220,9 @@ A walk moves a little each season: about 0.33% of race time per year for a
 chassis and 0.17% for an engine, more after a change of ownership (×2.1) or a
 major rule change (×1.2, one multiplier for chassis and engine rules). The
 walks carry most of the variation between cars (the residual's spread is
-0.42%). Works teams come out about 0.33% faster than their engine's customers,
-but the 90% interval (−0.67% to +0.02%) just reaches zero: works teams usually
-also have the stronger chassis, which the walks already credit. Choose a walk
+0.42%). Works teams come out about 0.34% faster than their engine's customers
+(90% interval −0.67% to −0.02%), beyond what the walks already credit to their
+usually stronger chassis; the interval only just excludes zero. Choose a walk
 to see its path, relative to each
 season's field (negative = faster), with 90% intervals:
 

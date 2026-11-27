@@ -317,7 +317,7 @@ end
 """
     run_nuts_checkpointed(model, init, path; n_samples, n_adapts = 500, δ = 0.8, block = 100,
                           seed = 1, progress_log = nothing, log_every = 100, external = nothing,
-                          tune_step = false, fixed_step = nothing) -> chain
+                          tune_step = false, fixed_step = nothing, dense_scalars = false, warm = nothing) -> chain
 
 One NUTS chain sampled in blocks, each saved to `"\$(path)_block<j>.jls"`, so a
 run that is killed can be resumed by calling this again: saved blocks are loaded
@@ -339,7 +339,10 @@ the same draws as an uninterrupted one. A kill loses at most the block in
 progress (the warm-up, if it is in block 1). With `tune_step = true`, the step
 size is raised after warm-up to the largest that still meets the target
 acceptance (`tune_step_size`, #62); the probe is written to
-`"\$(path)_steptune.txt"`. `fixed_step` sets the step size of the blocks after the
+`"\$(path)_steptune.txt"`. With `dense_scalars = true` (#154), block 1 is sampled with
+`block_nuts`: a metric dense over the scalars (`scalar_indices`) and diagonal
+elsewhere, adapted in warm-up from a unit metric or from `warm`; later blocks keep
+it fixed. `fixed_step` sets the step size of the blocks after the
 first that this call samples (saved blocks keep theirs), e.g. to resume a chain
 whose tuned step size left it at a deeper tree than the other chains (#66).
 Returns the blocks concatenated.
@@ -348,8 +351,19 @@ function run_nuts_checkpointed(model, init, path::AbstractString; n_samples::Int
                                δ::Real = 0.8, block::Int = 100, seed::Int = 1,
                                progress_log::Union{Nothing,IO} = nothing, log_every::Int = 100,
                                external = nothing, tune_step::Bool = false,
-                               fixed_step::Union{Nothing,Real} = nothing)
+                               fixed_step::Union{Nothing,Real} = nothing, dense_scalars::Bool = false,
+                               warm = nothing)
     adtype = gap_sampler().adtype
+    # the block metric (#154): dense over the scalars, diagonal elsewhere, adapted in warm-up
+    # from a unit metric, or from `warm` (a chain's adapted (; Minv, ϵ), diagonal or block)
+    if dense_scalars && !isfile("$(path)_block1.jls")
+        external === nothing || throw(ArgumentError("dense_scalars builds its own sampler: give warm, not external"))
+        n, idx = scalar_indices(model)
+        M0, ϵ0 = warm === nothing ? (BlockInvMetric(ones(n), idx), 0.01) :
+                 (warm.Minv isa BlockInvMetric ? warm.Minv : BlockInvMetric(warm.Minv, idx), warm.ϵ)
+        length(M0) == n || throw(DimensionMismatch("warm metric has $(length(M0)) coordinates, the model $n"))
+        external = block_nuts(M0, ϵ0; δ)
+    end
     chains = []
     Minv, ϵ = nothing, nothing
     for j in 1:cld(n_samples, block)

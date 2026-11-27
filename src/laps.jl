@@ -1608,12 +1608,16 @@ itself warm-started, see `lap_warm_sampler`), or an already extracted
 `(; Minv, ϵ)`.
 """
 function lap_adapted(st)
-    st isa NamedTuple && haskey(st, :Minv) && return (; Minv = Vector{Float64}(st.Minv), ϵ = Float64(st.ϵ))
+    st isa NamedTuple && haskey(st, :Minv) &&
+        return (; Minv = st.Minv isa BlockInvMetric ? st.Minv : Vector{Float64}(st.Minv), ϵ = Float64(st.ϵ))
     s = hasproperty(st, :hamiltonian) || hasproperty(st, :metric) ? st : st.state
     hasproperty(s, :hamiltonian) &&
-        return (; Minv = Vector{Float64}(s.hamiltonian.metric.M⁻¹), ϵ = Float64(s.kernel.τ.integrator.ϵ))
-    return (; Minv = Vector{Float64}(s.metric.M⁻¹), ϵ = Float64(s.κ.τ.integrator.ϵ))     # AdvancedHMC.HMCState
+        return (; Minv = _plain_metric(s.hamiltonian.metric), ϵ = Float64(s.kernel.τ.integrator.ϵ))
+    return (; Minv = _plain_metric(s.metric), ϵ = Float64(s.κ.τ.integrator.ϵ))     # AdvancedHMC.HMCState
 end
+# a diagonal metric as its vector; a block metric (`block_nuts`, #154) as a BlockInvMetric
+_plain_metric(m::AdvancedHMC.RankUpdateEuclideanMetric) = block_inv_metric(m)
+_plain_metric(m) = Vector{Float64}(m.M⁻¹)
 
 """
     lap_warm_sampler(Minv, ϵ; δ = 0.8)
@@ -1622,6 +1626,7 @@ NUTS (AdvancedHMC, via `externalsampler`, uncompiled ReverseDiff) starting from
 diagonal inverse metric `Minv` and step size `ϵ`, with Stan's windowed
 adaptation of both (as Turing's `NUTS`).
 """
+lap_warm_sampler(Minv::BlockInvMetric, ϵ::Real; δ::Real = 0.8) = block_nuts(Minv, ϵ; δ)
 function lap_warm_sampler(Minv::AbstractVector, ϵ::Real; δ::Real = 0.8)
     metric = AdvancedHMC.DiagEuclideanMetric(Vector{Float64}(Minv))
     integrator = AdvancedHMC.Leapfrog(Float64(ϵ))

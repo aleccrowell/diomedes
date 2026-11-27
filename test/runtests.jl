@@ -4,6 +4,7 @@ using JSON3
 using CSV
 using Random
 using Statistics
+using LinearAlgebra
 using Test
 using Serialization: serialize, deserialize
 using Dates: Date, Day
@@ -1324,6 +1325,107 @@ end
                                                       sampler = Turing.NUTS(10, 0.8), rng = Xoshiro(1), progress = false,
                                                       progress_log = nothing, log_every = 100, save_state = true)))
         @test Diomedes.step_size(Diomedes.with_step_size(st, 0.123)) == 0.123
+    end
+
+    @testset "race model revisions: durc and the block metric (#154)" begin
+        # durc: log duration centred within season, on the all-race scale
+        res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
+        res2 = copy(res); res2.season .= 2020; res2.event_id .= replace.(res2.event_id, "2019" => "2020")
+        g = prepare_gaps(vcat(res, res2))
+        g.race_minutes[g.race_season .== 2020] .*= 1.3         # the later season's races run longer
+        c0, c1 = LossCovariates(g), LossCovariates(g; durc = true)
+        for s in unique(g.race_season)
+            r = g.race_season .== s
+            @test abs(mean(c1.log_duration[r])) < 1e-12
+            @test c1.log_duration[r] ≈ c0.log_duration[r] .- mean(c0.log_duration[r])
+        end
+        @test abs(mean(c0.log_duration[g.race_season .== 2020]) - mean(c0.log_duration[g.race_season .== 2019])) > 0.5
+        sp = model_spec("pl_durc_rw_kappa")
+        @test sp.durc && sp.loss_duration && !model_spec("pl_dur_rw_kappa").durc && !model_spec("t4").durc
+        @test LossCovariates(g, sp).log_duration == c1.log_duration
+        @test_throws ArgumentError Diomedes.paceloss_effects(g; durc = true)
+        m1 = Diomedes.paceloss_effects(g; loss_duration = true, era = :rw, durc = true)
+        @test m1.args.cov.log_duration == c1.log_duration
+
+        # the block metric: M⁻¹ = A + B·D·Bᵀ is the diagonal with a dense block
+        rng = Xoshiro(154)
+        n, idx = 7, [2, 5, 6]
+        L = randn(rng, 3, 3); Σ = L * L' + 0.5I
+        d = 0.5 .+ rand(rng, n)
+        b = BlockInvMetric(d, idx, Σ)
+        @test b.diag[idx] ≈ diag(Σ) && b.diag[[1, 3, 4, 7]] == d[[1, 3, 4, 7]]
+        m = Diomedes.rank_update_metric(b)
+        full = Matrix(m.A) + m.B * m.D * m.B'
+        want = Matrix(Diagonal(b.diag)); want[idx, idx] = Σ
+        @test full ≈ want
+        b2 = Diomedes.block_inv_metric(m)
+        @test b2.idx == idx && b2.diag ≈ b.diag && b2.block ≈ Σ
+        @test BlockInvMetric(d, idx).block == Diagonal(d[idx])
+        @test_throws DimensionMismatch BlockInvMetric(d, idx, zeros(2, 2))
+        @test_throws ArgumentError BlockInvMetric(d, [1, 1, 2], Σ)
+        # kinetic-energy gradient and momenta follow M⁻¹ (AdvancedHMC's own methods)
+        h = Diomedes.AdvancedHMC.Hamiltonian(m, x -> 0.0, x -> (0.0, zero(x)))
+        r = randn(rng, n)
+        @test Diomedes.AdvancedHMC.∂H∂r(h, r) ≈ want * r
+        R = reduce(hcat, [Diomedes.AdvancedHMC.rand_momentum(rng, m, Diomedes.AdvancedHMC.GaussianKinetic(), zeros(n)) for _ in 1:20_000])
+        @test maximum(abs.(cov(R; dims = 2) .- inv(want))) < 0.1 * maximum(abs.(inv(want)))
+        # the adaptor estimates the block's covariance and every coordinate's variance
+        a = Diomedes.BlockCovAdaptor(BlockInvMetric(ones(n), idx))
+        Ltrue = zeros(n, n); Ltrue[diagind(Ltrue)] .= sqrt.(d); Ltrue[idx, idx] = cholesky(Symmetric(Σ)).L
+        for _ in 1:20_000
+            push!(a, Ltrue * randn(rng, n))
+        end
+        Diomedes.AdvancedHMC.Adaptation.update!(a)
+        est = Diomedes.AdvancedHMC.Adaptation.getM⁻¹(a)
+        @test maximum(abs.(est.block .- Σ)) < 0.1 * maximum(abs.(Σ))
+        @test maximum(abs.(est.diag .- want[diagind(want)]) ./ want[diagind(want)]) < 0.1
+        @test_throws DimensionMismatch Diomedes.AdvancedHMC.Adaptation.resize_adaptor!(a, (n + 1,))
+
+        # scalar_indices: positions of every variable of length ≤ 3 in the sampler's vector
+        Turing.@model function blocky(y)
+            μ ~ Normal(0, 5)
+            z ~ Turing.filldist(Normal(0, 1), 6)
+            s ~ Distributions.truncated(Normal(0, 2); lower = 0)
+            v ~ Turing.filldist(Normal(0, 1), 2)
+            y .~ Normal(μ + 0.5sum(z) + v[1] - v[2], s)
+        end
+        bm = blocky(randn(Xoshiro(4), 50))
+        @test Diomedes.scalar_indices(bm) == (10, [1, 8, 9, 10])
+        @test Diomedes.scalar_indices(bm; maxlen = 1) == (10, [1, 8])
+        mp = Diomedes.paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true)
+        np, ip = Diomedes.scalar_indices(mp)
+        ldf = Turing.DynamicPPL.LogDensityFunction(mp, Turing.DynamicPPL.getlogjoint_internal,
+                                                  Turing.DynamicPPL.link!!(Turing.DynamicPPL.VarInfo(mp), mp))
+        @test np == Turing.DynamicPPL.LogDensityProblems.dimension(ldf)
+        # 11 scalars (σ_comp σ_mach σ μ_γ a_π a_λ β_dur_π β_dur_λ τ_π_rw τ_λ_rw τ_κ) and, with two
+        # seasons, the one-step walks e_π_rw, e_λ_rw, e_κ
+        @test length(ip) == 14
+        # checkpointed run with the block metric: block 1 adapts it, later blocks keep it fixed
+        dir = mktempdir()
+        ch = Diomedes.run_nuts_checkpointed(bm, Turing.InitFromParams((; μ = 0.0, z = zeros(6), s = 1.0, v = zeros(2))),
+                                            joinpath(dir, "t"); n_samples = 40, n_adapts = 150, block = 20, dense_scalars = true)
+        @test size(ch[:μ]) == (40, 1)
+        b1, b2 = Diomedes.read_block(joinpath(dir, "t_block1.jls")), Diomedes.read_block(joinpath(dir, "t_block2.jls"))
+        @test b1.Minv isa BlockInvMetric && b1.Minv.idx == [1, 8, 9, 10] && length(b1.Minv) == 10
+        @test b2.Minv.block == b1.Minv.block && b2.ϵ == b1.ϵ
+        @test b1.Minv.block != Diagonal(diag(b1.Minv.block))        # adapted: off-diagonal terms
+        @test Diomedes.checkpoint_adapted(joinpath(dir, "t")).Minv isa BlockInvMetric
+        # resumed: same draws
+        dir2 = mktempdir()
+        cp(joinpath(dir, "t_block1.jls"), joinpath(dir2, "t_block1.jls"))
+        ch2 = Diomedes.run_nuts_checkpointed(bm, Turing.InitFromParams((; μ = 0.0, z = zeros(6), s = 1.0, v = zeros(2))),
+                                             joinpath(dir2, "t"); n_samples = 40, n_adapts = 150, block = 20, dense_scalars = true)
+        @test vec(ch2[:μ]) == vec(ch[:μ])
+        # warm start from a diagonal metric, and from a block one
+        dir3 = mktempdir()
+        ch3 = Diomedes.run_nuts_checkpointed(bm, Turing.InitFromParams((; μ = 0.0, z = zeros(6), s = 1.0, v = zeros(2))),
+                                             joinpath(dir3, "t"); n_samples = 20, n_adapts = 60, block = 20, dense_scalars = true,
+                                             warm = (; Minv = fill(0.5, 10), ϵ = 0.2))
+        @test Diomedes.read_block(joinpath(dir3, "t_block1.jls")).Minv isa BlockInvMetric
+        @test Diomedes.lap_warm_sampler(b1.Minv, b1.ϵ) isa typeof(Diomedes.block_nuts(b1.Minv, b1.ϵ))
+        @test_throws ArgumentError Diomedes.run_nuts_checkpointed(bm, Turing.InitFromParams((; μ = 0.0, z = zeros(6), s = 1.0, v = zeros(2))),
+                                                                  joinpath(mktempdir(), "t"); n_samples = 20, n_adapts = 60, block = 20,
+                                                                  dense_scalars = true, external = Diomedes.block_nuts(b1.Minv, b1.ϵ))
     end
 
     @testset "lap-time model (#12)" begin

@@ -1,6 +1,6 @@
 {
-    "model": "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
-    "fit": "gap_jolpica1950-2026+partial_pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
+    "model": "pl_durc_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
+    "fit": "gap_jolpica1950-2026+partial_pl_durc_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
     "chains": 4,
     "draws_per_chain": 1000,
     "chains_fitted": 4,
@@ -12,70 +12,70 @@
     ],
     "data": "F1 1950–2026, Jolpica API, all classified finishers (lapped as intervals, or at exact gaps from their own times from 2023), plus retirements from 1996 as partial gaps",
     "rows": {
-        "timed": 8046,
+        "timed": 8100,
         "lapped": 7187,
-        "lapped_exact": 404,
-        "partial": 1768
+        "lapped_exact": 424,
+        "partial": 1778
     },
     "convergence": {
-        "max_rhat": 1.049,
-        "min_ess": 157.8,
+        "max_rhat": 1.019,
+        "min_ess": 225.9,
         "divergences": 0,
         "groups": {
             "scalars": {
-                "max_rhat": 1.049,
-                "min_ess": 157.8,
+                "max_rhat": 1.019,
+                "min_ess": 225.9,
                 "worst": "σ_mach"
             },
             "chassis": {
-                "max_rhat": 1.007,
-                "min_ess": 1381,
-                "worst": "cooper 1957"
+                "max_rhat": 1.006,
+                "min_ess": 1404.7,
+                "worst": "maserati 1956"
             },
             "dinc": {
-                "max_rhat": 1.006,
-                "min_ess": 990.9,
+                "max_rhat": 1.007,
+                "min_ess": 905.7,
                 "worst": "ascari"
             },
             "slopes": {
                 "max_rhat": 1.007,
-                "min_ess": 1775.3,
-                "worst": "raikkonen"
+                "min_ess": 1942,
+                "worst": "michael_schumacher"
             },
             "circ": {
-                "max_rhat": 1.007,
-                "min_ess": 2068.3,
+                "max_rhat": 1.013,
+                "min_ess": 1706.8,
                 "worst": "porsche_1961 x1"
             },
             "cars": {
-                "max_rhat": 1.014,
-                "min_ess": 740.9,
+                "max_rhat": 1.009,
+                "min_ess": 1414.1,
                 "worst": "ferrari_2020"
             },
             "races": {
-                "max_rhat": 1.011,
-                "min_ess": 573.1,
-                "worst": "κ f1/1952-01/race"
+                "max_rhat": 1.012,
+                "min_ess": 558.1,
+                "worst": "π f1/2009-03/race"
             },
             "drivers": {
                 "max_rhat": 1.008,
-                "min_ess": 696.1,
-                "worst": "mclaren"
+                "min_ess": 637.6,
+                "worst": "hill"
             },
             "engine": {
-                "max_rhat": 1.005,
-                "min_ess": 1201.7,
-                "worst": "cosworth 1993"
+                "max_rhat": 1.007,
+                "min_ess": 1396,
+                "worst": "maserati 1953"
             },
             "age": {
-                "max_rhat": 1.003,
-                "min_ess": 1849.6,
-                "worst": "age 22"
+                "max_rhat": 1.007,
+                "min_ess": 1952.5,
+                "worst": "age 19"
             },
             "dev": {
-                "max_rhat": 1.007,
-                "min_ess": 3295.2,
-                "worst": "super_aguri_2006"
+                "max_rhat": 1.012,
+                "min_ess": 3360.3,
+                "worst": "lotus-ford_1969"
             }
         }
     },
@@ -90,18 +90,18 @@
             ],
             "draws": 4000,
             "kept": true,
-            "mean_logjoint": -32904,
-            "mean_loglikelihood": -19779.9,
+            "mean_logjoint": -32987.8,
+            "mean_loglikelihood": -19851.7,
             "loss": {
-                "sigma": 0.3913,
-                "pi_base": 0.7307,
-                "lambda_base": 1.5428,
+                "sigma": 0.3915,
+                "pi_base": 0.735,
+                "lambda_base": 1.4982,
                 "rho": 0.0191,
-                "lambda_big": 16.4953
+                "lambda_big": 16.4683
             },
             "convergence": {
-                "max_rhat": 1.049,
-                "min_ess": 157.8
+                "max_rhat": 1.019,
+                "min_ess": 225.9
             }
         }
     ],
@@ -117,25 +117,25 @@
             "temp"
         ],
         "covariate_sd": [
-            26.2872,
-            0.7602,
-            5.0209
+            26.2522,
+            0.7593,
+            5.0298
         ],
         "tau_cx": [
             {
-                "mean": 0.1411,
-                "q05": 0.1177,
-                "q95": 0.164
+                "mean": 0.1416,
+                "q05": 0.1196,
+                "q95": 0.1642
             },
             {
-                "mean": 0.1109,
-                "q05": 0.0885,
-                "q95": 0.1322
+                "mean": 0.1101,
+                "q05": 0.0872,
+                "q95": 0.1337
             },
             {
-                "mean": 0.0859,
-                "q05": 0.0673,
-                "q95": 0.1043
+                "mean": 0.0875,
+                "q05": 0.0695,
+                "q95": 0.105
             }
         ],
         "seasons_note": "π and λ by season are for a dry race at a circuit of average tightness"
@@ -143,39 +143,39 @@
     "walks": {
         "units": "% of race time in average-season units",
         "chassis_step": {
-            "mean": 0.3321,
-            "q05": 0.2627,
-            "q95": 0.4085
+            "mean": 0.3326,
+            "q05": 0.2699,
+            "q95": 0.4039
         },
         "chassis_first": {
-            "mean": 0.9896,
-            "q05": 0.7898,
-            "q95": 1.2025
+            "mean": 0.987,
+            "q05": 0.7954,
+            "q95": 1.1992
         },
         "engine_step": {
-            "mean": 0.1691,
-            "q05": 0.1041,
-            "q95": 0.2458
+            "mean": 0.172,
+            "q05": 0.1025,
+            "q95": 0.2532
         },
         "engine_first": {
-            "mean": 0.2153,
-            "q05": 0.0182,
-            "q95": 0.4862
+            "mean": 0.2088,
+            "q05": 0.0173,
+            "q95": 0.4772
         },
         "residual_sd": {
-            "mean": 0.4206,
-            "q05": 0.3582,
-            "q95": 0.4857
+            "mean": 0.418,
+            "q05": 0.3597,
+            "q95": 0.4793
         },
         "ownership_multiplier": {
-            "mean": 2.1094,
-            "q05": 1.3729,
-            "q95": 2.9781
+            "mean": 2.105,
+            "q05": 1.3373,
+            "q95": 2.9455
         },
         "regulation_multiplier": {
-            "mean": 1.2179,
-            "q05": 1.0174,
-            "q95": 1.5676
+            "mean": 1.2001,
+            "q05": 1.0139,
+            "q95": 1.5225
         },
         "states": {
             "chassis": 875,
@@ -185,21 +185,21 @@
     "works": {
         "units": "% of race time in average-season units (negative = faster)",
         "beta": {
-            "mean": -0.3308,
-            "q05": -0.6675,
-            "q95": 0.0177
+            "mean": -0.3354,
+            "q05": -0.668,
+            "q95": -0.0187
         },
-        "rows": 4700
+        "rows": 4740
     },
     "driver_incidents": {
         "units": "logit scale, offsets on the incident probability",
         "tau": {
-            "mean": 1.3331,
-            "q05": 1.1258,
-            "q95": 1.5701
+            "mean": 1.3534,
+            "q05": 1.1507,
+            "q95": 1.5877
         }
     },
     "exported_by": "scripts/export_site.jl race",
-    "export_commit": "8d335d2",
-    "date": "2026-10-25"
+    "export_commit": "7883754",
+    "date": "2026-11-27"
 }

@@ -148,8 +148,8 @@ diomedesFigure("fig-track", {
 </script>
 ```
 
-Rain is the larger effect: a wet race has about 6.5 times the odds of a routine
-loss (90% interval 3.3–11), and a mixed one about 2.2 times (1.5–3.1); each loss
+Rain is the larger effect: a wet race has about 6.6 times the odds of a routine
+loss (90% interval 3.3–12), and a mixed one about 2.2 times (1.5–3.1); each loss
 is also 22–26% larger. These odds are smaller than before per-driver incident
 proneness was added ([#101](https://github.com/aleccrowell/diomedes/issues/101)): some of what looked like rain was who
 was driving. Walls barely change how often losses happen, but make each one

@@ -69,7 +69,11 @@ diomedesFigure("fig-elpd-gains", {
 
 **Race duration** ([#19](https://github.com/aleccrowell/diomedes/issues/19)). Longer races don't have more incidents (slope on
 logit π −0.014 ± 0.073), but each incident costs a smaller share of a long
-race (slope on log λ −0.071 ± 0.025).
+race (slope on log λ −0.071 ± 0.025). Centred within season (`durc`,
+[#154](https://github.com/aleccrowell/diomedes/issues/154)), so they compare a race with its own season's norm,
+the slopes are +0.07 ± 0.09 and −0.10 ± 0.025: the same conclusion. Centring
+removed the slopes' trade-off with the era walks, and the published fit's slowest
+quantity improved from R-hat 1.049 (ESS 158) to 1.019 (ESS 226).
 
 **Pace scale κ** ([#20](https://github.com/aleccrowell/diomedes/issues/20)). A season's spread of results is not constant: κ is
 about 2.5 in the early 1950s, about 1.4 in the mid-1960s and the mid-1980s turbo

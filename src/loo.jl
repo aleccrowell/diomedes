@@ -132,10 +132,11 @@ function model_spec(name::AbstractString)
                             big_loss = false, slopes = false, dev = false, centred_drivers = false,
                             driver_ν = nothing, race_hier = false, race_mean = false, circ = false, track = false, walk = false,
                             walk1 = false, works = false, dinc = false, ncres = false, wlev = false,
-                            kc = false, kst = false, wst = false, wstc = false, wstl = false, wlevn = false)
+                            kc = false, kst = false, wst = false, wstc = false, wstl = false, wlevn = false, durc = false)
     parts = split(name, "_")
     first(parts) == "pl" || throw(ArgumentError("unknown model $name"))
-    dur, kappa, age, big, slopes, dev = "dur" in parts, "kappa" in parts, "age" in parts, "big" in parts,
+    durc = "durc" in parts          # duration centred within season (#154); implies dur
+    dur, kappa, age, big, slopes, dev = "dur" in parts || durc, "kappa" in parts, "age" in parts, "big" in parts,
                                         "slope" in parts, "dev" in parts
     circ, track = "circ" in parts, "track" in parts      # circuit terms (#81)
     walk1 = "walk1" in parts        # walks with one regulation multiplier (#97)
@@ -155,11 +156,11 @@ function model_spec(name::AbstractString)
     fgam = "fgam" in parts          # fixed race-intercept prior; the learned common level is the default (#36)
     count(in(parts), ("hgam", "mgam", "fgam")) <= 1 || throw(ArgumentError("_hgam, _mgam and _fgam are alternatives: $name"))
     eras = [Symbol(p) for p in parts[2:end]
-            if p ∉ ("dur", "kappa", "age", "big", "slope", "dev", "circ", "track", "walk", "walk1", "works", "dinc", "ncres", "wlev", "wlevn", "kc", "kst", "wst", "wstc", "wstl", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
+            if p ∉ ("dur", "durc", "kappa", "age", "big", "slope", "dev", "circ", "track", "walk", "walk1", "works", "dinc", "ncres", "wlev", "wlevn", "kc", "kst", "wst", "wstc", "wstl", "cdrv", "tdrv", "hgam", "mgam", "fgam")]
     length(eras) <= 1 && all(in(ERA_TERMS), eras) || throw(ArgumentError("unknown model $name"))
     return (; family = :pl, loss_duration = dur, era = isempty(eras) ? :none : only(eras),
             pace_scale = kappa, age, big_loss = big, slopes, dev, centred_drivers = cdrv,
-            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn)
+            driver_ν = tdrv ? 3.0 : nothing, race_hier = hgam, race_mean = !hgam && !fgam, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn, durc)
 end
 
 """

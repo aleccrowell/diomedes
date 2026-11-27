@@ -84,9 +84,9 @@ race pace (or on open-track pace with the toggle). On race pace even the most
 likely fastest driver is first in only
 <span class="diomedes-stat" data-path="assets/data/race/ranks.csv" data-stat="max" data-x="p_top1" data-format="pct">…</span>
 of the draws. The two measures disagree at the top: on open-track pace
-Verstappen is first in 64% of the draws, the clearest leader in the data; on
-race pace Fangio leads (37%), ahead of Hunt, Stewart and Senna, and Verstappen
-is first in 8%. The difference is incidents: Fangio, Stewart and Senna rarely
+Verstappen is first in 68% of the draws, the clearest leader in the data; on
+race pace Fangio leads (38%), ahead of Hunt, Stewart and Senna, and Verstappen
+is first in 9%. The difference is incidents: Fangio, Stewart and Senna rarely
 lost time to them, while Verstappen is about average among the top drivers.</p>
 ```
 
@@ -136,7 +136,7 @@ results are in <a class="diomedes-data" data-path="assets/data/race/ranks.csv"><
 
 ## Every driver
 
-All 569 drivers with a classified finish, by the middle of their career. Point
+All 571 drivers with a classified finish, by the middle of their career. Point
 size is the number of results. Drag to pan, scroll to zoom, and type a name to
 highlight it.
 
@@ -192,8 +192,8 @@ Drivers differ in how often they lose time to incidents (a spin, a stop, a
 problem that costs time but still ends in a classified result), as well as in
 pace ([#101](https://github.com/aleccrowell/diomedes/issues/101)). The model gives each driver an offset on the
 log-odds of an incident in a race. The spread is large: one standard deviation
-(1.33 on the log-odds scale) multiplies a driver's odds of an incident by
-about 3.8.
+(1.35 on the log-odds scale) multiplies a driver's odds of an incident by
+about 3.9.
 
 To compare the two on one scale, each driver gets:
 
@@ -266,14 +266,14 @@ right were slower and lost more. What stands out:
 - **The two are related, but loosely.** Among drivers with at least 40 results,
   the incident part spreads nearly as much as pace (sd 0.31% against 0.36%), and
   the two correlate weakly (r = 0.38).
-- **Verstappen is the fastest on pace by a wide margin (−1.50%), but average for
-  incidents among the top drivers,** so his incident part is small (−0.23%).
-  Fangio, Piquet, Bruce McLaren, Lauda, Prost and Stewart gain 0.8–1.0% from
+- **Verstappen is the fastest on pace by a wide margin (−1.52%), but average for
+  incidents among the top drivers,** so his incident part is small (−0.22%).
+  Fangio, Piquet, Bruce McLaren, Hülkenberg, Lauda, Prost, Stewart and Mansell gain 0.8–1.0% from
   rarely losing time.
-- **Overall, the top five are close:** Fangio (−1.98%), Hunt, Stewart, Senna and
-  Verstappen (−1.73%), with heavily overlapping intervals.
+- **Overall, the top five are close:** Fangio (−1.97%), Stewart, Hunt, Senna and
+  Verstappen (−1.74%), with heavily overlapping intervals.
 - **The most incident-prone,** among drivers with at least 40 results, are
-  Karthikeyan, Sato, Glock, Latifi and Alliot: their proneness costs 0.23–0.31%.
+  Karthikeyan, Sato, Glock, Latifi and Alliot: their proneness costs 0.22–0.31%.
 
 The overall figure is the race time a driver would take relative to an
 average driver in the same reference race, pace and incidents together. Only classified
