@@ -1,0 +1,115 @@
+{
+    "model": "lap_effects (stint age, career slopes, lead laps, tyre management, starts, age curve, circuit slopes, track terms, incident proneness, big losses, race-level chassis walk, no driver start effects, race walk relative to drivers, traffic, field pace, peak pace and shortfall, per-lap conditions, car-season wet effects, race wet offsets, per-race stint slopes, true tyre age, reconciled pit stops, age bins of ≥ 3 drivers, slow laps kept, wet laps kept)",
+    "fit": "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_rwrel_traffic_fpace_short_cond_wetallg_wetrace_racedegc_tyreage_pitfix_agemin3_keepslow_keepwet",
+    "data": "F1 2021–2026 clean laps (Jolpica lap times, recorded pit stops, reconciled with the timing data): 128632 laps, 38 drivers, 61 machine-seasons, 134 races; excluded lap1 2666, no_machine 0, pit 7062, slow_race 10998, stoppage 0",
+    "race_model": "pl_durc_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc",
+    "convergence": {
+        "max_rhat": 1.032,
+        "min_ess": 141,
+        "divergences": 0,
+        "groups": {
+            "race walk": {
+                "max_rhat": 1.022,
+                "min_ess": 200
+            },
+            "tyre (drv)": {
+                "max_rhat": 1.002,
+                "min_ess": 3165
+            },
+            "start (car)": {
+                "max_rhat": 1.004,
+                "min_ess": 1000
+            },
+            "incidents": {
+                "max_rhat": 1.004,
+                "min_ess": 1550
+            },
+            "fpace car": {
+                "max_rhat": 1.004,
+                "min_ess": 5070
+            },
+            "drivers": {
+                "max_rhat": 1.032,
+                "min_ess": 177
+            },
+            "slopes": {
+                "max_rhat": 1.02,
+                "min_ess": 183
+            },
+            "age curve": {
+                "max_rhat": 1.032,
+                "min_ess": 141
+            },
+            "scalars": {
+                "max_rhat": 1.021,
+                "min_ess": 358
+            },
+            "tyre (car)": {
+                "max_rhat": 1.002,
+                "min_ess": 3389
+            },
+            "wet drv": {
+                "max_rhat": 1.004,
+                "min_ess": 3449
+            },
+            "cars": {
+                "max_rhat": 1.023,
+                "min_ess": 191
+            },
+            "circuits": {
+                "max_rhat": 1.009,
+                "min_ess": 829
+            },
+            "peak": {
+                "max_rhat": 1.032,
+                "min_ess": 179
+            },
+            "short q": {
+                "max_rhat": 1.002,
+                "min_ess": 2559
+            },
+            "short λ": {
+                "max_rhat": 1.002,
+                "min_ess": 2869
+            },
+            "short car": {
+                "max_rhat": 1.003,
+                "min_ess": 3090
+            },
+            "wet car": {
+                "max_rhat": 1.002,
+                "min_ess": 3207
+            }
+        }
+    },
+    "modes": [
+        {
+            "label": "A",
+            "chains": [
+                1,
+                2,
+                3,
+                4
+            ],
+            "draws": 4000,
+            "kept": true,
+            "mean_logjoint": -149338.3,
+            "scalars": {
+                "tau_delta": 2.2937,
+                "sigma": 0.4635,
+                "pi_base": 0.1453,
+                "lambda_base": 0.9912
+            },
+            "convergence": null
+        }
+    ],
+    "kept_modes": [
+        "A"
+    ],
+    "effects_by_mode": [
+    ],
+    "mode_drop_nats": 10,
+    "exported_by": "scripts/export_site.jl laps",
+    "export_commit": "7883754",
+    "date": "2026-11-27"
+}

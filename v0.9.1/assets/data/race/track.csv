@@ -1,0 +1,4 @@
+term,label,share,pi_odds_mean,pi_odds_q05,pi_odds_q95,lambda_mult_mean,lambda_mult_q05,lambda_mult_q95
+tight,Walls (tight score 1 vs 0),0.3096,1.1697,0.8863,1.5048,1.2566,1.1672,1.3556
+mixed,Mixed race (vs dry),0.0915,2.187,1.4937,3.0508,1.2188,1.1133,1.3373
+wet,Wet race (vs dry),0.0535,6.5653,3.3389,11.6303,1.2623,1.1304,1.3952

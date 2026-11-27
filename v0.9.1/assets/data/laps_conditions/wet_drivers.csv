@@ -1,0 +1,39 @@
+id,name,wet_laps,mean,sd
+max_verstappen,Max Verstappen,370,-0.5201,0.1273
+hulkenberg,Nico Hülkenberg,169,-0.4319,0.1465
+hadjar,Isack Hadjar,24,-0.3473,0.2524
+de_vries,Nyck de Vries,23,-0.3116,0.2341
+norris,Lando Norris,374,-0.2983,0.1308
+piastri,Oscar Piastri,206,-0.2464,0.1456
+bottas,Valtteri Bottas,288,-0.2295,0.1265
+kevin_magnussen,Kevin Magnussen,137,-0.2244,0.1498
+latifi,Nicholas Latifi,94,-0.1836,0.1422
+ricciardo,Daniel Ricciardo,196,-0.1519,0.1349
+vettel,Sebastian Vettel,142,-0.1472,0.1487
+ocon,Esteban Ocon,341,-0.0802,0.1025
+stroll,Lance Stroll,272,-0.0776,0.1251
+hamilton,Lewis Hamilton,359,-0.0762,0.1029
+raikkonen,Kimi Räikkönen,77,-0.0247,0.2039
+antonelli,Andrea Kimi Antonelli,61,-0.0111,0.1743
+ryo_hirakawa,Ryo Hirakawa,0,-0.0067,0.3102
+kubica,Robert Kubica,0,-0.0016,0.319
+doohan,Jack Doohan,0,0.0022,0.3088
+rafael_camara,Rafael Camara,22,0.0385,0.2511
+leclerc,Charles Leclerc,354,0.0479,0.1202
+giovinazzi,Antonio Giovinazzi,74,0.0562,0.2059
+sargeant,Logan Sargeant,54,0.0644,0.1926
+gasly,Pierre Gasly,347,0.0731,0.1029
+perez,Sergio Pérez,313,0.0827,0.133
+russell,George Russell,345,0.0885,0.1072
+bearman,Oliver Bearman,105,0.0893,0.1469
+bortoleto,Gabriel Bortoleto,23,0.0902,0.2502
+colapinto,Franco Colapinto,47,0.0989,0.2013
+mick_schumacher,Mick Schumacher,138,0.1111,0.1631
+sainz,Carlos Sainz,274,0.123,0.1237
+alonso,Fernando Alonso,331,0.1398,0.1119
+mazepin,Nikita Mazepin,70,0.2437,0.1964
+arvid_lindblad,Arvid Lindblad,22,0.2949,0.2645
+albon,Alexander Albon,195,0.3639,0.1404
+zhou,Guanyu Zhou,187,0.3892,0.1456
+lawson,Liam Lawson,118,0.4666,0.1346
+tsunoda,Yuki Tsunoda,333,0.5062,0.1042
