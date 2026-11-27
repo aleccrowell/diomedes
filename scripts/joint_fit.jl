@@ -6,9 +6,9 @@
 #
 # The race part is the published race model (`durc`) on 1950–2020, so no race is in both
 # parts. The lap part is the lap model of #159 on 2021–2026 (recorded pit stops, reconciled;
-# `cond wetallg wetrace racedegc tyreage pitfix keepslow keepwet rwrel`, no age curve).
-# TODO(#128 step 5): switch the lap part to every lap (`alllaps`), so both parts measure a
-# share of total time.
+# `cond wetallg wetrace racedegc tyreage pitfix keepslow keepwet rwrel`, no age curve), on every
+# lap (`alllaps`): the laps the clean-lap model leaves out come in with their own shifts, and the
+# drivers' and cars' effects are on every lap, so both parts measure a share of total time.
 #
 # Chain k starts at the race model's starting values (`paceloss_init_values`; the published
 # race fit covers other seasons) and the last draw of chain k of the lap fit (`joint_init`).
@@ -48,12 +48,13 @@ function lap_model()
     nums = jolpica_driver_numbers(jol, ss)
     rec = reconcile_pit_stops(pits, lc, nums)
     d = prepare_laps(laps, res; pits = :recorded, pit_stops = rec.stops, circuits = circuit_table(), stoppage = false,
-                     keep_laps = Diomedes.wet_green_laps(lc))
+                     keep_laps = Diomedes.wet_green_laps(lc), alllaps = true)
     ctx = LapContext(d, laps; traffic = true, fpace = true, short = true)
     cnd = LapConditions(d, lc, nums; wetdev = true, wetcar = true, wetmin = 1, wetglobal = true, wetrace = true,
                         racedeg = true, racedegc = true, tyreage = true, noage = rec.noage)
     lm = lap_effects(d; slopes = true, lead = true, tyre_mgmt = true, starts = true, age = false, circuits = true,
-                     track = true, dinc = true, big = true, rwalk = true, sdrv = false, ctx, cond = cnd, rwrel = true)
+                     track = true, dinc = true, big = true, rwalk = true, sdrv = false, ctx, cond = cnd, rwrel = true,
+                     alllaps = true)
     return d, lm
 end
 
@@ -90,7 +91,9 @@ elseif action == "chain"
                                        dev = s.dev, race_mean = s.race_mean, circ = s.circ, track = s.track, walk = s.walk,
                                        walk1 = s.walk1, works = s.works, dinc = s.dinc)
     lc = block_chain_k(LAP_TAG, k)
-    init = joint_init(r0, Diomedes.draw_params(lc), jd)
+    # the lap fit's last draw, with the other laps' terms (not in that fit) started from the laps
+    l0 = merge(Diomedes.draw_params(lc), Diomedes.other_laps_init(d, lm.args.xl))
+    init = joint_init(r0, l0, jd)
     println("joint chain $k: $(jd); race part from its starting values, lap part from lap chain $k's last draw"); flush(stdout)
     mkpath("output")
     t = @elapsed ch = Diomedes.run_nuts_checkpointed(jm, init, "output/$(tag)_chain$(k)";

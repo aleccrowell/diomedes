@@ -1217,14 +1217,6 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     end
     @addlogprob! lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, cv, wv, rwk,
                             ctx, cond, d)
-    if xl !== nothing       # every other lap (`alllaps`, the joint model's lap part, #128)
-        nt = length(xl.types)
-        μ_x ~ IsoNormalVec(0.0, 20.0, nt)                         # each lap type's mean shift, % of the clean lap
-        τ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # spread of its groups' shifts
-        u_x ~ StdNormalVec(length(d.group_type))
-        σ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # each type's lap noise (Student-t(4) scale)
-        @addlogprob! other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl, d)
-    end
     if starts
         sd = sdrv ? career_slopes(τ_sd, u_sd) : 0 .* a_π .+ zeros(length(d.competitors))   # τ·(u - mean u)
         sc = τ_sc .* center_by(u_sc, d.mach_season, mach_counts)
@@ -1236,6 +1228,15 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
             πd1 = zeros(length(d.competitors))
         end
         @addlogprob! start_loglik(γ1, a, b, sd, sc, g1, fage, cx, xr, σ1, logistic(a_π1), exp(a_λ1), πd1, rwk, d)
+    end
+    # last, so the other terms keep their place in the sampler's vector (warm starts, `lap_layout`)
+    if xl !== nothing       # every other lap (`alllaps`, the joint model's lap part, #128)
+        nt = length(xl.types)
+        μ_x ~ IsoNormalVec(0.0, 20.0, nt)                         # each lap type's mean shift, % of the clean lap
+        τ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # spread of its groups' shifts
+        u_x ~ StdNormalVec(length(d.group_type))
+        σ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # each type's lap noise (Student-t(4) scale)
+        @addlogprob! other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl, d)
     end
 end
 
@@ -1376,6 +1377,23 @@ function OtherLaps(d::LapData, rwk)
 end
 
 """
+    other_laps_init(d::LapData, xl::OtherLaps) -> NamedTuple
+
+Starting values for the other laps' terms (`alllaps`, #128), from the laps themselves:
+each type's mean shift and its groups' spread, each group's own mean, and each type's
+spread of laps around their group's mean.
+"""
+function other_laps_init(d::LapData, xl::OtherLaps)
+    ng, nt = length(d.group_type), length(xl.types)
+    gm = [mean(d.x_y[d.x_group .== g]) for g in 1:ng]
+    μ_x = [mean(gm[xl.gt .== t]) for t in 1:nt]
+    τ_x = [count(==(t), xl.gt) > 1 ? max(std(gm[xl.gt .== t]), 0.5) : 1.0 for t in 1:nt]
+    resid = d.x_y .- gm[d.x_group]
+    σ_x = [count(==(t), xl.xt) > 1 ? max(std(resid[xl.xt .== t]), 0.5) : 1.0 for t in 1:nt]
+    return (; μ_x, τ_x, u_x = (gm .- μ_x[xl.gt]) ./ τ_x[xl.gt], σ_x)
+end
+
+"""
     other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl::OtherLaps, d::LapData)
 
 Log likelihood of the other laps (`alllaps`, #128): lap k of driver c, car m, race r and group g,
@@ -1420,12 +1438,13 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                   age::Bool = false, circuits::Bool = false, track::Bool = false, dinc::Bool = false,
                   walk::Bool = false, works::Bool = false, big::Bool = false, rwalk::Bool = false, sdrv::Bool = true,
                   dinc1::Bool = false, cars = walk || rwalk ? car_table() : nothing, ctx = LapContext(),
-                  cond = LapConditions(), rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1, δ::Real = 0.8, kwargs...)
+                  cond = LapConditions(), rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1, δ::Real = 0.8,
+                  alllaps::Bool = false, kwargs...)
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     warm_start === nothing || checkpoint !== nothing ||
         throw(ArgumentError("warm_start is implemented for checkpointed fits"))
     model = lap_effects(d; tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk,
-                        sdrv, dinc1, cars, ctx, cond, rwrel, rwrels, age_order)
+                        sdrv, dinc1, cars, ctx, cond, rwrel, rwrels, age_order, alllaps)
     cw = model.args.cw
     rwm = model.args.rw
     wcw = model.args.wcw
@@ -1507,7 +1526,8 @@ function fit_laps(d::LapData; n_samples::Int = 1000, n_chains::Int = 1, ensemble
                                                         u_wet = 0.1 .* randn(rng, length(d.machines) + length(d.competitors))) : (;))
     # leave out what the model doesn't sample (no residual with the race walk, no driver start effects)
     drop = (rwalk ? (:σ_mach, :b_mach) : ())..., (sdrv ? () : (:τ_sd, :u_sd))...
-    init() = InitFromParams(NamedTuple(k => v for (k, v) in pairs(init_all()) if k ∉ drop))
+    init() = InitFromParams(merge(NamedTuple(k => v for (k, v) in pairs(init_all()) if k ∉ drop),
+                                  alllaps ? other_laps_init(d, model.args.xl) : (;)))
     external = warm_start === nothing ? nothing : lap_warm_sampler(warm_start.Minv, warm_start.ϵ; δ)
     checkpoint === nothing ||
         return run_nuts_checkpointed(model, init(), checkpoint; n_samples, n_adapts, seed, progress_log, log_every,
@@ -1522,6 +1542,8 @@ end
 # (2011–2019) skips that phase.
 
 const START_PARAMS = (:γ1, :τ_sd, :u_sd, :τ_sc, :u_sc, :g1, :σ1, :a_π1, :a_λ1)
+const OTHER_PARAMS = (:μ_x, :τ_x, :u_x, :σ_x)    # the other laps (`alllaps`, #128)
+OTHER_TYPES(d::LapData) = sort(unique(d.group_type))
 const AGE_PARAMS = (:τ_age, :e_age)
 # Prior scale of the second-order age walk's τ_age (#124): on 2021–2026's ages the basis's largest singular value is
 # ~34, so a curve's per-age amplitude is ~τ·34/√27 ≈ 6.5τ, and 0.05 allows ~0.3 %. With half-N(0, 0.2) the data pulled
@@ -1552,8 +1574,8 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
            rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
            cw = walk || rwalk ? CarWalks(d) : nothing, rwk = rwalk ? RaceWalk(d) : nothing, ctx = LapContext(),
            cond = LapConditions(), wcw = cond.on && cond.wetdev && cond.wetpool ? CarWalks(d) : nothing, rwrel::Bool = false,
-           rwrels::Bool = false, age_order::Int = 1) =
-    filter(p -> (tyres || first(p) !== :β) && (slopes || first(p) ∉ (:τ_slope, :u_slope)) &&
+           rwrels::Bool = false, age_order::Int = 1, alllaps::Bool = false) =
+    filter(p -> (alllaps || first(p) ∉ OTHER_PARAMS) && (tyres || first(p) !== :β) && (slopes || first(p) ∉ (:τ_slope, :u_slope)) &&
                 (dev || first(p) ∉ (:τ_dev, :u_dev)) && (lead || first(p) !== :η) &&
                 (tyre_mgmt || first(p) ∉ (:τ_td, :u_td, :τ_tm, :u_tm)) &&
                 (starts || first(p) ∉ START_PARAMS) && (age || first(p) ∉ AGE_PARAMS) &&
@@ -1624,7 +1646,12 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :τ_wetc => (1, nothing), :u_wetc => (length(cond.wetcars), d.machines[cond.wetcars]),
                           :τ_wetd => (1, nothing), :u_wetd => (length(d.competitors), d.competitors),
                           :τ_wr => (1, nothing), :u_wr => (length(cond.wetraces), d.races[cond.wetraces]),
-                          :τ_dinc1 => (1, nothing), :u_dinc1 => (length(d.competitors), d.competitors)])
+                          :τ_dinc1 => (1, nothing), :u_dinc1 => (length(d.competitors), d.competitors),
+                          # the other laps (`alllaps`, #128), last in the model
+                          :μ_x => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
+                          :τ_x => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
+                          :u_x => (length(d.group_type), d.group_label),
+                          :σ_x => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)])])
 
 # Inverse-metric entries for blocks a warm start's old fit doesn't have (career
 # slopes or car development added to a fit without them), on the sampler's scale

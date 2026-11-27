@@ -1552,6 +1552,12 @@ end
             x = 0.3 .* randn(rng, LDP.dimension(rd))
             @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
         end
+        # the other laps' terms come last in the sampler's vector, and the layout knows them
+        lay = Diomedes.lap_layout(d; alllaps = true)
+        @test [first(p) for p in lay[end-3:end]] == [:μ_x, :τ_x, :u_x, :σ_x]
+        @test sum(first(last(p)) for p in lay) == LDP.dimension(rd)
+        @test sum(first(last(p)) for p in Diomedes.lap_layout(d)) == LDP.dimension(rd) - (3 * 4 + 4)
+        @test last(last(lay[end-1])) == d.group_label
     end
 
     @testset "lap-time model (#12)" begin

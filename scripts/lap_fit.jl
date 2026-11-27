@@ -114,6 +114,7 @@ racedeg = "racedeg" ∈ ARGS || racedegc   # each race's own stint slope around 
 tyreage = "tyreage" ∈ ARGS        # the true tyre age (a used set's earlier laps counted), with cond (#124)
 pitfix = "pitfix" ∈ ARGS          # pit stops reconciled with the timing data's tyre stints, with cond (#151)
 agerw2 = "agerw2" ∈ ARGS          # the age curve as a second-order walk (slope steps random), with age (#124)
+alllaps = "alllaps" ∈ ARGS        # every lap: the other laps typed, with group shifts, effects on every lap (#128; the joint model's lap part)
 age_order = agerw2 ? 2 : 1
 wetallg = "wetallg" ∈ ARGS        # as wetall, the car-seasons' deviations centred over all of them, not within season (#116)
 wetall = "wetall" ∈ ARGS || wetallg   # as wetshr, every car-season with a wet lap: the prior alone shrinks them (#116)
@@ -137,7 +138,7 @@ n_block = blockarg === nothing ? (probe ? 25 : 100) : parse(Int, split(ARGS[bloc
 # missing from this list was read as the chain count, and warm= had to be 5th).
 FLAGS = ("notyres", "slopes", "dev", "lead", "tyremgmt", "starts", "age", "circuits", "track", "dinc",
          "walk", "works", "big", "keepslow", "keepwet", "rwalk", "rwrel", "rwrels", "nostartdrv", "dinc1", "notune", "probe",
-         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "racedeg", "racedegc", "tyreage", "pitfix", "agerw2")
+         "traffic", "fpace", "short", "cond", "wetdev", "wetwalk", "wetdrv", "wetshr", "wetall", "wetallg", "wetrace", "racedeg", "racedegc", "tyreage", "pitfix", "agerw2", "alllaps")
 KEYS = ("delta", "step", "draws", "block", "warm", "warmfrom", "warmpits", "warmlast", "agemin", "n")
 optkey(a) = (i = findfirst('=', a); i === nothing ? nothing : a[1:prevind(a, i)])
 badkeys = [a for a in ARGS if optkey(a) !== nothing && optkey(a) ∉ KEYS]
@@ -163,7 +164,7 @@ flag_sfx(f) = (f[1] ? "" : "_notyres") * (f[2] ? "_slopes" : "") * (f[3] ? "_dev
 flags = (tyres, slopes, dev, lead, tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1)
 ctx_sfx = (traffic ? "_traffic" : "") * (fpace ? "_fpace" : "") * (short ? "_short" : "") *   # #113, after the others
           (condf ? "_cond" : "") * (wetwalk ? "_wetwalk" : wetdrv ? "_wetdrv" : wetallg ? "_wetallg" : wetall ? "_wetall" : wetshr ? "_wetshr" : wetdev ? "_wetdev" : "") *
-          (wetrace ? "_wetrace" : "") * (racedegc ? "_racedegc" : racedeg ? "_racedeg" : "") * (tyreage ? "_tyreage" : "") * (pitfix ? "_pitfix" : "") * (agerw2 ? "_agerw2" : "") * (agemin > 0 ? "_agemin$(agemin)" : "")   # #116, #124, #151
+          (wetrace ? "_wetrace" : "") * (racedegc ? "_racedegc" : racedeg ? "_racedeg" : "") * (tyreage ? "_tyreage" : "") * (pitfix ? "_pitfix" : "") * (agerw2 ? "_agerw2" : "") * (agemin > 0 ? "_agemin$(agemin)" : "") * (alllaps ? "_alllaps" : "")   # #116, #124, #151, #128
 tag = "laps_$(args[1])_$(pits)" * flag_sfx(flags) * (rwrels ? "_rwrels" : rwrel ? "_rwrel" : "") * ctx_sfx * (keepslow ? "_keepslow" : "") * (keepwet ? "_keepwet" : "") * (probe ? "_probe" : "")
 # All seasons from the Jolpica API (#55: one source; its lap times match the Ergast
 # dump's on 1996–2019 but for 76 of 472,504 laps). Run scripts/fetch_jolpica.jl first
@@ -181,7 +182,8 @@ wetkeep = keepwet ? Diomedes.wet_green_laps(read_lap_conditions()) : nothing
 rec = pitfix ? reconcile_pit_stops(sd.pits, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons))) : nothing
 pitfix && (println("pit stops reconciled (#151): ", rec.report); flush(stdout))
 d = prepare_laps(sd.laps, res; pits, pit_stops = pitfix ? rec.stops : sd.pits, circuits = circ, stoppage = !keepslow, keep_laps = wetkeep,
-                 age_min_drivers = agemin)
+                 age_min_drivers = agemin, alllaps)
+alllaps && (println("other laps (#128): ", length(d.x_y), " in ", length(d.group_type), " groups"); flush(stdout))
 println(d); flush(stdout)
 ctx = traffic || fpace || short ? LapContext(d, sd.laps; traffic, fpace, short) : LapContext()
 cnd = condf ? LapConditions(d, read_lap_conditions(), jolpica_driver_numbers(jolpica, collect(seasons)); wetdev,
@@ -330,7 +332,7 @@ if action == "chain"
     t = @elapsed chain = fit_laps(d; rng = Xoshiro(k), checkpoint = "output/$(tag)_chain$(k)", seed = 1000k, n_samples = n_draws,
                                   block = n_block, progress_log = stdout, warm_start = ws, n_adapts, tyres, slopes, dev, lead,
                                   tyre_mgmt, starts, age, circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1, ctx,
-                                  cond = cnd, rwrel, rwrels, age_order, δ, tune_step,
+                                  cond = cnd, rwrel, rwrels, age_order, δ, tune_step, alllaps,
                                   step_kw...)
     # adapted metric and step size, for warm starts of later fits (see above)
     try
