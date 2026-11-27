@@ -1291,6 +1291,77 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
 end
 
 """
+    paceloss_init_values(g, model; rng, <the model's options>) -> NamedTuple
+
+Starting values for `paceloss_effects` near the prior centre, jittered per call so that R-hat
+compares chains started apart: scales at 0.3–0.7 of the data's gap scale, race intercepts at
+each race's mean gap, effects small. `fit_paceloss` starts from these; the joint model (#128)
+uses them for its race part.
+"""
+function paceloss_init_values(g::GapData, model; rng = Random.default_rng(), loss_duration::Bool = false, era::Symbol = :none,
+                              pace_scale::Bool = false, age::Bool = false, big_loss::Bool = false, slopes::Bool = false,
+                              dev::Bool = false, centred_drivers::Bool = false, race_hier::Bool = false, race_mean::Bool = !race_hier,
+                              circ::Bool = false, track::Bool = false, walk::Bool = false, walk1::Bool = false, works::Bool = false,
+                              dinc::Bool = false, ncres::Bool = false, wlev::Bool = false, kc::Bool = false, kst::Bool = false,
+                              wst::Bool = false, wstc::Bool = false, wstl::Bool = false, wlevn::Bool = false)
+    cov = model.args.cov
+    race_gap = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
+                 for r in eachindex(g.races)]
+    ps = model.args.ps
+    scale() = (0.3 + 0.4 * rand(rng)) * ps.s          # start scales at the dataset's gap scale (#30)
+    p = (; σ_comp = scale(), σ_mach = scale(), σ = scale(),
+         z_comp = 0.1 .* randn(rng, length(g.competitors)),
+         z_mach = 0.1 .* randn(rng, length(g.machines)),
+         γ = race_gap .+ 0.1 .* randn(rng, length(race_gap)),
+         a_π = -1.5 + 0.1 * randn(rng), a_λ = log(2ps.s) + 0.1 * randn(rng))
+    loss_duration && (p = (; p..., β_dur_π = 0.1 * randn(rng), β_dur_λ = 0.1 * randn(rng)))
+    if era === :decade || era === :regime
+        k = era === :decade ? cov.n_decades : cov.n_regimes
+        p = (; p..., τ_π_era = 0.1 + 0.1 * rand(rng), τ_λ_era = 0.1 + 0.1 * rand(rng),
+             z_π_era = 0.1 .* randn(rng, k), z_λ_era = 0.1 .* randn(rng, k))
+    elseif era === :rw
+        p = (; p..., τ_π_rw = 0.05 + 0.05 * rand(rng), τ_λ_rw = 0.05 + 0.05 * rand(rng),
+             e_π_rw = 0.1 .* randn(rng, cov.n_seasons - 1), e_λ_rw = 0.1 .* randn(rng, cov.n_seasons - 1))
+    end
+    if pace_scale      # centred car effects replace z_mach
+        ns = cov.n_seasons
+        kstart = kst ? (; l_κ = 0.01 .* randn(rng, ns)) : kc ? (; s_κ = 0.01 .* randn(rng, ns - 1)) :
+                 (; e_κ = 0.1 .* randn(rng, ns - 1))
+        cstart = ncres ? (; z_res = 0.1 .* randn(rng, length(g.machines))) : (; b_mach = 0.1 .* randn(rng, length(g.machines)))
+        p = (; (k => v for (k, v) in pairs(p) if k !== :z_mach)..., τ_κ = 0.05 + 0.05 * rand(rng), kstart..., cstart...)
+    end
+    age && (p = (; p..., τ_age = 0.05 + 0.05 * rand(rng), e_age = 0.1 .* randn(rng, length(g.age_years) - 1)))
+    big_loss && (p = (; p..., a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)))
+    slopes && (p = (; p..., τ_slope = 0.05 + 0.05 * rand(rng), u_slope = 0.1 .* randn(rng, length(g.competitors))))
+    dev && (p = (; p..., τ_dev = 0.05 + 0.05 * rand(rng), u_dev = 0.1 .* randn(rng, length(g.machines))))
+    if circ
+        nk = size(cov.circuits.x, 2)
+        p = (; p..., τ_cx = 0.05 .+ 0.05 .* rand(rng, nk), u_cx = 0.1 .* randn(rng, length(g.machines) * nk))
+    end
+    if track
+        nx = size(cov.circuits.track, 2)
+        p = (; p..., β_track_π = 0.1 .* randn(rng, nx), β_track_λ = 0.1 .* randn(rng, nx))
+    end
+    if walk
+        cw = cov.cars
+        zc, ze = wst ? (:xs_ch, :xs_en) : wstc ? (:xs_ch, :z_en) : wstl ? (:xs_ch, :zl_en) :
+                 wlev ? (:zl_ch, :zl_en) : wlevn ? (:zl_ch, :zn_en) : (:z_ch, :z_en)
+        p = (; p..., τ_ch = 0.05 + 0.05 * rand(rng), σ0_ch = scale(), zc => 0.1 .* randn(rng, length(cw.chassis.prev)),
+             τ_en = 0.05 + 0.05 * rand(rng), σ0_en = scale(), ze => 0.1 .* randn(rng, length(cw.engine.prev)),
+             δ_own = 0.1 + 0.1 * rand(rng),
+             (walk1 ? (; δ_reg = 0.1 + 0.1 * rand(rng)) :
+              (; δ_reg_ch = 0.1 + 0.1 * rand(rng), δ_reg_en = 0.1 + 0.1 * rand(rng)))...)
+        works && (p = (; p..., β_works = 0.1 * randn(rng)))
+    end
+    dinc && (p = (; p..., τ_dinc = 0.05 + 0.05 * rand(rng), u_dinc = 0.1 .* randn(rng, length(g.competitors))))
+    race_hier && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng), τ_γ = std(race_gap) * (0.9 + 0.2 * rand(rng))))
+    race_mean && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng)))
+    centred_drivers && (p = (; (k => v for (k, v) in pairs(p) if k !== :z_comp)...,
+                             a_comp = 0.05 .* randn(rng, length(g.competitors))))
+    return p
+end
+
+"""
     fit_paceloss(g::GapData; loss_duration=false, era=:none, pace_scale=false, n_samples=1000, n_chains=1, ...)
 
 Sample `paceloss_effects`, starting chains with race intercepts at each race's
@@ -1316,63 +1387,7 @@ function fit_paceloss(g::GapData; loss_duration::Bool = false, era::Symbol = :no
     checkpoint === nothing || n_chains == 1 || throw(ArgumentError("checkpointed fits run one chain per call"))
     model = paceloss_effects(g; loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, driver_ν,
                              race_hier, race_mean, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn, circuits, cars, durc)
-    cov = model.args.cov
-    race_gap = [let ys = g.y[g.t_race .== r]; isempty(ys) ? 0.0 : mean(ys) end
-                 for r in eachindex(g.races)]
-    ps = model.args.ps
-    scale() = (0.3 + 0.4 * rand(rng)) * ps.s          # start scales at the dataset's gap scale (#30)
-    function init()
-        p = (; σ_comp = scale(), σ_mach = scale(), σ = scale(),
-             z_comp = 0.1 .* randn(rng, length(g.competitors)),
-             z_mach = 0.1 .* randn(rng, length(g.machines)),
-             γ = race_gap .+ 0.1 .* randn(rng, length(race_gap)),
-             a_π = -1.5 + 0.1 * randn(rng), a_λ = log(2ps.s) + 0.1 * randn(rng))
-        loss_duration && (p = (; p..., β_dur_π = 0.1 * randn(rng), β_dur_λ = 0.1 * randn(rng)))
-        if era === :decade || era === :regime
-            k = era === :decade ? cov.n_decades : cov.n_regimes
-            p = (; p..., τ_π_era = 0.1 + 0.1 * rand(rng), τ_λ_era = 0.1 + 0.1 * rand(rng),
-                 z_π_era = 0.1 .* randn(rng, k), z_λ_era = 0.1 .* randn(rng, k))
-        elseif era === :rw
-            p = (; p..., τ_π_rw = 0.05 + 0.05 * rand(rng), τ_λ_rw = 0.05 + 0.05 * rand(rng),
-                 e_π_rw = 0.1 .* randn(rng, cov.n_seasons - 1), e_λ_rw = 0.1 .* randn(rng, cov.n_seasons - 1))
-        end
-        if pace_scale      # centred car effects replace z_mach
-            ns = cov.n_seasons
-            kstart = kst ? (; l_κ = 0.01 .* randn(rng, ns)) : kc ? (; s_κ = 0.01 .* randn(rng, ns - 1)) :
-                     (; e_κ = 0.1 .* randn(rng, ns - 1))
-            cstart = ncres ? (; z_res = 0.1 .* randn(rng, length(g.machines))) : (; b_mach = 0.1 .* randn(rng, length(g.machines)))
-            p = (; (k => v for (k, v) in pairs(p) if k !== :z_mach)..., τ_κ = 0.05 + 0.05 * rand(rng), kstart..., cstart...)
-        end
-        age && (p = (; p..., τ_age = 0.05 + 0.05 * rand(rng), e_age = 0.1 .* randn(rng, length(g.age_years) - 1)))
-        big_loss && (p = (; p..., a_ρ = log(0.05 / 0.95) + 0.1 * randn(rng), δ_λ2 = log(10) + 0.1 * randn(rng)))
-        slopes && (p = (; p..., τ_slope = 0.05 + 0.05 * rand(rng), u_slope = 0.1 .* randn(rng, length(g.competitors))))
-        dev && (p = (; p..., τ_dev = 0.05 + 0.05 * rand(rng), u_dev = 0.1 .* randn(rng, length(g.machines))))
-        if circ
-            nk = size(cov.circuits.x, 2)
-            p = (; p..., τ_cx = 0.05 .+ 0.05 .* rand(rng, nk), u_cx = 0.1 .* randn(rng, length(g.machines) * nk))
-        end
-        if track
-            nx = size(cov.circuits.track, 2)
-            p = (; p..., β_track_π = 0.1 .* randn(rng, nx), β_track_λ = 0.1 .* randn(rng, nx))
-        end
-        if walk
-            cw = cov.cars
-            zc, ze = wst ? (:xs_ch, :xs_en) : wstc ? (:xs_ch, :z_en) : wstl ? (:xs_ch, :zl_en) :
-                     wlev ? (:zl_ch, :zl_en) : wlevn ? (:zl_ch, :zn_en) : (:z_ch, :z_en)
-            p = (; p..., τ_ch = 0.05 + 0.05 * rand(rng), σ0_ch = scale(), zc => 0.1 .* randn(rng, length(cw.chassis.prev)),
-                 τ_en = 0.05 + 0.05 * rand(rng), σ0_en = scale(), ze => 0.1 .* randn(rng, length(cw.engine.prev)),
-                 δ_own = 0.1 + 0.1 * rand(rng),
-                 (walk1 ? (; δ_reg = 0.1 + 0.1 * rand(rng)) :
-                  (; δ_reg_ch = 0.1 + 0.1 * rand(rng), δ_reg_en = 0.1 + 0.1 * rand(rng)))...)
-            works && (p = (; p..., β_works = 0.1 * randn(rng)))
-        end
-        dinc && (p = (; p..., τ_dinc = 0.05 + 0.05 * rand(rng), u_dinc = 0.1 .* randn(rng, length(g.competitors))))
-        race_hier && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng), τ_γ = std(race_gap) * (0.9 + 0.2 * rand(rng))))
-        race_mean && (p = (; p..., μ_γ = mean(race_gap) + 0.1 * randn(rng)))
-        centred_drivers && (p = (; (k => v for (k, v) in pairs(p) if k !== :z_comp)...,
-                                 a_comp = 0.05 .* randn(rng, length(g.competitors))))
-        return InitFromParams(p)
-    end
+    init() = InitFromParams(paceloss_init_values(g, model; rng, loss_duration, era, pace_scale, age, big_loss, slopes, dev, centred_drivers, race_hier, race_mean, circ, track, walk, walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn))
     # one chain saved in blocks, resumable (see run_nuts_checkpointed)
     checkpoint === nothing ||
         return run_nuts_checkpointed(model, init(), checkpoint; n_samples, seed, progress_log, log_every, kwargs...)

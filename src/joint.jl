@@ -1,38 +1,51 @@
 # The joint race + lap model (#128): one driver ability shared by the race model
 # (`paceloss_effects`) and the lap model (`lap_effects`), with model-specific deviations.
 #
-#     a_race = a + δ_race,      a_lap = λ·a + δ_lap,
+#     a_race = a + δ_race,      a_lap = a + δ_lap,
 #
-# a ~ N(0, σ_a) for every driver in the race data (race units: % of race time, average-season);
-# δ_race ~ N(0, τ_r) and δ_lap ~ N(0, τ_l) for the drivers in both. λ maps race units to lap
-# time. Clean laps leave out much of what separates drivers in races, so λ is well under 1
-# (lap effects run at about 0.45× the race model's). A driver only in the race data keeps
-# a_race = a, as in the race model alone. Each model keeps every other term of its own, so
-# the cars, walks and conditions adjust to the pooled drivers. Both submodels are the usual
-# models with their drivers given from outside (`ext.drivers`, `drv`), and their parameters
-# carry the prefixes `race.` and `lap.`.
+# - **a:** for every driver in either dataset, a ~ N(0, σ_a), in race units (% of race time,
+#   average-season).
+# - **Deviations:** only for drivers in both, δ_race ~ N(0, τ_r) and δ_lap ~ N(0, τ_l). A driver
+#   in one dataset only has that model's effect equal to the shared one.
+# - **One scale:** the lap part uses every lap (`prepare_laps(…; alllaps = true)`), with driver
+#   and car effects on every lap, as the race model's apply to the whole race time. Both effects
+#   are then a share of total time, so no scale factor links them (#128).
+# - **No race counted twice:** a finishing gap is the sum of a driver's laps, so the two datasets
+#   must not cover the same races. The joint fit uses the race model on the seasons before the
+#   lap data (e.g. 1950–2020 against 2021–2026), and the shared ability links drivers across the
+#   boundary.
+# - **Everything else** in each model stays, so cars, walks and conditions adjust to the pooled
+#   drivers. Both submodels are the usual models with their drivers given from outside
+#   (`ext.drivers`, `drv`), and their parameters carry the prefixes `race.` and `lap.`.
 
 """
     JointDrivers(g::GapData, d::LapData)
 
-The lap data's drivers as indices into the race data's (`lap_in_race`), by driver id.
-Every lap driver must be in the race data.
+Every driver in either dataset (`ids`: the race data's, then the lap data's not in it), with
+the selection matrices from those to each dataset's drivers (`Sr`, `Sl`), and from the drivers
+in both to each dataset's (`Pr`, `Pl`). `both` lists the drivers in both, as indices into `ids`.
 """
 struct JointDrivers
-    lap_in_race::Vector{Int}
-    n_race::Int
+    ids::Vector{String}
+    race_idx::Vector{Int}       # each race driver's index in ids
+    lap_idx::Vector{Int}        # each lap driver's index in ids
+    both::Vector{Int}           # indices in ids of the drivers in both
+    Sr::Matrix{Float64}         # n_race × n_ids
+    Sl::Matrix{Float64}         # n_lap × n_ids
+    Pr::Matrix{Float64}         # n_race × n_both
+    Pl::Matrix{Float64}         # n_lap × n_both
 end
 function JointDrivers(g::GapData, d::LapData)
-    idx = Dict(c => i for (i, c) in enumerate(g.competitors))
-    miss = filter(c -> !haskey(idx, c), d.competitors)
-    isempty(miss) || throw(ArgumentError("lap drivers not in the race data: $(join(miss, ", "))"))
-    return JointDrivers([idx[c] for c in d.competitors], length(g.competitors))
+    ids = vcat(g.competitors, filter(c -> c ∉ Set(g.competitors), d.competitors))
+    pos = Dict(c => i for (i, c) in enumerate(ids))
+    ri, li = [pos[c] for c in g.competitors], [pos[c] for c in d.competitors]
+    both = sort(intersect(ri, li))
+    sel(idx, n) = (S = zeros(length(idx), n); for (r, i) in enumerate(idx); S[r, i] = 1.0; end; S)
+    Sr, Sl = sel(ri, length(ids)), sel(li, length(ids))
+    return JointDrivers(ids, ri, li, both, Sr, Sl, Sr[:, both], Sl[:, both])
 end
-
-# each lap driver's race deviation placed at its race index (an n_race × n_lap 0/1 matrix product,
-# so the tracked arrays stay arrays under ReverseDiff)
-race_deviation_matrix(jd::JointDrivers) =
-    (P = zeros(jd.n_race, length(jd.lap_in_race)); for (j, i) in enumerate(jd.lap_in_race); P[i, j] = 1.0; end; P)
+Base.show(io::IO, jd::JointDrivers) = print(io, "JointDrivers($(length(jd.ids)) drivers: $(length(jd.race_idx)) race, ",
+                                              "$(length(jd.lap_idx)) lap, $(length(jd.both)) in both)")
 
 # the submodels with their drivers given: rebuilt from the stored arguments (a DynamicPPL
 # Model can't be updated in place)
@@ -43,27 +56,27 @@ lap_with_drivers(lm, a) = lap_effects(values(merge(lm.args, (; drv = a)))...)
     joint_effects(rm, lm, jd::JointDrivers)
 
 The joint model (see the file header). `rm` is a race model from `paceloss_effects(g; …)` and
-`lm` a lap model from `lap_effects(d; …)`, each built as for its own fit; their own driver
-terms are replaced by the shared ones. Priors: σ_a ~ half-N(0, 2s), with s the race data's
-gap scale (as the race model's σ_comp); τ_r, τ_l ~ half-N(0, 0.5); λ ~ N(0.5, 0.5) truncated at 0.
+`lm` a lap model from `lap_effects(d; …)`, each built as for its own fit, on seasons that
+don't overlap; their own driver terms are replaced by the shared ones.
+
+Priors: σ_a ~ half-N(0, 2s), with s the race data's gap scale (as the race model's σ_comp);
+τ_r, τ_l ~ half-N(0, 0.5).
 """
-@model function joint_effects(rm, lm, jd::JointDrivers, P::Matrix{Float64})
-    nl = length(jd.lap_in_race)
+@model function joint_effects(rm, lm, jd::JointDrivers)
+    nb = length(jd.both)
     σ_a ~ truncated(Normal(0, 2rm.args.ps.s); lower = 0)
-    z_a ~ StdNormalVec(jd.n_race)
+    z_a ~ StdNormalVec(length(jd.ids))
     τ_r ~ truncated(Normal(0, 0.5); lower = 0)
-    u_r ~ StdNormalVec(nl)
-    λ ~ truncated(Normal(0.5, 0.5); lower = 0)
+    u_r ~ StdNormalVec(nb)
     τ_l ~ truncated(Normal(0, 0.5); lower = 0)
-    u_l ~ StdNormalVec(nl)
+    u_l ~ StdNormalVec(nb)
     a = σ_a .* z_a
-    a_race = a .+ P * (τ_r .* u_r)
-    a_lap = λ .* (P' * a) .+ τ_l .* u_l
+    a_race = jd.Sr * a .+ jd.Pr * (τ_r .* u_r)
+    a_lap = jd.Sl * a .+ jd.Pl * (τ_l .* u_l)
     race ~ to_submodel(race_with_drivers(rm, a_race))
     lap ~ to_submodel(lap_with_drivers(lm, a_lap))
     return (; a, a_race, a_lap)
 end
-joint_effects(rm, lm, jd::JointDrivers) = joint_effects(rm, lm, jd, race_deviation_matrix(jd))
 
 # a chain's draw `i` as a NamedTuple of its parameters (vectors as vectors)
 function draw_params(chain, i::Int = size(chain[:σ], 1), c::Int = 1)
@@ -72,27 +85,30 @@ function draw_params(chain, i::Int = size(chain[:σ], 1), c::Int = 1)
 end
 
 """
-    joint_init(race_draw, lap_draw, jd::JointDrivers; λ = 0.45)
+    joint_init(race_draw, lap_draw, jd::JointDrivers)
 
-Starting values for `joint_effects` from a draw of a race fit and one of a lap fit of the
-same models (`draw_params`). The race drivers' effects become the shared ability.
-- **Race drivers:** with `σ_a` = the race σ_comp, the race model's drivers are unchanged at
-  the start.
-- **Lap drivers:** their deviations are set so that λ·a + δ_lap is the lap fit's own
-  effects, with τ_l their spread.
+Starting values for `joint_effects` from a race draw and a lap draw (NamedTuples of each
+model's parameters: a fit's draw via `draw_params`, or `paceloss_init_values`).
+- **Race drivers:** the race drivers' effects become their shared ability, with `σ_a` the race
+  σ_comp.
+- **Lap-only drivers:** their lap effect.
+- **Drivers in both:** the lap deviation makes a + δ_lap the lap draw's own effect, with τ_l
+  its spread.
 """
-joint_init(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers; λ::Real = 0.45) =
-    InitFromParams(joint_init_values(race_draw, lap_draw, jd; λ))
+joint_init(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers) =
+    InitFromParams(joint_init_values(race_draw, lap_draw, jd))
 "The values behind `joint_init`, as a nested NamedTuple."
-function joint_init_values(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers; λ::Real = 0.45)
+function joint_init_values(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers)
     σ_a = race_draw.σ_comp
-    z = race_draw.z_comp .- mean(race_draw.z_comp)
-    a = σ_a .* z
+    ar = σ_a .* (race_draw.z_comp .- mean(race_draw.z_comp))
     al = lap_draw.a_comp .- mean(lap_draw.a_comp)
-    dl = al .- λ .* a[jd.lap_in_race]
-    dl .-= mean(dl)
-    τ_l = max(std(dl), 0.02)
+    a = zeros(length(jd.ids))
+    a[jd.lap_idx] .= al
+    a[jd.race_idx] .= ar
+    lap_of = Dict(i => r for (r, i) in enumerate(jd.lap_idx))
+    dl = [al[lap_of[i]] - a[i] for i in jd.both]
+    τ_l = isempty(dl) || length(dl) < 2 ? 0.1 : max(std(dl), 0.02)
     race = NamedTuple(k => v for (k, v) in pairs(race_draw) if k ∉ (:σ_comp, :z_comp, :a_comp))
     lap = NamedTuple(k => v for (k, v) in pairs(lap_draw) if k ∉ (:σ_comp, :a_comp))
-    return (; σ_a, z_a = z, τ_r = 0.1, u_r = zeros(length(jd.lap_in_race)), λ = Float64(λ), τ_l, u_l = dl ./ τ_l, race, lap)
+    return (; σ_a, z_a = a ./ σ_a, τ_r = 0.1, u_r = zeros(length(jd.both)), τ_l, u_l = dl ./ τ_l, race, lap)
 end

@@ -1433,47 +1433,43 @@ end
         res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
         res2 = copy(res); res2.season .= 2020; res2.event_id .= replace.(res2.event_id, "2019" => "2020")
         g = prepare_gaps(vcat(res, res2))
-        # laps for four of the race's drivers, two races of 12 laps, in two cars
-        drv = g.competitors[1:4]
-        rows = DataFrame(series = "f1", season = 2019, event_id = repeat(["2019-01", "2019-02"]; inner = 4),
+        # laps (a later season, as in the joint fit) for three of the race's drivers and a rookie, in two cars
+        drv = [g.competitors[1:3]; "rookie"]
+        rows = DataFrame(series = "f1", season = 2021, event_id = repeat(["2021-01", "2021-02"]; inner = 4),
                          competitor_id = repeat(drv, 2), machine_id = repeat(["m1", "m1", "m2", "m2"], 2))
         lt = DataFrame(series = String[], season = Int[], event_id = String[], competitor_id = String[], lap = Int[],
                        time_ms = Float64[], position = Union{Missing,Int}[])
-        for e in ("2019-01", "2019-02"), (k, c) in enumerate(drv), l in 1:12
-            push!(lt, ("f1", 2019, e, c, l, 90_000.0 * (1 + 0.002k + 0.001randn(rng)) * (l == 1 ? 1.1 : 1.0), missing))
+        for e in ("2021-01", "2021-02"), (k, c) in enumerate(drv), l in 1:12
+            push!(lt, ("f1", 2021, e, c, l, 90_000.0 * (1 + 0.002k + 0.001randn(rng)) * (l == 1 ? 1.1 : 1.0), missing))
         end
         d = prepare_laps(lt, rows; pits = :inferred)
         jd = JointDrivers(g, d)
-        @test jd.n_race == length(g.competitors) && g.competitors[jd.lap_in_race] == d.competitors
-        P = Diomedes.race_deviation_matrix(jd)
-        @test size(P) == (length(g.competitors), length(d.competitors)) && sum(P) == length(d.competitors)
-        dbad = prepare_laps(transform(lt, :competitor_id => ByRow(c -> c == drv[1] ? "nobody" : c) => :competitor_id),
-                            transform(rows, :competitor_id => ByRow(c -> c == drv[1] ? "nobody" : c) => :competitor_id);
-                            pits = :inferred)
-        @test_throws ArgumentError JointDrivers(g, dbad)
+        nr, nl = length(g.competitors), length(d.competitors)
+        @test jd.ids == [g.competitors; "rookie"] && length(jd.both) == 3
+        @test jd.ids[jd.race_idx] == g.competitors && jd.ids[jd.lap_idx] == d.competitors
+        @test jd.Sr * collect(1.0:length(jd.ids)) == jd.race_idx && jd.Sl * collect(1.0:length(jd.ids)) == jd.lap_idx
+        @test size(jd.Pr) == (nr, 3) && size(jd.Pl) == (nl, 3) && sum(jd.Pr) == 3 && sum(jd.Pl) == 3
 
         rm = Diomedes.paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true)
         lm = lap_effects(d)
         jm = joint_effects(rm, lm, jd)
         vns = string.(collect(keys(Turing.DynamicPPL.VarInfo(jm))))
-        @test "σ_a" in vns && "λ" in vns && "race.σ" in vns && "lap.σ" in vns
+        @test "σ_a" in vns && "τ_l" in vns && "race.σ" in vns && "lap.σ" in vns && !("λ" in vns)
         @test !("race.σ_comp" in vns) && !("race.z_comp" in vns) && !("lap.σ_comp" in vns) && !("lap.a_comp" in vns)
         # the joint log density = the shared priors + each submodel's with its drivers given
         θr = (; σ_mach = 0.4, σ = 0.3, γ = 0.1 .* randn(rng, length(g.races)), μ_γ = 0.0, a_π = -1.5, a_λ = 0.5,
               β_dur_π = 0.05, β_dur_λ = -0.05, τ_π_rw = 0.1, τ_λ_rw = 0.1, e_π_rw = [0.2], e_λ_rw = [-0.1], τ_κ = 0.1,
               e_κ = [0.1], b_mach = 0.1 .* randn(rng, length(g.machines)))
-        nr = length(d.races)
+        nrl = length(d.races)
         θl = (; σ_mach = 0.3, σ = 0.5, b_mach = 0.1 .* randn(rng, length(d.machines)), μ_γ = 0.1,
-              γ = 0.2 .* randn(rng, nr), μ_δ = -1.0, τ_δ = 0.3, δ = randn(rng, nr), β = [0.02, 0.01], a_π = -1.2, a_λ = 0.3)
-        nl = length(d.competitors)
-        θj = (; σ_a = 0.6, z_a = randn(rng, length(g.competitors)), τ_r = 0.2, u_r = randn(rng, nl), λ = 0.45,
-              τ_l = 0.1, u_l = randn(rng, nl))
+              γ = 0.2 .* randn(rng, nrl), μ_δ = -1.0, τ_δ = 0.3, δ = randn(rng, nrl), β = [0.02, 0.01], a_π = -1.2, a_λ = 0.3)
+        θj = (; σ_a = 0.6, z_a = randn(rng, length(jd.ids)), τ_r = 0.2, u_r = randn(rng, 3), τ_l = 0.1, u_l = randn(rng, 3))
         a = θj.σ_a .* θj.z_a
-        ar = a .+ P * (θj.τ_r .* θj.u_r)
-        al = θj.λ .* a[jd.lap_in_race] .+ θj.τ_l .* θj.u_l
+        ar = a[jd.race_idx] .+ jd.Pr * (θj.τ_r .* θj.u_r)
+        al = a[jd.lap_idx] .+ jd.Pl * (θj.τ_l .* θj.u_l)
+        @test al[end] == a[end]          # the rookie: lap effect = shared ability
         lp_shared = logpdf(Turing.truncated(Normal(0, 2rm.args.ps.s); lower = 0), θj.σ_a) + sum(logpdf.(Normal(), θj.z_a)) +
                     logpdf(Turing.truncated(Normal(0, 0.5); lower = 0), θj.τ_r) + sum(logpdf.(Normal(), θj.u_r)) +
-                    logpdf(Turing.truncated(Normal(0.5, 0.5); lower = 0), θj.λ) +
                     logpdf(Turing.truncated(Normal(0, 0.5); lower = 0), θj.τ_l) + sum(logpdf.(Normal(), θj.u_l))
         want = lp_shared + logjoint(Diomedes.race_with_drivers(rm, ar), θr) + logjoint(Diomedes.lap_with_drivers(lm, al), θl)
         @test logjoint(jm, (; θj..., race = θr, lap = θl)) ≈ want
@@ -1492,18 +1488,22 @@ end
             x = 0.3 .* randn(rng, LDP.dimension(rd))
             @test LDP.logdensity_and_gradient(rd, x)[2] ≈ LDP.logdensity_and_gradient(fd, x)[2]
         end
-        # starting values from a race draw and a lap draw: drivers as in each fit
-        rdraw = merge(θr, (; σ_comp = 0.5, z_comp = randn(rng, length(g.competitors))))
+        # starting values: race drivers from the race draw, the rookie from the lap draw, the
+        # drivers in both with lap deviations that reproduce the lap draw
+        rdraw = merge(θr, (; σ_comp = 0.5, z_comp = randn(rng, nr)))
         ldraw = merge(θl, (; σ_comp = 0.3, a_comp = 0.2 .* randn(rng, nl)))
-        init = joint_init(rdraw, ldraw, jd; λ = 0.45)
-        p = Diomedes.joint_init_values(rdraw, ldraw, jd; λ = 0.45)
-        @test p.σ_a == 0.5 && p.λ == 0.45 && all(iszero, p.u_r) && !haskey(p.race, :z_comp) && !haskey(p.lap, :a_comp)
+        p = Diomedes.joint_init_values(rdraw, ldraw, jd)
+        @test p.σ_a == 0.5 && all(iszero, p.u_r) && !haskey(p.race, :z_comp) && !haskey(p.lap, :a_comp)
         aj = p.σ_a .* p.z_a
-        alj = p.λ .* aj[jd.lap_in_race] .+ p.τ_l .* p.u_l
+        @test aj[jd.race_idx] ≈ 0.5 .* (rdraw.z_comp .- mean(rdraw.z_comp))
+        alj = aj[jd.lap_idx] .+ jd.Pl * (p.τ_l .* p.u_l)
         @test alj .- mean(alj) ≈ ldraw.a_comp .- mean(ldraw.a_comp)
         ch = Turing.sample(Xoshiro(1), jm, Turing.NUTS(20, 0.8; adtype = Diomedes.gap_sampler().adtype), 10;
-                           progress = false, initial_params = init)
-        @test size(ch[:λ]) == (10, 1) && all(isfinite, Array(ch[:λ]))
+                           progress = false, initial_params = joint_init(rdraw, ldraw, jd))
+        @test size(ch[:τ_l]) == (10, 1) && all(isfinite, Array(ch[:τ_l]))
+        # the race model's starting values as a function (shared with fit_paceloss)
+        iv = Diomedes.paceloss_init_values(g, rm; rng = Xoshiro(2), loss_duration = true, era = :rw, pace_scale = true)
+        @test length(iv.z_comp) == nr && haskey(iv, :b_mach) && !haskey(iv, :z_mach) && length(iv.e_κ) == 1
     end
 
     @testset "lap-time model (#12)" begin

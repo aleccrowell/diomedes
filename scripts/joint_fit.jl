@@ -4,19 +4,22 @@
 #   julia --project scripts/joint_fit.jl combine [<n>=4] [probe]
 #   julia --project scripts/joint_fit.jl bench [n=10]
 #
-# The two submodels are the published designs: the race model with `durc` on
-# jolpica1950-2026+partial, and the lap model of #159 on 2021–2026 (recorded pit stops,
-# reconciled; `cond wetallg wetrace racedegc tyreage pitfix keepslow keepwet rwrel`, no age
-# curve). Chain k starts from the last draw of chain k of each published fit (`joint_init`):
-# the race fit's blocks and the lap fit's blocks, so the joint model starts where each model
-# already is. It is saved in blocks (`run_nuts_checkpointed`) under output/joint_<tag>_chain<k>.
+# The race part is the published race model (`durc`) on 1950–2020, so no race is in both
+# parts. The lap part is the lap model of #159 on 2021–2026 (recorded pit stops, reconciled;
+# `cond wetallg wetrace racedegc tyreage pitfix keepslow keepwet rwrel`, no age curve).
+# TODO(#128 step 5): switch the lap part to every lap (`alllaps`), so both parts measure a
+# share of total time.
+#
+# Chain k starts at the race model's starting values (`paceloss_init_values`; the published
+# race fit covers other seasons) and the last draw of chain k of the lap fit (`joint_init`).
+# It is saved in blocks (`run_nuts_checkpointed`) under output/joint_<tag>_chain<k>.
 # `bench` times one log density and gradient of the joint model (cost and hard stops).
 using Diomedes, Statistics, Printf, Random, Serialization, CSV, DataFrames
 import Turing
 import MCMCDiagnosticTools as MDT
 include("gap_data.jl")
 
-const RACE_MODE = "jolpica1950-2026+partial"
+const RACE_MODE = "jolpica1950-2020+partial"
 const RACE_MODEL = "pl_durc_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc"
 const LAP_SEASONS = 2021:2026
 const LAP_TAG = "laps_2021-2026_recorded_slopes_lead_tyremgmt_starts_circ_track_dinc_big_rwalk_nostartdrv_rwrel_traffic_fpace_short_cond_wetallg_wetrace_racedegc_tyreage_pitfix_keepslow_keepwet"
@@ -34,7 +37,7 @@ function race_model()
                           big_loss = s.big_loss, slopes = s.slopes, dev = s.dev, centred_drivers = s.centred_drivers,
                           driver_ν = s.driver_ν, race_hier = s.race_hier, race_mean = s.race_mean, circ = s.circ,
                           track = s.track, walk = s.walk, walk1 = s.walk1, works = s.works, dinc = s.dinc, durc = s.durc)
-    return g, rm
+    return g, rm, s
 end
 
 function lap_model()
@@ -63,7 +66,7 @@ function block_chain_k(prefix, k)
 end
 
 if action == "bench"
-    g, rm = race_model()
+    g, rm, _ = race_model()
     d, lm = lap_model()
     jd = JointDrivers(g, d)
     jm = joint_effects(rm, lm, jd)
@@ -74,20 +77,21 @@ if action == "bench"
     for _ in 1:2; LDP.logdensity_and_gradient(f, x); end
     n = parse(Int, opt("n", "10"))
     t = @elapsed for _ in 1:n; LDP.logdensity_and_gradient(f, x); end
-    @printf("joint model: %d parameters (%d race drivers, %d in both); gradient %.0f ms (mean of %d)\n",
-            LDP.dimension(f), jd.n_race, length(jd.lap_in_race), 1000t / n, n)
+    @printf("joint model: %d parameters (%s); gradient %.0f ms (mean of %d)\n", LDP.dimension(f), string(jd), 1000t / n, n)
     @printf("hard stop for iteration 100: 100 × 1023 × %.3f s × 1.05 = %.1f h\n", t / n, 100 * 1023 * t / n * 1.05 / 3600)
 elseif action == "chain"
     k = parse(Int, args[2])
-    g, rm = race_model()
+    g, rm, s = race_model()
     d, lm = lap_model()
     jd = JointDrivers(g, d)
     jm = joint_effects(rm, lm, jd)
-    rc = block_chain_k("gap_$(RACE_MODE)_$(RACE_MODEL)", k)
+    r0 = Diomedes.paceloss_init_values(g, rm; rng = Xoshiro(k), loss_duration = s.loss_duration, era = s.era,
+                                       pace_scale = s.pace_scale, age = s.age, big_loss = s.big_loss, slopes = s.slopes,
+                                       dev = s.dev, race_mean = s.race_mean, circ = s.circ, track = s.track, walk = s.walk,
+                                       walk1 = s.walk1, works = s.works, dinc = s.dinc)
     lc = block_chain_k(LAP_TAG, k)
-    init = joint_init(Diomedes.draw_params(rc), Diomedes.draw_params(lc), jd)
-    println("joint chain $k: $(jd.n_race) race drivers, $(length(jd.lap_in_race)) in both; starting from the last draws of ",
-            "race chain $k and lap chain $k"); flush(stdout)
+    init = joint_init(r0, Diomedes.draw_params(lc), jd)
+    println("joint chain $k: $(jd); race part from its starting values, lap part from lap chain $k's last draw"); flush(stdout)
     mkpath("output")
     t = @elapsed ch = Diomedes.run_nuts_checkpointed(jm, init, "output/$(tag)_chain$(k)";
                                                      n_samples = parse(Int, opt("draws", "1000")),
@@ -98,20 +102,23 @@ elseif action == "chain"
 elseif action == "combine"
     n = parse(Int, get(args, 2, "4"))
     chs = [block_chain_k(tag, k) for k in 1:n]
-    m = minimum(size(c[:λ], 1) for c in chs)
+    m = minimum(size(c[:σ_a], 1) for c in chs)
     chs = [c[iter = 1:m] for c in chs]
     arr(c, p) = reduce(hcat, [vec(Array(x[p])) for x in c])
     println("$(n) chains × $(m) draws")
-    for p in (:σ_a, :τ_r, :τ_l, :λ)
+    for p in (:σ_a, :τ_r, :τ_l)
         A = arr(chs, p)
         @printf("%-4s %.3f ± %.3f (90%% %.3f to %.3f; R-hat %.3f, ESS %.0f)\n", p, mean(A), std(A), quantile(vec(A), 0.05),
                 quantile(vec(A), 0.95), MDT.rhat(reshape(A, size(A)..., 1))[1], MDT.ess(reshape(A, size(A)..., 1))[1])
     end
-    g, _ = race_model()
-    # shared ability: σ_a · (z_a - mean), on the race scale
+    g, _, _ = race_model()
+    d, _ = lap_model()
+    jd = JointDrivers(g, d)
+    # shared ability: σ_a · z_a, centred over every driver (share of time)
     A = reduce(vcat, [permutedims(stack(vec(c[:z_a]))) .* vec(Array(c[:σ_a])) for c in chs])
     A .-= mean(A; dims = 2)
-    out = DataFrame(driver = g.competitors, mean = vec(mean(A; dims = 1)), sd = vec(std(A; dims = 1)))
+    out = DataFrame(driver = jd.ids, mean = vec(mean(A; dims = 1)), sd = vec(std(A; dims = 1)),
+                    in_race = in.(eachindex(jd.ids), Ref(Set(jd.race_idx))), in_laps = in.(eachindex(jd.ids), Ref(Set(jd.lap_idx))))
     CSV.write("output/$(tag)_shared_drivers.csv", out)
     println("wrote output/$(tag)_shared_drivers.csv")
 else
