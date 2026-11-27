@@ -1055,10 +1055,21 @@ effects are then comparable across eras.
                                  race_hier::Bool, race_mean::Bool, ps, circ_rows, track::Bool, ext)
     # priors on %-of-winner quantities are in units of the dataset's gap scale ps.s
     # (#30; see PriorScale); unitless ones (probabilities, log/logit steps) are not
-    σ_comp ~ truncated(Normal(0, 2ps.s); lower = 0)
+    # `ext.drivers`: driver effects given from outside (the joint race + lap model, #128), in % of
+    # race time (average-season units), in place of σ_comp and z_comp; the fused rules take
+    # σ_comp·(z - z̄), so σ_comp = 1 and z = the given effects
+    drv_ext = get(ext, :drivers, nothing)
+    drv_ext === nothing && (σ_comp ~ truncated(Normal(0, 2ps.s); lower = 0))
     σ_mach ~ truncated(Normal(0, 2ps.s); lower = 0)
     σ ~ truncated(Normal(0, ps.s); lower = 0)
-    if centred_drivers      # (#28) driver effects in % units: a ~ N(0, σ_comp), as option B did for cars
+    if drv_ext !== nothing
+        length(drv_ext) == length(g.competitors) ||
+            throw(DimensionMismatch("ext.drivers has $(length(drv_ext)) drivers, the data $(length(g.competitors))"))
+        # exactly 1, but typed like the sampled scales (a TrackedReal under ReverseDiff), as the
+        # likelihood's ReverseDiff rules expect; its gradient into σ_mach is 0
+        σ_comp = 1 + 0 * σ_mach
+        z_comp = drv_ext
+    elseif centred_drivers      # (#28) driver effects in % units: a ~ N(0, σ_comp), as option B did for cars
         if driver_ν === nothing
             a_comp ~ filldist(Normal(0, σ_comp), length(g.competitors))
         else                # heavy-tailed drivers: a ~ σ_comp·t(ν)
@@ -1249,7 +1260,7 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
                           works::Bool = false, dinc::Bool = false, ncres::Bool = false, wlev::Bool = false,
                           kc::Bool = false, kst::Bool = false, wst::Bool = false, wstc::Bool = false, wstl::Bool = false,
                           wlevn::Bool = false, circuits = circ || track ? circuit_table() : nothing, cars = walk ? car_table() : nothing,
-                          prior_scale = PriorScale(g), durc::Bool = false)
+                          prior_scale = PriorScale(g), durc::Bool = false, drivers = nothing)
     era in ERA_TERMS || throw(ArgumentError("era must be one of $ERA_TERMS"))
     race_hier && race_mean && throw(ArgumentError("race_hier and race_mean are alternatives"))
     (circ || track) && circuits === nothing && throw(ArgumentError("circ and track need a circuit table (circuits)"))
@@ -1276,7 +1287,7 @@ function paceloss_effects(g::GapData; loss_duration::Bool = false, era::Symbol =
     return paceloss_effects(g, season_counts(g), cov, loss_duration, era, pace_scale,
                             age ? AgeCurveBasis(g) : nothing, big_loss, career_rows, dev ? DevRows(g) : nothing,
                             centred_drivers, driver_ν === nothing ? nothing : Float64(driver_ν), race_hier, race_mean, prior_scale,
-                            circ ? CircuitRows(g, cov.circuits) : nothing, track, (; walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn))
+                            circ ? CircuitRows(g, cov.circuits) : nothing, track, (; walk1, works, dinc, ncres, wlev, kc, kst, wst, wstc, wstl, wlevn, drivers))
 end
 
 """

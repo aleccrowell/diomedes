@@ -938,13 +938,20 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
                             lead::Bool, tyre_mgmt::Bool, starts::Bool, age::Bool, circuits::Bool, track::Bool = false,
                             dinc::Bool = false, cw = nothing, works::Bool = false, big::Bool = false,
                             rw = nothing, sdrv::Bool = true, dinc1::Bool = false, ctx = LapContext(),
-                            cond = LapConditions(), wcw = nothing)
-    σ_comp ~ truncated(Normal(0, 2); lower = 0)
+                            cond = LapConditions(), wcw = nothing, drv = nothing)
+    # `drv`: driver effects given from outside (the joint race + lap model, #128), in place
+    # of the sampled a_comp and its spread σ_comp
+    drv === nothing && (σ_comp ~ truncated(Normal(0, 2); lower = 0))
     rw === nothing && (σ_mach ~ truncated(Normal(0, 2); lower = 0))   # no car-season residual with the race walk
     σ ~ truncated(Normal(0, 1); lower = 0)
     # centred effects (as `_cdrv`, #28): each driver and car has thousands of laps,
     # so the non-centred form a = σ·z would tie σ to every z (a funnel)
-    a_comp ~ IsoNormalVec(0.0, σ_comp, length(d.competitors))
+    if drv === nothing
+        a_comp ~ IsoNormalVec(0.0, σ_comp, length(d.competitors))
+    else
+        length(drv) == length(d.competitors) || throw(DimensionMismatch("drv has $(length(drv)) drivers, the laps $(length(d.competitors))"))
+        a_comp = drv
+    end
     rw === nothing && (b_mach ~ IsoNormalVec(0.0, σ_mach, length(d.machines)))
     μ_γ ~ Normal(0, 2)
     γ ~ IsoNormalVec(μ_γ, 2.0, length(d.races))
@@ -1247,7 +1254,7 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
                      track::Bool = false, dinc::Bool = false, walk::Bool = false, works::Bool = false,
                      big::Bool = false, rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
                      cars = walk || rwalk ? car_table() : nothing, ctx = LapContext(), cond = LapConditions(),
-                     rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1)
+                     rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1, drv = nothing)
     rwrel && !rwalk && throw(ArgumentError("rwrel reparametrises the race walk: it needs rwalk"))
     rwrels && !(rwrel && slopes) && throw(ArgumentError("rwrels adds the career slopes to rwrel: it needs rwrel and slopes"))
     (ctx.traffic || ctx.fpace) && size(ctx.tbin, 1) != length(d.y) &&
@@ -1268,7 +1275,7 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
                        rwalk ? (rwk = RaceWalk(d, cars); (; rwk, cw = CarWalks(d, cars), W = rwrel ? walk_driver_shares(d, rwk) : nothing,
                                                          Ws = rwrels ? walk_driver_shares(d, rwk; age = true) : nothing)) :
                                nothing, sdrv, dinc1, ctx, cond,
-                       pool ? CarWalks(d, cars) : nothing)
+                       pool ? CarWalks(d, cars) : nothing, drv)
 end
 
 """
