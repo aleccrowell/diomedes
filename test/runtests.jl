@@ -1463,14 +1463,15 @@ end
         nrl = length(d.races)
         θl = (; σ_mach = 0.3, σ = 0.5, b_mach = 0.1 .* randn(rng, length(d.machines)), μ_γ = 0.1,
               γ = 0.2 .* randn(rng, nrl), μ_δ = -1.0, τ_δ = 0.3, δ = randn(rng, nrl), β = [0.02, 0.01], a_π = -1.2, a_λ = 0.3)
-        θj = (; σ_a = 0.6, z_a = randn(rng, length(jd.ids)), τ_r = 0.2, u_r = randn(rng, 3), τ_l = 0.1, u_l = randn(rng, 3))
-        a = θj.σ_a .* θj.z_a
-        ar = a[jd.race_idx] .+ jd.Pr * (θj.τ_r .* θj.u_r)
-        al = a[jd.lap_idx] .+ jd.Pl * (θj.τ_l .* θj.u_l)
+        θj = (; σ_a = 0.6, a = 0.5 .* randn(rng, length(jd.ids)), τ_r = 0.2, δ_r = 0.2 .* randn(rng, 3), τ_l = 0.1,
+              δ_l = 0.1 .* randn(rng, 3))
+        a = θj.a
+        ar = a[jd.race_idx] .+ jd.Pr * θj.δ_r
+        al = a[jd.lap_idx] .+ jd.Pl * θj.δ_l
         @test al[end] == a[end]          # the rookie: lap effect = shared ability
-        lp_shared = logpdf(Turing.truncated(Normal(0, 2rm.args.ps.s); lower = 0), θj.σ_a) + sum(logpdf.(Normal(), θj.z_a)) +
-                    logpdf(Turing.truncated(Normal(0, 0.5); lower = 0), θj.τ_r) + sum(logpdf.(Normal(), θj.u_r)) +
-                    logpdf(Turing.truncated(Normal(0, 0.5); lower = 0), θj.τ_l) + sum(logpdf.(Normal(), θj.u_l))
+        lp_shared = logpdf(Turing.truncated(Normal(0, 2rm.args.ps.s); lower = 0), θj.σ_a) + sum(logpdf.(Normal(0, θj.σ_a), θj.a)) +
+                    logpdf(Turing.truncated(Normal(0, 0.5); lower = 0), θj.τ_r) + sum(logpdf.(Normal(0, θj.τ_r), θj.δ_r)) +
+                    logpdf(Turing.truncated(Normal(0, 0.5); lower = 0), θj.τ_l) + sum(logpdf.(Normal(0, θj.τ_l), θj.δ_l))
         want = lp_shared + logjoint(Diomedes.race_with_drivers(rm, ar), θr) + logjoint(Diomedes.lap_with_drivers(lm, al), θl)
         @test logjoint(jm, (; θj..., race = θr, lap = θl)) ≈ want
         # given drivers: the race model takes them as σ_comp·(z - z̄) with σ_comp = 1, the lap model as a_comp
@@ -1493,10 +1494,10 @@ end
         rdraw = merge(θr, (; σ_comp = 0.5, z_comp = randn(rng, nr)))
         ldraw = merge(θl, (; σ_comp = 0.3, a_comp = 0.2 .* randn(rng, nl)))
         p = Diomedes.joint_init_values(rdraw, ldraw, jd)
-        @test p.σ_a == 0.5 && all(iszero, p.u_r) && !haskey(p.race, :z_comp) && !haskey(p.lap, :a_comp)
-        aj = p.σ_a .* p.z_a
+        @test p.σ_a == 0.5 && all(iszero, p.δ_r) && !haskey(p.race, :z_comp) && !haskey(p.lap, :a_comp)
+        aj = p.a
         @test aj[jd.race_idx] ≈ 0.5 .* (rdraw.z_comp .- mean(rdraw.z_comp))
-        alj = aj[jd.lap_idx] .+ jd.Pl * (p.τ_l .* p.u_l)
+        alj = aj[jd.lap_idx] .+ jd.Pl * p.δ_l
         @test alj .- mean(alj) ≈ ldraw.a_comp .- mean(ldraw.a_comp)
         ch = Turing.sample(Xoshiro(1), jm, Turing.NUTS(20, 0.8; adtype = Diomedes.gap_sampler().adtype), 10;
                            progress = false, initial_params = joint_init(rdraw, ldraw, jd))

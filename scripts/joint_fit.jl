@@ -28,7 +28,8 @@ opt(k, d) = (i = findfirst(a -> startswith(a, k * "="), ARGS); i === nothing ? d
 args = filter(a -> !occursin('=', a) && a != "probe", ARGS)
 action = get(args, 1, "bench")
 probe = "probe" in ARGS
-tag = "joint_" * RACE_MODEL * (probe ? "_probe" : "")
+alllaps = opt("alllaps", "true") == "true"     # alllaps=false: the lap part on clean laps only (diagnostics)
+tag = "joint_" * RACE_MODEL * (alllaps ? "" : "_cleanlaps") * (probe ? "_probe" : "")
 
 function race_model()
     _, g = gap_data(RACE_MODE; io = devnull)
@@ -48,14 +49,16 @@ function lap_model()
     nums = jolpica_driver_numbers(jol, ss)
     rec = reconcile_pit_stops(pits, lc, nums)
     d = prepare_laps(laps, res; pits = :recorded, pit_stops = rec.stops, circuits = circuit_table(), stoppage = false,
-                     keep_laps = Diomedes.wet_green_laps(lc), alllaps = true)
+                     keep_laps = Diomedes.wet_green_laps(lc), alllaps)
     ctx = LapContext(d, laps; traffic = true, fpace = true, short = true)
     cnd = LapConditions(d, lc, nums; wetdev = true, wetcar = true, wetmin = 1, wetglobal = true, wetrace = true,
                         racedeg = true, racedegc = true, tyreage = true, noage = rec.noage)
-    lm = lap_effects(d; slopes = true, lead = true, tyre_mgmt = true, starts = true, age = false, circuits = true,
-                     track = true, dinc = true, big = true, rwalk = true, sdrv = false, ctx, cond = cnd, rwrel = true,
-                     alllaps = true)
-    return d, lm
+    kw = (; slopes = true, lead = true, tyre_mgmt = true, starts = true, age = false, circuits = true, track = true,
+          dinc = true, big = true, rwalk = true, sdrv = false, ctx, cond = cnd, rwrel = true)
+    lm = lap_effects(d; kw..., alllaps)
+    # the lap model as the lap fit had it (clean laps only): its layout maps that fit's adapted metric
+    lm_std = lap_effects(d; kw...)
+    return d, lm, lm_std
 end
 
 # chain k's draws of a fit saved in blocks
@@ -68,7 +71,7 @@ end
 
 if action == "bench"
     g, rm, _ = race_model()
-    d, lm = lap_model()
+    d, lm, lm_std = lap_model()
     jd = JointDrivers(g, d)
     jm = joint_effects(rm, lm, jd)
     LDF = Turing.DynamicPPL.LogDensityFunction
@@ -83,7 +86,7 @@ if action == "bench"
 elseif action == "chain"
     k = parse(Int, args[2])
     g, rm, s = race_model()
-    d, lm = lap_model()
+    d, lm, lm_std = lap_model()
     jd = JointDrivers(g, d)
     jm = joint_effects(rm, lm, jd)
     r0 = Diomedes.paceloss_init_values(g, rm; rng = Xoshiro(k), loss_duration = s.loss_duration, era = s.era,
@@ -92,16 +95,60 @@ elseif action == "chain"
                                        walk1 = s.walk1, works = s.works, dinc = s.dinc)
     lc = block_chain_k(LAP_TAG, k)
     # the lap fit's last draw, with the other laps' terms (not in that fit) started from the laps
-    l0 = merge(Diomedes.draw_params(lc), Diomedes.other_laps_init(d, lm.args.xl))
+    l0 = alllaps ? merge(Diomedes.draw_params(lc), Diomedes.other_laps_init(d, lm.args.xl)) : Diomedes.draw_params(lc)
     init = joint_init(r0, l0, jd)
-    println("joint chain $k: $(jd); race part from its starting values, lap part from lap chain $k's last draw"); flush(stdout)
+    # warm-up from a metric with the lap fit's adapted variances on the lap part (see joint_warm_metric)
+    la = Diomedes.checkpoint_adapted("output/$(LAP_TAG)_chain$(k)")
+    M0 = Diomedes.joint_warm_metric(jm, lm_std, la.Minv)
+    δ = parse(Float64, opt("delta", "0.8"))
+    external = lap_warm_sampler(M0, 0.1 * la.ϵ; δ)
+    println("joint chain $k: $(jd); race part from its starting values, lap part from lap chain $k's last draw; ",
+            "metric warm on the lap part"); flush(stdout)
     mkpath("output")
     t = @elapsed ch = Diomedes.run_nuts_checkpointed(jm, init, "output/$(tag)_chain$(k)";
                                                      n_samples = parse(Int, opt("draws", "1000")),
                                                      n_adapts = parse(Int, opt("warmup", "500")),
-                                                     δ = parse(Float64, opt("delta", "0.8")), block = parse(Int, opt("block", "25")),
-                                                     seed = k, progress_log = stdout)
+                                                     δ, block = parse(Int, opt("block", "25")), seed = k, progress_log = stdout,
+                                                     external)
     println("chain $k: $(round(t / 60; digits = 1)) min, mean leapfrog steps per draw $(round(mean(ch[:n_steps]); digits = 1))")
+elseif action == "check"
+    # the starting point of chain k: log density by part, and the gradient's largest entries
+    k = parse(Int, get(args, 2, "2"))
+    g, rm, s = race_model()
+    d, lm, lm_std = lap_model()
+    jd = JointDrivers(g, d)
+    jm = joint_effects(rm, lm, jd)
+    r0 = Diomedes.paceloss_init_values(g, rm; rng = Xoshiro(k), loss_duration = s.loss_duration, era = s.era,
+                                       pace_scale = s.pace_scale, age = s.age, big_loss = s.big_loss, slopes = s.slopes,
+                                       dev = s.dev, race_mean = s.race_mean, circ = s.circ, track = s.track, walk = s.walk,
+                                       walk1 = s.walk1, works = s.works, dinc = s.dinc)
+    l0 = merge(Diomedes.draw_params(block_chain_k(LAP_TAG, k)), Diomedes.other_laps_init(d, lm.args.xl))
+    v = Diomedes.joint_init_values(r0, l0, jd)
+    DP = Turing.DynamicPPL
+    vi = DP.VarInfo(jm)
+    vi = last(DP.init!!(jm, vi, Turing.InitFromParams(v), DP.UnlinkAll()))
+    @printf("log prior %.1f, log likelihood %.1f\n", DP.getlogprior(vi), DP.getloglikelihood(vi))
+    ar = jd.Sr * v.a .+ jd.Pr * v.δ_r
+    al = jd.Sl * v.a .+ jd.Pl * v.δ_l
+    @printf("race part log lik %.1f; lap part log lik %.1f\n",
+            DP.loglikelihood(Diomedes.race_with_drivers(rm, ar), v.race), DP.loglikelihood(Diomedes.lap_with_drivers(lm, al), v.lap))
+    xl = lm.args.xl
+    println("other laps: ", length(d.x_y), " in ", length(d.group_type), " groups; types ",
+            [Diomedes.LAP_TYPES[t] for t in xl.types], "; μ_x ", round.(v.lap.μ_x; digits = 1), "; σ_x ", round.(v.lap.σ_x; digits = 2))
+    f = DP.LogDensityFunction(jm, DP.getlogjoint_internal, DP.LinkAll(); adtype = Diomedes.gap_sampler().adtype)
+    vil = DP.link!!(deepcopy(vi), jm)
+    x = vil[:]
+    lp, gr = DP.LogDensityProblems.logdensity_and_gradient(f, x)
+    println("linked log density $(round(lp; digits = 1)); gradient finite: $(all(isfinite, gr)); max |grad| $(round(maximum(abs, gr); digits = 1))")
+    rows = let pos = 0, rows = Tuple{String,Float64,Int}[]
+        for vn in keys(vil)
+            n = length(DP.getindex_internal(vil, vn))
+            push!(rows, (string(vn), maximum(abs, gr[(pos + 1):(pos + n)]), n)); pos += n
+        end
+        rows
+    end
+    sort!(rows; by = r -> -r[2])
+    for r in rows[1:min(12, end)]; @printf("  %-22s max |grad| %10.1f (%d)\n", r...); end
 elseif action == "combine"
     n = parse(Int, get(args, 2, "4"))
     chs = [block_chain_k(tag, k) for k in 1:n]
@@ -115,10 +162,10 @@ elseif action == "combine"
                 quantile(vec(A), 0.95), MDT.rhat(reshape(A, size(A)..., 1))[1], MDT.ess(reshape(A, size(A)..., 1))[1])
     end
     g, _, _ = race_model()
-    d, _ = lap_model()
+    d, _, _ = lap_model()
     jd = JointDrivers(g, d)
-    # shared ability: σ_a · z_a, centred over every driver (share of time)
-    A = reduce(vcat, [permutedims(stack(vec(c[:z_a]))) .* vec(Array(c[:σ_a])) for c in chs])
+    # shared ability of every driver (share of time), centred over them
+    A = reduce(vcat, [permutedims(stack(vec(c[:a]))) for c in chs])
     A .-= mean(A; dims = 2)
     out = DataFrame(driver = jd.ids, mean = vec(mean(A; dims = 1)), sd = vec(std(A; dims = 1)),
                     in_race = in.(eachindex(jd.ids), Ref(Set(jd.race_idx))), in_laps = in.(eachindex(jd.ids), Ref(Set(jd.lap_idx))))

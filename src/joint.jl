@@ -3,8 +3,8 @@
 #
 #     a_race = a + δ_race,      a_lap = a + δ_lap,
 #
-# - **a:** for every driver in either dataset, a ~ N(0, σ_a), in race units (% of race time,
-#   average-season).
+# - **a:** for every driver in either dataset, a ~ N(0, σ_a) (centred), in race units (% of race
+#   time, average-season).
 # - **Deviations:** only for drivers in both, δ_race ~ N(0, τ_r) and δ_lap ~ N(0, τ_l). A driver
 #   in one dataset only has that model's effect equal to the shared one.
 # - **One scale:** the lap part uses every lap (`prepare_laps(…; alllaps = true)`), with driver
@@ -65,14 +65,16 @@ Priors: σ_a ~ half-N(0, 2s), with s the race data's gap scale (as the race mode
 @model function joint_effects(rm, lm, jd::JointDrivers)
     nb = length(jd.both)
     σ_a ~ truncated(Normal(0, 2rm.args.ps.s); lower = 0)
-    z_a ~ StdNormalVec(length(jd.ids))
+    # centred, as the lap model's drivers (#28): non-centred, a = σ·z ties σ to every well-measured z
+    # (a funnel), and the joint smoke runs diverged on every iteration (#128). σ_a is pinned by every
+    # driver, so the few-result drivers don't funnel it the other way.
+    a ~ IsoNormalVec(0.0, σ_a, length(jd.ids))
     τ_r ~ truncated(Normal(0, 0.5); lower = 0)
-    u_r ~ StdNormalVec(nb)
+    δ_r ~ IsoNormalVec(0.0, τ_r, nb)
     τ_l ~ truncated(Normal(0, 0.5); lower = 0)
-    u_l ~ StdNormalVec(nb)
-    a = σ_a .* z_a
-    a_race = jd.Sr * a .+ jd.Pr * (τ_r .* u_r)
-    a_lap = jd.Sl * a .+ jd.Pl * (τ_l .* u_l)
+    δ_l ~ IsoNormalVec(0.0, τ_l, nb)
+    a_race = jd.Sr * a .+ jd.Pr * δ_r
+    a_lap = jd.Sl * a .+ jd.Pl * δ_l
     race ~ to_submodel(race_with_drivers(rm, a_race))
     lap ~ to_submodel(lap_with_drivers(lm, a_lap))
     return (; a, a_race, a_lap)
@@ -110,5 +112,45 @@ function joint_init_values(race_draw::NamedTuple, lap_draw::NamedTuple, jd::Join
     τ_l = isempty(dl) || length(dl) < 2 ? 0.1 : max(std(dl), 0.02)
     race = NamedTuple(k => v for (k, v) in pairs(race_draw) if k ∉ (:σ_comp, :z_comp, :a_comp))
     lap = NamedTuple(k => v for (k, v) in pairs(lap_draw) if k ∉ (:σ_comp, :a_comp))
-    return (; σ_a, z_a = a ./ σ_a, τ_r = 0.1, u_r = zeros(length(jd.both)), τ_l, u_l = dl ./ τ_l, race, lap)
+    return (; σ_a, a, τ_r = 0.1, δ_r = zeros(length(jd.both)), τ_l, δ_l = dl, race, lap)
+end
+
+# name => range of each variable in a model's sampler (linked) vector
+function varranges(model)
+    DPPL = Turing.DynamicPPL
+    vi = DPPL.link!!(DPPL.VarInfo(model), model)
+    out, pos = Dict{String,UnitRange{Int}}(), 0
+    for vn in keys(vi)
+        n = length(DPPL.getindex_internal(vi, vn))
+        out[string(vn)] = (pos + 1):(pos + n); pos += n
+    end
+    return out, pos
+end
+
+"""
+    joint_warm_metric(jm, lm_std, lap_Minv; default = 1.0, other = 0.01) -> Vector
+
+A diagonal inverse metric for the joint model `jm`, for warm-up to start from:
+- **Lap part:** each `lap.` variable takes the lap fit's adapted variances (`lap_Minv`, in the
+  layout of `lm_std`, the lap model as that fit had it), matched by name. Without them the
+  lap part's posterior, concentrated by about 130k laps, forces a tiny step and maximum tree
+  depth from the start (the #128 smoke run).
+- **Other laps' terms** (not in the lap fit): `other`.
+- **Race part and shared terms:** `default`, as a race fit's cold start.
+"""
+function joint_warm_metric(jm, lm_std, lap_Minv::AbstractVector; default::Real = 1.0, other::Real = 0.01)
+    jr, n = varranges(jm)
+    lr, nl = varranges(lm_std)
+    nl == length(lap_Minv) || throw(DimensionMismatch("lap_Minv has $(length(lap_Minv)) entries, the lap model $nl"))
+    M = fill(Float64(default), n)
+    for (name, r) in jr
+        startswith(name, "lap.") || continue
+        k = name[5:end]
+        if haskey(lr, k) && length(lr[k]) == length(r)
+            M[r] .= lap_Minv[lr[k]]
+        elseif Symbol(k) in OTHER_PARAMS
+            M[r] .= other
+        end
+    end
+    return M
 end
