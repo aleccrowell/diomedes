@@ -239,7 +239,9 @@ if action == "chain"
                    LapConditions()
         # blocks the old fit predates: κ_fp (#113's field pace on the shortfall) came after probe 113b
         wst = deserialize(wfile)
-        nold = sum(first(last(p)) for p in Diomedes.lap_layout(d_old; tyres, slopes, dev, lead, tyre_mgmt, starts, age,
+        # the old fit's age curve, from its tag (a fit can drop it, #159)
+        age_old = occursin(r"_age(_|$)", wtag)
+        nold = sum(first(last(p)) for p in Diomedes.lap_layout(d_old; tyres, slopes, dev, lead, tyre_mgmt, starts, age = age_old,
                                                                 circuits, track, dinc, walk, works, big, rwalk, sdrv, dinc1,
                                                                 ctx = ctx_old, cond = cond_old,
                                                                 rwk = rwalk ? RaceWalk(d_old) : nothing,
@@ -247,7 +249,7 @@ if action == "chain"
                                                                 age_order = occursin("_agerw2", wtag) ? 2 : 1))
         wmiss = fpace && length(Diomedes.lap_adapted(wst).Minv) == nold - 2 ? (:κ_fp,) : ()
         ws = lap_warm_start(wst, d_old, d; tyres_old = tyres, slopes_old = slopes, dev_old = dev,
-                            lead_old = lead, tyre_mgmt_old = tyre_mgmt, starts_old = starts, age_old = age,
+                            lead_old = lead, tyre_mgmt_old = tyre_mgmt, starts_old = starts, age_old, age_new = age,
                             circuits_old = circuits, track_old = track, dinc_old = dinc, walk_old = walk, works_old = works,
                             big_old = big, rwalk_old = rwalk, sdrv_old = sdrv, dinc1_old = dinc1, ctx_old, ctx_new = ctx,
                             missing_old = wmiss, cond_old, cond_new = cnd, rwrel_old = occursin("_rwrel", wtag),
