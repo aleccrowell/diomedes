@@ -136,6 +136,6 @@ This model is in development. The published fit (2021–2026) has the [#108](htt
 - **2021–2026 with per-race tyre wear, true tyre age, reconciled pit stops and
   pooled age bins (the current fit;** [#124](https://github.com/aleccrowell/diomedes/issues/124)**).**
   One mode, max R-hat 1.032, no divergences, 4 × 1,000 draws. Car-seasons correlate
-  0.94 with the race model, drivers' mean pace 0.64 (drivers with at least 500 laps).
+  0.94 with the race model, drivers' mean pace 0.65 (drivers with at least 500 laps).
   The compounds' own stint slopes go to about zero once each race has its own; the
   field-pace slope is 0.12 ([results](@ref "Track conditions")).

@@ -10,7 +10,7 @@ posterior intervals (`q05`, `q95`). `sd` is the posterior standard deviation.
 ## Race-model files
 
 ```@raw html
-<p>F1 1950–2026 (Jolpica API; 2026 through the 17 races run when it was fitted), best pace + loss model. The manifest also records
+<p>F1 1950–2026 (Jolpica API; 2026 through the 21 races run when it was fitted), best pace + loss model. The manifest also records
 the modes the chains settled in, convergence by group, and how far the effects
 differ between modes.
 <a class="diomedes-data" data-path="assets/data/race/manifest.json">manifest.json</a></p>

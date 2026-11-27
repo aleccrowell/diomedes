@@ -67,7 +67,11 @@ The incident probability ``\pi`` and the mean loss ``\lambda`` vary by race:
 \log\lambda_r = a_\lambda + \beta^\lambda_\text{dur}\, d_r + \text{era}^\lambda_{s(r)} ,
 ```
 
-with ``d_r`` the race's standardised log duration. The era terms are random
+with ``d_r`` the race's standardised log duration. In the published fit it is
+centred within each season (`durc`, [#154](https://github.com/aleccrowell/diomedes/issues/154)):
+two-thirds of its variance over 1950–2026 is between seasons (winners' times fell
+from about 159 min in 1950 to about 93 now), which the era walks also carry, so an
+uncentred slope traded against them. The era terms are random
 walks over seasons with Student-t(3) steps: mostly smooth, with occasional
 jumps. That beat effects for each decade (by 53 ± 15 elpd) and for a priori
 regulation eras (68 ± 17) ([#19](https://github.com/aleccrowell/diomedes/issues/19)). Grouped K-fold cross-validation confirmed

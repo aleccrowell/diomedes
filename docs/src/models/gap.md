@@ -80,6 +80,7 @@ the scripts (see [`model_spec`](@ref)):
 | Option | Suffix | What it adds |
 |---|---|---|
 | `loss_duration` | `_dur` | slopes of logit π and log λ on standardised log race duration |
+| `durc` | `_durc` | as `_dur`, with the duration centred within each season, so the slopes measure a race longer or shorter than its season's norm and the era walks keep the season-level change (#154); implies `_dur` |
 | `era = :decade` / `:regime` / `:rw` | `_decade` / `_regime` / `_rw` | era effects on π and λ: hierarchical by decade or regulation regime ([`REGIME_STARTS`](@ref)), or random walks over seasons with Student-t(3) steps ([`LossCovariates`](@ref)) |
 | `pace_scale` | `_kappa` | per-season pace scale κ (a random walk), so gaps can be larger in some eras; effects in average-season units ([`race_pace_scale`](@ref)). Needed by the terms below |
 | `age` | `_age` | population career curve over driver age ([`AgeCurveBasis`](@ref), [`age_curve`](@ref)) |

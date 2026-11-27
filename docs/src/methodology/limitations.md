@@ -10,7 +10,7 @@
   own field.
 - **Separating a driver from their car** relies on team-mates and team changes.
   It is weakest for drivers who spent their careers with one team. In the published
-  race fit the driver and car levels mix well (bulk ESS ≥ 696); the slowest direction
+  race fit the driver and car levels mix well (bulk ESS ≥ 638); the slowest direction
   is the split of a car's form between its season residual and the chassis walk
   ([#142](https://github.com/aleccrowell/diomedes/issues/142)).
 - **A dominant car can pass some of its advantage to its star driver.** In simulations
@@ -49,7 +49,7 @@
   finished. A driver whose incidents usually ended in retirement looks less
   prone than they were; the [retirement model](../findings/retirements.md)
   covers those ([#101](https://github.com/aleccrowell/diomedes/issues/101)).
-- **2026 is a partial season,** with the 17 races run when it was fitted; its car-season
+- **2026 is a partial season,** with the 21 races run when it was fitted; its car-season
   effects and walk states will move as the season finishes ([#99](https://github.com/aleccrowell/diomedes/issues/99)).
 - **Sparse car-seasons stay imprecise.** A 1950s car with a few races is still
   identified mostly by those races: pooling over a works' seasons cut posterior

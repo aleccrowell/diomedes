@@ -1,6 +1,6 @@
 # Export posterior summaries of fitted models for the documentation site (#45).
 #
-#   julia --project scripts/export_site.jl race [model=pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc] [data=jolpica1950-2026+partial]
+#   julia --project scripts/export_site.jl race [model=pl_durc_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc] [data=jolpica1950-2026+partial]
 #   julia --project scripts/export_site.jl retire [prefix=retire]
 #   julia --project scripts/export_site.jl laps [tag=laps_2011-2026_recorded_slopes_lead_tyremgmt_starts_age_circ_track_dinc_big_rwalk_nostartdrv_traffic_fpace_short_keepslow] [source=jolpica]
 #   julia --project scripts/export_site.jl laps_conditions [tag=laps_2021-2026_recorded_…_short_cond_wetallg_wetrace_racedegc_tyreage_pitfix_agemin3_keepslow_keepwet]
@@ -803,7 +803,7 @@ end
 
 mode = get(ARGS, 1, "race")
 if mode == "race"
-    export_race(get(ARGS, 2, "pl_dur_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc"), get(ARGS, 3, "jolpica1950-2026+partial"))
+    export_race(get(ARGS, 2, "pl_durc_rw_kappa_age_big_slope_dev_circ_track_walk1_works_dinc"), get(ARGS, 3, "jolpica1950-2026+partial"))
 elseif mode == "retire"
     export_retire(get(ARGS, 2, "retire_jolpica1950-2025"))
 elseif mode == "laps"

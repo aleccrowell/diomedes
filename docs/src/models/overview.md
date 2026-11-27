@@ -35,7 +35,7 @@ comparisons:
 
 | Term | Option | Model-name suffix | Issue |
 |---|---|---|---|
-| race duration in the loss | `loss_duration` | `_dur` | #9 |
+| race duration in the loss | `loss_duration` | `_dur` (`_durc`: centred within season) | #9, #154 |
 | incident rate and size drift over seasons | `era = :rw` | `_rw` | #9 |
 | pace scale by season | `pace_scale` | `_kappa` | #15 |
 | population age curve | `age` | `_age` | #15 |

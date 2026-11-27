@@ -131,7 +131,8 @@ Hard stop: iteration 100 by <time> (100 × 1023 × <gradient time> + 5 %).
 |---|---|
 | z-score model, all F1 | under 2 min |
 | pace + loss `pl_rw`, all F1, 4 chains in parallel | 40–70 min |
-| pace + loss, the published model (`…_walk1_works_dinc`), 1950–2026, 4 chains in parallel | about 10.4 h per chain |
+| pace + loss, the previous published model (`…_walk1_works_dinc`), 1950–2026, 4 chains in parallel | about 10.4 h per chain |
+| pace + loss, the published model (`pl_durc_…_walk1_works_dinc`), 1950–2026 through round 21, 4 chains in parallel, blocks of 25 | about 7.5 h per chain |
 | lap model, 2011–2026 (316k laps) with every #108 and #113 term, warm-started | about 9 h per chain (1,000 draws) |
 | lap model, 2021–2026 (124k laps) with the conditions terms (#116), warm-started | 6–23 h per chain (1,000 draws), depending on the step size the chain adapts |
 | lap model, 2021–2026 with conditions, car and race wet terms and `rwrel` (#116), warm-started, fixed step | 13.5–14 h per chain (1,000 draws) |
