@@ -99,8 +99,22 @@ end
 
 # the submodels with their driver terms given: rebuilt from the stored arguments (a DynamicPPL
 # Model can't be updated in place)
-race_given(rm, a, fage, sl) = paceloss_effects(values(merge(rm.args, (; ext = merge(rm.args.ext, (; drivers = a, fage, slopes = sl)))))...)
-lap_given(lm, a, sl, fage) = lap_effects(values(merge(lm.args, (; drv = a, sl_ext = sl, fage_ext = fage)))...)
+race_given(rm, a, fage, sl, oi = nothing) =
+    paceloss_effects(values(merge(rm.args, (; ext = merge(rm.args.ext, (; drivers = a, fage, slopes = sl),
+                                                          oi === nothing ? (;) : (; dinc_off = oi)))))...)
+lap_given(lm, a, sl, fage, oi = nothing) =
+    lap_effects(values(merge(lm.args, (; drv = a, sl_ext = sl, fage_ext = fage),
+                             oi === nothing ? (;) : (; dinc_ext = oi)))...)
+
+# whether the two parts share the drivers' incident offsets: the race part with `dinc`, the lap
+# part with the race model's incident process (`lap_effects(…; incident = true)`); one without
+# the other would leave the term defined differently in the two parts (#128)
+function joint_incident(rm, lm)
+    r, l = rm.args.ext.dinc, lm.args.inc !== nothing
+    r == l || throw(ArgumentError("the joint model shares the incident offsets: the race part needs dinc and the lap part " *
+                                  "incident = true, or neither (race dinc = $r, lap incident = $l)"))
+    return r
+end
 
 """
     joint_effects(rm, lm, jd::JointDrivers)
@@ -115,15 +129,17 @@ Shared:
 - **The career slope**, one per driver, on a common age centre (`joint_ages`); prior as the race
   model's.
 - **The age curve**, on the race data's age bins; prior as the race model's.
+- **The drivers' incident offsets** on logit π (race `dinc`, lap `incident`): one per driver,
+  τ_inc·(u - mean u) as the race model's; each part keeps its own baseline and sizes.
 
 Their own versions of these terms are replaced by the shared ones.
 """
 function joint_effects(rm, lm, jd::JointDrivers)
     rm2, lm2, lapage = joint_ages(rm, lm, jd)
-    return joint_model(rm2, lm2, jd, lapage)
+    return joint_model(rm2, lm2, jd, lapage, joint_incident(rm2, lm2))
 end
 
-@model function joint_model(rm, lm, jd::JointDrivers, lapage::Vector{Int})
+@model function joint_model(rm, lm, jd::JointDrivers, lapage::Vector{Int}, incident::Bool = false)
     nb = length(jd.both)
     ps = rm.args.ps
     σ_a ~ truncated(Normal(0, 2ps.s); lower = 0)
@@ -142,11 +158,19 @@ end
     τ_slope ~ truncated(Normal(0, 0.5ps.s); lower = 0)
     u_slope ~ StdNormalVec(length(jd.ids))
     sl = career_slopes(τ_slope, u_slope)
+    if incident             # shared incident offsets, centred across every driver (as the race model's dinc)
+        τ_inc ~ truncated(Normal(0, 0.5); lower = 0)
+        u_inc ~ StdNormalVec(length(jd.ids))
+        oi = τ_inc .* (u_inc .- mean(u_inc))
+        oir, oil = jd.Sr * oi, jd.Sl * oi
+    else
+        oir, oil = nothing, nothing
+    end
     a_race = jd.Sr * a .+ jd.Pr * δ_r
     a_lap = jd.Sl * a .+ jd.Pl * δ_l
-    race ~ to_submodel(race_given(rm, a_race, fage, jd.Sr * sl))
-    lap ~ to_submodel(lap_given(lm, a_lap, jd.Sl * sl, fage[lapage]))
-    return (; a, a_race, a_lap, fage, sl)
+    race ~ to_submodel(race_given(rm, a_race, fage, jd.Sr * sl, oir))
+    lap ~ to_submodel(lap_given(lm, a_lap, jd.Sl * sl, fage[lapage], oil))
+    return (; a, a_race, a_lap, fage, sl, oir, oil)
 end
 
 # a chain's draw `i` as a NamedTuple of its parameters (vectors as vectors)
@@ -166,11 +190,14 @@ model's parameters: a fit's draw via `draw_params`, or `paceloss_init_values`).
 - **Drivers in both:** the lap deviation makes a + δ_lap the lap draw's own effect, with τ_l
   its spread.
 - **Age curve and career slopes:** from the race draw, with lap-only drivers' slopes at 0.
+- **Incident offsets** (`incident = true`): from the race draw's dinc, lap-only drivers at 0; the
+  lap part's own incident baseline and sizes from the race draw's (the same process), and the lap
+  draw's big-loss and dinc terms dropped (the incident term replaces them).
 """
-joint_init(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers) =
-    InitFromParams(joint_init_values(race_draw, lap_draw, jd))
+joint_init(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers; incident::Bool = false) =
+    InitFromParams(joint_init_values(race_draw, lap_draw, jd; incident))
 "The values behind `joint_init`, as a nested NamedTuple."
-function joint_init_values(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers)
+function joint_init_values(race_draw::NamedTuple, lap_draw::NamedTuple, jd::JointDrivers; incident::Bool = false)
     σ_a = race_draw.σ_comp
     ar = σ_a .* (race_draw.z_comp .- mean(race_draw.z_comp))
     al = lap_draw.a_comp .- mean(lap_draw.a_comp)
@@ -180,14 +207,23 @@ function joint_init_values(race_draw::NamedTuple, lap_draw::NamedTuple, jd::Join
     lap_of = Dict(i => r for (r, i) in enumerate(jd.lap_idx))
     dl = [al[lap_of[i]] - a[i] for i in jd.both]
     τ_l = isempty(dl) || length(dl) < 2 ? 0.1 : max(std(dl), 0.02)
-    shared = (:σ_comp, :z_comp, :a_comp, :τ_slope, :u_slope, :τ_age, :e_age)
+    shared = (:σ_comp, :z_comp, :a_comp, :τ_slope, :u_slope, :τ_age, :e_age, (incident ? (:τ_dinc, :u_dinc) : ())...)
     race = NamedTuple(k => v for (k, v) in pairs(race_draw) if k ∉ shared)
-    lap = NamedTuple(k => v for (k, v) in pairs(lap_draw) if k ∉ shared)
+    lap = NamedTuple(k => v for (k, v) in pairs(lap_draw) if k ∉ shared && !(incident && k in (:a_ρ, :δ_λ2)))
+    if incident             # the lap part's incident baseline and sizes start at the race draw's
+        lap = merge(lap, (; a_πi = race_draw.a_π, a_λi = race_draw.a_λ, a_ρi = race_draw.a_ρ, δ_λi = race_draw.δ_λ2))
+    end
     # the age curve from the race draw; each driver's slope from the race draw, 0 for lap-only drivers
     u = zeros(length(jd.ids))
     u[jd.race_idx] .= race_draw.u_slope .- mean(race_draw.u_slope)
-    return (; σ_a, a, τ_r = 0.1, δ_r = zeros(length(jd.both)), τ_l, δ_l = dl, τ_age = race_draw.τ_age,
-            e_age = race_draw.e_age, τ_slope = race_draw.τ_slope, u_slope = u, race, lap)
+    base = (; σ_a, a, τ_r = 0.1, δ_r = zeros(length(jd.both)), τ_l, δ_l = dl, τ_age = race_draw.τ_age,
+            e_age = race_draw.e_age, τ_slope = race_draw.τ_slope, u_slope = u)
+    if incident
+        ui = zeros(length(jd.ids))
+        ui[jd.race_idx] .= race_draw.u_dinc .- mean(race_draw.u_dinc)
+        base = merge(base, (; τ_inc = race_draw.τ_dinc, u_inc = ui))
+    end
+    return (; base..., race, lap)
 end
 
 # name => range of each variable in a model's sampler (linked) vector
@@ -210,7 +246,7 @@ A diagonal inverse metric for the joint model `jm`, for warm-up to start from:
   layout of `lm_std`, the lap model as that fit had it), matched by name. Without them the
   lap part's posterior, concentrated by about 130k laps, forces a tiny step and maximum tree
   depth from the start (the #128 smoke run).
-- **Other laps' terms** (not in the lap fit): `other`.
+- **Other laps' terms and the lap part's incident terms** (not in the lap fit): `other`.
 - **Race part and shared terms:** `default`, as a race fit's cold start.
 """
 function joint_warm_metric(jm, lm_std, lap_Minv::AbstractVector; default::Real = 1.0, other::Real = 0.01)
@@ -223,7 +259,7 @@ function joint_warm_metric(jm, lm_std, lap_Minv::AbstractVector; default::Real =
         k = name[5:end]
         if haskey(lr, k) && length(lr[k]) == length(r)
             M[r] .= lap_Minv[lr[k]]
-        elseif Symbol(k) in OTHER_PARAMS
+        elseif Symbol(k) in OTHER_PARAMS || Symbol(k) in INC_PARAMS
             M[r] .= other
         end
     end

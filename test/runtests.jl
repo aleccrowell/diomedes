@@ -1529,6 +1529,48 @@ end
                                     cs, LapConditions(), d)
         end
         @test isapprox(rv .* keep, gf .* keep; rtol = 1e-7, atol = 1e-9)
+        # in the model (`incident`): starts, other laps and clean laps, each segment in one pass. The
+        # sampler's gradient (the rules of start_mu, segment_inc and lap_loglik_inc) against ForwardDiff
+        # (their generic primals); with a vanishing incident probability, the model without the term
+        # plus the incident terms' priors; the layout; given offsets in place of the sampled ones
+        LDFi, LDPi = Turing.DynamicPPL.LogDensityFunction, Turing.LogDensityProblems
+        for alllaps in (false, true)
+            da = prepare_laps(lt, rows; pits = :inferred, alllaps)
+            ca = LapContext(da, lt; traffic = true)
+            csa = LapContext(ca.tbin, ca.tnames, [0.4 * sin(0.9j) for j in eachindex(da.y)], true, true, true)
+            kw = (; starts = true, slopes = true, ctx = csa, cond = lap_golden_conditions(da, lt), alllaps)
+            m, m0 = lap_effects(da; kw..., incident = true), lap_effects(da; kw...)
+            rdm, fdm = LDFi(m; adtype = Diomedes.gap_sampler().adtype), LDFi(m; adtype = AutoForwardDiff())
+            rg = NamedTuple(getfield(rdm, :_varname_ranges))
+            n = LDPi.dimension(rdm)
+            o = 0
+            for (name, (k, _)) in Diomedes.lap_layout(da; kw..., incident = true)
+                @test rg[name].range == (o + 1):(o + k)
+                o += k
+            end
+            @test o == n
+            x = lap_golden_x(n)
+            for (k, r) in pairs(rg)
+                nmk = string(k)
+                (startswith(nmk, "σ") || startswith(nmk, "τ") || k in (:δ_own, :δ_reg, :δ_λi)) && (x[r.range] .= 0.3 .+ abs.(x[r.range]))
+            end
+            x[rg.a_πi.range] .= -1.0
+            v1, g1 = LDPi.logdensity_and_gradient(rdm, x)
+            v2, g2 = LDPi.logdensity_and_gradient(fdm, x)
+            @test v1 ≈ v2 && isapprox(g1, g2; rtol = 1e-7, atol = 1e-8)
+            x[rg.a_πi.range] .= -700.0
+            n0 = LDPi.dimension(LDFi(m0))
+            Hn(μ, s) = Turing.truncated(Normal(μ, s); lower = 0)
+            pr = logpdf(Normal(-1.5, 1), -700.0) + logpdf(Normal(log(2.0), 1), x[rg.a_λi.range][1]) +
+                 logpdf(Normal(log(0.05 / 0.95), 1), x[rg.a_ρi.range][1]) + logpdf(Hn(log(10), 1), x[rg.δ_λi.range][1]) +
+                 logpdf(Hn(0, 0.5), x[rg.τ_inc.range][1]) + sum(logpdf.(Normal(0, 1), x[rg.u_inc.range]))
+            @test first(rg.a_πi.range) == n0 + 1 && LDPi.logdensity(LDFi(m), x) ≈ LDPi.logdensity(LDFi(m0), x[1:n0]) + pr
+            rgg = NamedTuple(getfield(LDFi(lap_effects(da; kw..., incident = true, dinc_ext = zeros(nc))), :_varname_ranges))
+            @test !haskey(rgg, :τ_inc) && !haskey(rgg, :u_inc) && haskey(rgg, :a_πi)
+        end
+        @test_throws ArgumentError lap_effects(d; incident = true)                       # needs the shortfall
+        @test_throws ArgumentError lap_effects(d; ctx = cs, big = true, incident = true)  # replaces big and dinc
+        @test_throws ArgumentError lap_effects(d; ctx = cs, dinc_ext = zeros(nc))
         # the incident term replaces the big losses
         @test_throws ArgumentError Diomedes._lap_vg(fixed(args[1:7]...)..., 0.1, 1.0, ηt, φ, sh, κ, z(1), z(1),
                                                     (; λI1 = args[12], λI2 = args[13], ρI = 0.15, so = args[15], πg = args[16], rows = R),
@@ -1656,6 +1698,36 @@ end
                                            age = true, slopes = true)
         @test length(iv.z_comp) == nr && haskey(iv, :b_mach) && !haskey(iv, :z_mach) && length(iv.e_κ) == 1 &&
               length(iv.u_slope) == nr
+        # the shared incident offsets (#128): the race part's dinc and the lap part's incident term, one
+        # offset per driver given to both; each part keeps its own baseline and sizes
+        rmi = Diomedes.paceloss_effects(g; loss_duration = true, era = :rw, pace_scale = true, age = true, slopes = true,
+                                        big_loss = true, dinc = true)
+        lmi = lap_effects(d; slopes = true, age = true, ctx = LapContext(d, lt; short = true), incident = true)
+        @test_throws ArgumentError joint_effects(rmi, lm, jd)                       # the term in one part only
+        @test_throws ArgumentError joint_effects(rm, lmi, jd)
+        jmi = joint_effects(rmi, lmi, jd)
+        vni = string.(collect(keys(Turing.DynamicPPL.VarInfo(jmi))))
+        @test all(in(vni), ["τ_inc", "u_inc", "race.a_π", "race.a_ρ", "lap.a_πi", "lap.a_λi", "lap.a_ρi", "lap.δ_λi"])
+        @test !any(in(vni), ["race.τ_dinc", "race.u_dinc", "lap.τ_inc", "lap.u_inc"])
+        rdi = LDF(jmi, Turing.DynamicPPL.getlogjoint_internal, Turing.DynamicPPL.LinkAll(); adtype = Diomedes.gap_sampler().adtype)
+        fdi = LDF(jmi, Turing.DynamicPPL.getlogjoint_internal, Turing.DynamicPPL.LinkAll(); adtype = AutoForwardDiff())
+        for _ in 1:2
+            x = 0.3 .* randn(rng, LDP.dimension(rdi))
+            @test LDP.logdensity_and_gradient(rdi, x)[2] ≈ LDP.logdensity_and_gradient(fdi, x)[2]
+        end
+        # given offsets replace the race part's own
+        ri = Diomedes.race_given(rmi, zeros(nr), zeros(length(g.age_years)), zeros(nr), zeros(nr))
+        @test !haskey(NamedTuple(getfield(LDF(ri), :_varname_ranges)), :τ_dinc)
+        rdrawi = merge(rdraw, (; a_ρ = -2.5, δ_λ2 = 2.0, τ_dinc = 0.3, u_dinc = randn(rng, nr)))
+        ldrawi = merge(ldraw, (; a_ρ = -3.0, δ_λ2 = 1.5))
+        pv = Diomedes.joint_init_values(rdrawi, ldrawi, jd; incident = true)
+        @test pv.τ_inc == 0.3 && pv.u_inc[jd.race_idx] ≈ rdrawi.u_dinc .- mean(rdrawi.u_dinc) && pv.u_inc[end] == 0
+        @test !haskey(pv.race, :τ_dinc) && !haskey(pv.lap, :a_ρ) && !haskey(pv.lap, :δ_λ2)
+        @test pv.lap.a_πi == rdrawi.a_π && pv.lap.δ_λi == rdrawi.δ_λ2
+        @test haskey(Diomedes.joint_init_values(rdrawi, ldrawi, jd).race, :τ_dinc)   # without: the race part's own
+        chi = Turing.sample(Xoshiro(1), jmi, Turing.NUTS(10, 0.8; adtype = Diomedes.gap_sampler().adtype), 5;
+                            progress = false, initial_params = joint_init(rdrawi, ldrawi, jd; incident = true))
+        @test all(isfinite, Array(chi[:τ_inc]))
     end
 
     @testset "all laps for the joint model's lap part (#128)" begin

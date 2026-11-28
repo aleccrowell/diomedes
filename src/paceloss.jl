@@ -1297,7 +1297,9 @@ effects are then comparable across eras.
             hdrv = hdrv === nothing ? hw : hdrv .+ hw
         end
         πd = nothing
-        if ext.dinc                 # per-driver incident proneness on logit π (#101), centred across drivers
+        if ext.dinc && get(ext, :dinc_off, nothing) !== nothing
+            πd = ext.dinc_off       # given from outside (the joint model's shared incident offsets, #128)
+        elseif ext.dinc             # per-driver incident proneness on logit π (#101), centred across drivers
             τ_dinc ~ truncated(Normal(0, 0.5); lower = 0)
             u_dinc ~ StdNormalVec(length(g.competitors))
             πd = τ_dinc .* (u_dinc .- mean(u_dinc))

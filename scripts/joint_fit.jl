@@ -9,6 +9,9 @@
 # `cond wetallg wetrace racedegc tyreage pitfix keepslow keepwet rwrel`, no age curve), on every
 # lap (`alllaps`): the laps the clean-lap model leaves out come in with their own shifts, and the
 # drivers' and cars' effects are on every lap, so both parts measure a share of total time.
+# Incidents are the race model's process in both parts: at most one per driver-race, its size in
+# % of race time landing on one lap (`incident`, in place of the lap model's big losses and
+# incident proneness), with the drivers' offsets shared and each part's own baseline and sizes.
 #
 # Chain k starts at the race model's starting values (`paceloss_init_values`; the published
 # race fit covers other seasons) and the last draw of chain k of the lap fit (`joint_init`).
@@ -29,7 +32,7 @@ args = filter(a -> !occursin('=', a) && a != "probe", ARGS)
 action = get(args, 1, "bench")
 probe = "probe" in ARGS
 alllaps = opt("alllaps", "true") == "true"     # alllaps=false: the lap part on clean laps only (diagnostics)
-tag = "joint_" * RACE_MODEL * (alllaps ? "" : "_cleanlaps") * (probe ? "_probe" : "")
+tag = "joint_" * RACE_MODEL * "_inc" * (alllaps ? "" : "_cleanlaps") * (probe ? "_probe" : "")
 
 function race_model()
     _, g = gap_data(RACE_MODE; io = devnull)
@@ -55,7 +58,9 @@ function lap_model()
                         racedeg = true, racedegc = true, tyreage = true, noage = rec.noage)
     kw = (; slopes = true, lead = true, tyre_mgmt = true, starts = true, age = false, circuits = true, track = true,
           dinc = true, big = true, rwalk = true, sdrv = false, ctx, cond = cnd, rwrel = true)
-    lm = lap_effects(d; kw..., age = true, alllaps)   # its age curve and slopes come from the joint model's shared ones
+    # its age curve, slopes and incident offsets come from the joint model's shared ones; the race model's
+    # incident process (`incident`) replaces the lap model's big losses and incident proneness
+    lm = lap_effects(d; kw..., age = true, alllaps, big = false, dinc = false, incident = true)
     # the lap model as the lap fit had it (clean laps only): its layout maps that fit's adapted metric
     lm_std = lap_effects(d; kw...)
     return d, lm, lm_std
@@ -96,7 +101,7 @@ elseif action == "chain"
     lc = block_chain_k(LAP_TAG, k)
     # the lap fit's last draw, with the other laps' terms (not in that fit) started from the laps
     l0 = alllaps ? merge(Diomedes.draw_params(lc), Diomedes.other_laps_init(d, lm.args.xl)) : Diomedes.draw_params(lc)
-    init = joint_init(r0, l0, jd)
+    init = joint_init(r0, l0, jd; incident = true)
     # warm-up from a metric with the lap fit's adapted variances on the lap part (see joint_warm_metric)
     la = Diomedes.checkpoint_adapted("output/$(LAP_TAG)_chain$(k)")
     M0 = Diomedes.joint_warm_metric(jm, lm_std, la.Minv)
@@ -123,15 +128,15 @@ elseif action == "check"
                                        dev = s.dev, race_mean = s.race_mean, circ = s.circ, track = s.track, walk = s.walk,
                                        walk1 = s.walk1, works = s.works, dinc = s.dinc)
     l0 = merge(Diomedes.draw_params(block_chain_k(LAP_TAG, k)), Diomedes.other_laps_init(d, lm.args.xl))
-    v = Diomedes.joint_init_values(r0, l0, jd)
+    v = Diomedes.joint_init_values(r0, l0, jd; incident = true)
     DP = Turing.DynamicPPL
     vi = DP.VarInfo(jm)
     vi = last(DP.init!!(jm, vi, Turing.InitFromParams(v), DP.UnlinkAll()))
     @printf("log prior %.1f, log likelihood %.1f\n", DP.getlogprior(vi), DP.getloglikelihood(vi))
     rv = Turing.DynamicPPL.returned(jm, Turing.InitFromParams(v))
     @printf("race part log lik %.1f; lap part log lik %.1f\n",
-            DP.loglikelihood(Diomedes.race_given(jm.args.rm, rv.a_race, rv.fage, jd.Sr * rv.sl), v.race),
-            DP.loglikelihood(Diomedes.lap_given(jm.args.lm, rv.a_lap, jd.Sl * rv.sl, rv.fage[jm.args.lapage]), v.lap))
+            DP.loglikelihood(Diomedes.race_given(jm.args.rm, rv.a_race, rv.fage, jd.Sr * rv.sl, rv.oir), v.race),
+            DP.loglikelihood(Diomedes.lap_given(jm.args.lm, rv.a_lap, jd.Sl * rv.sl, rv.fage[jm.args.lapage], rv.oil), v.lap))
     xl = lm.args.xl
     println("other laps: ", length(d.x_y), " in ", length(d.group_type), " groups; types ",
             [Diomedes.LAP_TYPES[t] for t in xl.types], "; μ_x ", round.(v.lap.μ_x; digits = 1), "; σ_x ", round.(v.lap.σ_x; digits = 2))

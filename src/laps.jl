@@ -461,7 +461,7 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
 end
 
 """
-    IncidentRows(d::LapData)
+    IncidentRows(d::LapData; starts = true, other = true)
 
 The driver-races of the joint model's incident term (#128): every (driver, race) with a lap in `d`
 (lap 1, clean laps or other laps), with each segment's laps as indices into them (`gc`, `go`, `gs`),
@@ -477,15 +477,15 @@ struct IncidentRows
     n::Vector{Int}          # laps per group, all segments
     laps::Vector{Float64}   # per race
 end
-function IncidentRows(d::LapData)
+function IncidentRows(d::LapData; starts::Bool = true, other::Bool = true)
     key = Dict{Tuple{Int,Int},Int}()
     comp, race = Int[], Int[]
     gid(c, r) = get!(key, (c, r)) do
         push!(comp, c); push!(race, r); length(comp)
     end
-    gs = [gid(d.s_comp[j], d.s_race[j]) for j in eachindex(d.s_y)]
+    gs = starts ? [gid(d.s_comp[j], d.s_race[j]) for j in eachindex(d.s_y)] : Int[]
     gc = [gid(d.comp[j], d.race[j]) for j in eachindex(d.y)]
-    go = [gid(d.x_comp[k], d.x_race[k]) for k in eachindex(d.x_y)]
+    go = other ? [gid(d.x_comp[k], d.x_race[k]) for k in eachindex(d.x_y)] : Int[]
     n = zeros(Int, length(comp))
     for k in Iterators.flatten((gc, go, gs)); n[k] += 1; end
     laps = zeros(length(d.races))
@@ -871,8 +871,38 @@ One pass over the laps: each lap's f₁ is taken with its f₀.
 """
 function lap_loglik_inc(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ηt, φ, sh, κ, cv, wv,
                         λI1, λI2, ρI, so, πg, rows::IncidentRows, rwk::RaceWalk, ctx, cond, d::LapData)
-    return first(_lap_vg(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, 0.0, 0.0, ηt, φ, sh, κ, cv, wv,
-                         (; λI1, λI2, ρI, so, πg, rows), rwk, ctx, cond, d))
+    # generic (any number type: ForwardDiff checks, plain evaluation); the rule has the fused pass
+    ctx.short || throw(ArgumentError("the incident term is for the lap model with the shortfall"))
+    h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk, ctx, cond, d)
+    nc, nm = length(d.competitors), length(d.machines)
+    T = promote_type(eltype(γ), eltype(δ), eltype(h), typeof(σ), eltype(πr), eltype(λr), eltype(πd), eltype(sh), eltype(κ),
+                     eltype(cv), eltype(λI1), eltype(λI2), typeof(ρI), eltype(so), eltype(πg))
+    s0, Δ = zero(T), Vector{T}(undef, length(d.y))
+    for j in eachindex(d.y)
+        r, c, m = d.race[j], d.comp[j], d.mach[j]
+        μ = γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r]
+        f = ctx.fpace ? ctx.fp[j] : 0.0
+        xb = logit(πr[r]) + πd[c] + sh[c] + sh[nc + m]
+        λb = λr[r] * exp(sh[nc + nm + c] + sh[2nc + nm + m])
+        cq, cλ = cond.on ? cond_short(cv, cond, j) : (0.0, 0.0)
+        q, λl = logistic(xb + κ[1] * f + cq), λb * exp(κ[end] * f + cλ)
+        x = d.y[j] - (μ - logistic(xb) * λb)
+        v0 = paceloss_logpdf(x, σ, q, λl)
+        s0 += v0
+        Δ[j] = paceinc_logpdf(x, σ, q, λl, λI1[r], λI2[r], ρI) - v0
+    end
+    lse = group_logsumexp(Δ, rows.gc, so)
+    return s0 + sum(logaddexp(log1p(-πg[k]), log(πg[k]) + lse[k] - log(rows.n[k])) for k in eachindex(rows.comp))
+end
+
+# For each group g, log(exp(prev[g]) + Σ_{k: grp[k] = g} exp(v[k])), −Inf for none (generic)
+function group_logsumexp(v, grp::Vector{Int}, prev)
+    T = promote_type(eltype(v), eltype(prev))
+    mx = T[p for p in prev]
+    for (x, g) in zip(v, grp); x > mx[g] && (mx[g] = x); end
+    sm = T[isfinite(prev[g]) ? exp(prev[g] - mx[g]) : zero(T) for g in eachindex(prev)]
+    for (x, g) in zip(v, grp); sm[g] += exp(x - mx[g]); end
+    return T[sm[g] > 0 ? mx[g] + log(sm[g]) : T(-Inf) for g in eachindex(prev)]
 end
 function ChainRulesCore.rrule(::typeof(lap_loglik_inc), γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd,
                               ηt, φ, sh, κ, cv, wv, λI1, λI2, ρI, so, πg, rows::IncidentRows, rwk::RaceWalk, ctx, cond,
@@ -988,18 +1018,7 @@ function ChainRulesCore.rrule(::typeof(start_loglik), γ1, a, b, sd, sc, g, fage
         w = pπ * q * (1 - q)                           # ∂ℓ/∂(logit of the start's π)
         gπ += w / (π * (1 - π)); gπd[c] += w
     end
-    for j in 1:N
-        gh = gμ[j] - gγ[d.s_race[j]] / d.s_race_n[d.s_race[j]]
-        gr = d.s_grid[j]
-        ga[d.s_comp[j]] += gh; gb[d.s_mach[j]] += gh
-        gsd[d.s_comp[j]] += gh; gsc[d.s_mach[j]] += gh
-        gg[1] += gh * gr; gg[2] += gh * gr^2
-        d.s_abin[j] > 0 && (gfage[d.s_abin[j]] += gh)
-        for k in axes(d.race_x, 2)
-            gcx[(k - 1) * nm + d.s_mach[j]] += gh * d.race_x[d.s_race[j], k]
-        end
-        rw && (gxr[rwk.start[j]] += gh)
-    end
+    _start_h_pullback!((; ga, gb, gsd, gsc, gg, gfage, gcx, gxr), gμ, gγ, rw, rwk, d)
     gs = (gσ, gπ, gλ)          # bound once, so the closure does not box the loop's sums (see lap_loglik)
     pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* ga, Δ .* gb, Δ .* gsd, Δ .* gsc, Δ .* gg, Δ .* gfage, Δ .* gcx, Δ .* gxr,
                    Δ * gs[1], Δ * gs[2], Δ * gs[3], Δ .* gπd, NoTangent(), NoTangent())
@@ -1012,6 +1031,124 @@ for Tf in _TA_OR_CONST, Tc in _TA_OR_CONST, Td in _TA_OR_CONST
                                                          fage::$Tf, cx::$Tc, xr::ReverseDiff.TrackedArray,
                                                          σ::ReverseDiff.TrackedReal, π::ReverseDiff.TrackedReal,
                                                          λ::ReverseDiff.TrackedReal, πd::$Td, rwk::RaceWalk, d::LapData)
+end
+
+# The starts' per-start mean gradients gμ (and the race intercepts' gγ, their sums per race) taken
+# back to the terms of h, added into the arrays of `G`; shared by `start_loglik`'s rule and
+# `start_mu`'s (#128)
+function _start_h_pullback!(G, gμ, gγ, rw::Bool, rwk::RaceWalk, d::LapData)
+    nm = length(d.machines)
+    for j in eachindex(d.s_y)
+        gh = gμ[j] - gγ[d.s_race[j]] / d.s_race_n[d.s_race[j]]
+        gr = d.s_grid[j]
+        G.ga[d.s_comp[j]] += gh; G.gb[d.s_mach[j]] += gh
+        G.gsd[d.s_comp[j]] += gh; G.gsc[d.s_mach[j]] += gh
+        G.gg[1] += gh * gr; G.gg[2] += gh * gr^2
+        d.s_abin[j] > 0 && (G.gfage[d.s_abin[j]] += gh)
+        for k in axes(d.race_x, 2)
+            G.gcx[(k - 1) * nm + d.s_mach[j]] += gh * d.race_x[d.s_race[j], k]
+        end
+        rw && (G.gxr[rwk.start[j]] += gh)
+    end
+    return G
+end
+
+"""
+    start_mu(γ1, a, b, sd, sc, g, fage, cx, xr, rwk, d) -> Vector
+
+Each start's mean, γ1[race] + h - (mean h of the race's starts), as in `start_loglik`; for the
+joint model's incident term, whose starts' likelihood is taken with their f₁ (`segment_inc`, #128).
+"""
+function start_mu(γ1, a, b, sd, sc, g, fage, cx, xr, rwk::RaceWalk, d::LapData)
+    h, hbar = start_h(a, b, sd, sc, g, fage, cx, xr, rwk, d)
+    return [γ1[d.s_race[j]] + h[j] - hbar[d.s_race[j]] for j in eachindex(d.s_y)]
+end
+function ChainRulesCore.rrule(::typeof(start_mu), γ1, a, b, sd, sc, g, fage, cx, xr, rwk::RaceWalk, d::LapData)
+    μ = start_mu(γ1, a, b, sd, sc, g, fage, cx, xr, rwk, d)
+    function pullback(Δ)
+        gμ = collect(Float64, ChainRulesCore.unthunk(Δ))
+        gγ = zeros(length(γ1))
+        for j in eachindex(d.s_y); gγ[d.s_race[j]] += gμ[j]; end
+        G = (; ga = zeros(length(a)), gb = zeros(length(b)), gsd = zeros(length(sd)), gsc = zeros(length(sc)), gg = zeros(2),
+             gfage = zeros(length(fage)), gcx = zeros(length(cx)), gxr = zeros(length(xr)))
+        _start_h_pullback!(G, gμ, gγ, !isempty(rwk.start), rwk, d)
+        return (NoTangent(), gγ, G.ga, G.gb, G.gsd, G.gsc, G.gg, G.gfage, G.gcx, G.gxr, NoTangent(), NoTangent())
+    end
+    return μ, pullback
+end
+for Tf in _TA_OR_CONST, Tc in _TA_OR_CONST
+    @eval ReverseDiff.@grad_from_chainrules start_mu(γ1::ReverseDiff.TrackedArray, a::ReverseDiff.TrackedArray,
+                                                     b::ReverseDiff.TrackedArray, sd::ReverseDiff.TrackedArray,
+                                                     sc::ReverseDiff.TrackedArray, g::ReverseDiff.TrackedArray,
+                                                     fage::$Tf, cx::$Tc, xr::ReverseDiff.TrackedArray, rwk::RaceWalk,
+                                                     d::LapData)
+end
+
+"""
+    segment_inc(x, σ, q, λ, λI1, λI2, ρI, prev, grp, ng) -> Vector
+
+One segment of laps (the starts, or the other laps) in the joint model's incident term (#128),
+in one pass: row k's residual `x[k]` (lap minus mean) under pace + loss noise of scale `σ[k]`,
+loss share `q[k]` and mean `λ[k]` (log f₀), and with an incident of mean `λI1[k]` (routine) or
+`λI2[k]` (big, share `ρI`) added (log f₁). Returns `[s; Σ_k log f₀]` with, for each driver-race
+g in 1:ng, s_g = log(exp(prev_g) + Σ_{k: grp[k] = g} f₁/f₀): `prev` carries an earlier segment's
+sums (−Inf for none), and the last segment's s is `lap_loglik_inc`'s `so`.
+"""
+function segment_inc(x, σ, q, λ, λI1, λI2, ρI, prev, grp::Vector{Int}, ng::Int)
+    # generic (any number type); the rule has the fused pass
+    length(prev) == ng || throw(DimensionMismatch("prev has $(length(prev)) driver-races, not $ng"))
+    v0 = paceloss_logpdf.(x, σ, q, λ)
+    return vcat(group_logsumexp(paceinc_logpdf.(x, σ, q, λ, λI1, λI2, ρI) .- v0, grp, prev), sum(v0))
+end
+
+function _segment_inc(x, σ, q, λ, λI1, λI2, ρI, prev, grp::Vector{Int}, ng::Int)
+    n = length(x)
+    V, P = zeros(n), zeros(n, 11)               # log f₁ - log f₀; ∂ log f₀ (x, σ, q, λ), ∂ log f₁ (x, σ, q, λ, λI1, λI2, ρI)
+    s0 = 0.0
+    for k in 1:n
+        lq = (log1p(-q[k]), log(q[k]))
+        v0, p0μ, p0σ, p0q, p0λ = paceloss_row_vg(x[k], 0.0, σ[k], q[k], λ[k], lq)
+        v1, p1μ, p1σ, p1q, p1λ, p1I1, p1I2, p1ρ = paceinc_row_vg(x[k], 0.0, σ[k], q[k], λ[k], λI1[k], λI2[k], ρI)
+        s0 += v0
+        V[k] = v1 - v0
+        P[k, 1] = -p0μ; P[k, 2] = p0σ; P[k, 3] = p0q; P[k, 4] = p0λ          # ∂/∂x = -∂/∂μ
+        P[k, 5] = -p1μ; P[k, 6] = p1σ; P[k, 7] = p1q; P[k, 8] = p1λ
+        P[k, 9] = p1I1; P[k, 10] = p1I2; P[k, 11] = p1ρ
+    end
+    mx = [float(p) for p in prev]
+    for k in 1:n; V[k] > mx[grp[k]] && (mx[grp[k]] = V[k]); end
+    sm = [isfinite(prev[g]) ? exp(prev[g] - mx[g]) : 0.0 for g in 1:ng]
+    for k in 1:n; sm[grp[k]] += exp(V[k] - mx[grp[k]]); end
+    out = [sm[g] > 0 ? mx[g] + log(sm[g]) : -Inf for g in 1:ng]
+    return vcat(out, s0), V, P
+end
+function ChainRulesCore.rrule(::typeof(segment_inc), x, σ, q, λ, λI1, λI2, ρI, prev, grp::Vector{Int}, ng::Int)
+    out, V, P = _segment_inc(x, σ, q, λ, λI1, λI2, ρI, prev, grp, ng)
+    n = length(x)
+    function pullback(Δ)
+        Δv = ChainRulesCore.unthunk(Δ)
+        gx, gσ, gq, gλ, gI1, gI2 = zeros(n), zeros(n), zeros(n), zeros(n), zeros(n), zeros(n)
+        gρ = 0.0
+        for k in 1:n
+            g = grp[k]
+            w1 = Δv[g] * exp(V[k] - out[g])         # ∂s_g/∂ log f₁ = f₁/f₀ over the group's sum
+            w0 = Δv[ng + 1] - w1
+            gx[k] = w0 * P[k, 1] + w1 * P[k, 5]
+            gσ[k] = w0 * P[k, 2] + w1 * P[k, 6]
+            gq[k] = w0 * P[k, 3] + w1 * P[k, 7]
+            gλ[k] = w0 * P[k, 4] + w1 * P[k, 8]
+            gI1[k] = w1 * P[k, 9]; gI2[k] = w1 * P[k, 10]; gρ += w1 * P[k, 11]
+        end
+        gp = [isfinite(prev[g]) ? Δv[g] * exp(prev[g] - out[g]) : 0.0 for g in 1:ng]
+        return NoTangent(), gx, gσ, gq, gλ, gI1, gI2, gρ, gp, NoTangent(), NoTangent()
+    end
+    return out, pullback
+end
+for Tp in _TA_OR_CONST
+    @eval ReverseDiff.@grad_from_chainrules segment_inc(x::ReverseDiff.TrackedArray, σ::ReverseDiff.TrackedArray,
+                                                        q::ReverseDiff.TrackedArray, λ::ReverseDiff.TrackedArray,
+                                                        λI1::ReverseDiff.TrackedArray, λI2::ReverseDiff.TrackedArray,
+                                                        ρI::ReverseDiff.TrackedReal, prev::$Tp, grp::Vector{Int}, ng::Int)
 end
 
 """
@@ -1133,7 +1270,7 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
                             dinc::Bool = false, cw = nothing, works::Bool = false, big::Bool = false,
                             rw = nothing, sdrv::Bool = true, dinc1::Bool = false, ctx = LapContext(),
                             cond = LapConditions(), wcw = nothing, drv = nothing, xl = nothing, sl_ext = nothing,
-                            fage_ext = nothing)
+                            fage_ext = nothing, inc = nothing, dinc_ext = nothing)
     # `drv`: driver effects given from outside (the joint race + lap model, #128), in place
     # of the sampled a_comp and its spread σ_comp
     drv === nothing && (σ_comp ~ truncated(Normal(0, 2); lower = 0))
@@ -1372,8 +1509,10 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     else
         wv = 0 .* a_π .+ zeros(1)
     end
-    @addlogprob! lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, cv, wv, rwk,
-                            ctx, cond, d)
+    if inc === nothing      # with the incident term the laps' likelihood is taken last, segment by segment
+        @addlogprob! lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, cv, wv,
+                                rwk, ctx, cond, d)
+    end
     if starts
         sd = sdrv ? career_slopes(τ_sd, u_sd) : 0 .* a_π .+ zeros(length(d.competitors))   # τ·(u - mean u)
         sc = τ_sc .* center_by(u_sc, d.mach_season, mach_counts)
@@ -1384,7 +1523,9 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         else
             πd1 = zeros(length(d.competitors))
         end
-        @addlogprob! start_loglik(γ1, a, b, sd, sc, g1, fage, cx, xr, σ1, logistic(a_π1), exp(a_λ1), πd1, rwk, d)
+        if inc === nothing
+            @addlogprob! start_loglik(γ1, a, b, sd, sc, g1, fage, cx, xr, σ1, logistic(a_π1), exp(a_λ1), πd1, rwk, d)
+        end
     end
     # last, so the other terms keep their place in the sampler's vector (warm starts, `lap_layout`)
     if xl !== nothing       # every other lap (`alllaps`, the joint model's lap part, #128)
@@ -1397,7 +1538,46 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         σ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)
         a_qx ~ filldist(Normal(-1.5, 1.5), nt)                    # logit of a lap's loss probability
         a_lx ~ filldist(Normal(log(5.0), 1.5), nt)                # log of the mean loss, % of the clean lap
-        @addlogprob! other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, a_qx, a_lx, xl, d)
+        inc === nothing && @addlogprob!(other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, a_qx, a_lx, xl, d))
+    end
+    # the race model's incident process (the joint model's lap part, #128): at most one incident per
+    # driver-race, on any of its laps, with the lap part's own baseline and sizes; the drivers'
+    # offsets are sampled here, or given (`dinc_ext`: the joint model's, shared with the race part)
+    if inc !== nothing
+        a_πi ~ Normal(-1.5, 1)                                  # logit of a driver-race's incident probability
+        a_λi ~ Normal(log(2.0), 1)                              # log mean routine size, % of race time
+        a_ρi ~ Normal(log(0.05 / 0.95), 1)                      # share of incidents that are big, ~5%
+        δ_λi ~ truncated(Normal(log(10), 1); lower = 0)         # big size = routine·e^δ
+        if dinc_ext === nothing
+            τ_inc ~ truncated(Normal(0, 0.5); lower = 0)
+            u_inc ~ StdNormalVec(nc)
+            oi = τ_inc .* (u_inc .- mean(u_inc))
+        else
+            length(dinc_ext) == nc || throw(DimensionMismatch("dinc_ext has $(length(dinc_ext)) drivers, the laps $nc"))
+            oi = dinc_ext
+        end
+        # sizes in the laps' units (% of the race's clean lap): % of race time × the race's laps
+        λI1 = exp(a_λi) .* inc.laps
+        λI2 = exp(a_λi + δ_λi) .* inc.laps
+        ρI = logistic(a_ρi)
+        ng = length(inc.comp)
+        so = 0 .* a_πi .+ fill(-Inf, ng)                        # each driver-race's Σ f₁/f₀ over the segments so far
+        if starts
+            ns = length(d.s_y)
+            μs = start_mu(γ1, a, b, sd, sc, g1, fage, cx, xr, rwk, d)
+            seg = segment_inc(d.s_y .- μs, σ1 .+ zeros(ns), logistic.(a_π1 .+ πd1[d.s_comp]), exp(a_λ1) .+ zeros(ns),
+                              λI1[d.s_race], λI2[d.s_race], ρI, so, inc.gs, ng)
+            @addlogprob! seg[ng + 1]
+            so = seg[1:ng]
+        end
+        if xl !== nothing
+            seg = segment_inc(d.x_y .- other_lap_mu(γ, a, b, xr, μ_x, τ_x, u_x, xl, d), σ_x[xl.xt], logistic.(a_qx[xl.xt]),
+                              exp.(a_lx[xl.xt]), λI1[d.x_race], λI2[d.x_race], ρI, so, inc.go, ng)
+            @addlogprob! seg[ng + 1]
+            so = seg[1:ng]
+        end
+        @addlogprob! lap_loglik_inc(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ηt, φ, sh, κ, cv, wv,
+                                    λI1, λI2, ρI, so, logistic.(a_πi .+ oi[inc.comp]), inc, rwk, ctx, cond, d)
     end
 end
 
@@ -1466,7 +1646,8 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
                      track::Bool = false, dinc::Bool = false, walk::Bool = false, works::Bool = false,
                      big::Bool = false, rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
                      cars = walk || rwalk ? car_table() : nothing, ctx = LapContext(), cond = LapConditions(),
-                     rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1, drv = nothing, alllaps::Bool = false)
+                     rwrel::Bool = false, rwrels::Bool = false, age_order::Int = 1, drv = nothing, alllaps::Bool = false,
+                     incident::Bool = false, dinc_ext = nothing)
     rwrel && !rwalk && throw(ArgumentError("rwrel reparametrises the race walk: it needs rwalk"))
     rwrels && !(rwrel && slopes) && throw(ArgumentError("rwrels adds the career slopes to rwrel: it needs rwrel and slopes"))
     (ctx.traffic || ctx.fpace) && size(ctx.tbin, 1) != length(d.y) &&
@@ -1479,6 +1660,9 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
     works && !walk && throw(ArgumentError("works needs the chassis and engine walks (walk = true)"))
     rwalk && (walk || dev) && throw(ArgumentError("rwalk replaces the season walks and the development trends (walk, dev)"))
     dinc1 && !(dinc && starts) && throw(ArgumentError("dinc1 needs dinc and starts"))
+    incident && !(ctx.short && !big && !dinc) &&
+        throw(ArgumentError("incident (the race model's incident process, #128) needs the shortfall (ctx.short) and replaces big and dinc"))
+    dinc_ext !== nothing && !incident && throw(ArgumentError("dinc_ext gives the incident term's driver offsets: it needs incident"))
     pool = cond.on && cond.wetdev && cond.wetpool
     pool && cars === nothing && (cars = car_table())
     basis = age ? AgeCurveBasis(d.age_years, d.age_rows; order = age_order) : nothing
@@ -1488,7 +1672,8 @@ function lap_effects(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::
                                                          Ws = rwrels ? walk_driver_shares(d, rwk; age = true) : nothing)) :
                                nothing, sdrv, dinc1, ctx, cond,
                        pool ? CarWalks(d, cars) : nothing, drv,
-                       alllaps ? OtherLaps(d, rwalk ? RaceWalk(d, cars) : nothing) : nothing)
+                       alllaps ? OtherLaps(d, rwalk ? RaceWalk(d, cars) : nothing) : nothing, nothing, nothing,
+                       incident ? IncidentRows(d; starts, other = alllaps) : nothing, dinc_ext)
 end
 
 """
@@ -1573,12 +1758,17 @@ whole race time; the race-mean term puts them on the clean laps' centring (each 
 enter relative to its race's mean), and the group shifts take the rest.
 """
 function other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, a_qx, a_lx, xl::OtherLaps, d::LapData)
+    μ = other_lap_mu(γ, a, b, xr, μ_x, τ_x, u_x, xl, d)
+    return sum(paceloss_logpdf.(d.x_y .- μ, σ_x[xl.xt], logistic.(a_qx[xl.xt]), exp.(a_lx[xl.xt])))
+end
+
+"The other laps' means μ_k (see `other_lap_loglik`)."
+function other_lap_mu(γ, a, b, xr, μ_x, τ_x, u_x, xl::OtherLaps, d::LapData)
     ν = μ_x[xl.gt] .+ τ_x[xl.gt] .* u_x
     rw = size(xl.Wx, 2) > 0
     hb = xl.Wa * a .+ xl.Wb * b .+ (rw ? xl.Wx * xr : zeros(size(xl.Wa, 1)))
     car = rw ? b[d.x_mach] .+ xr[xl.state] : b[d.x_mach]
-    μ = γ[d.x_race] .+ ν[d.x_group] .+ a[d.x_comp] .+ car .- hb[d.x_race]
-    return sum(paceloss_logpdf.(d.x_y .- μ, σ_x[xl.xt], logistic.(a_qx[xl.xt]), exp.(a_lx[xl.xt])))
+    return γ[d.x_race] .+ ν[d.x_group] .+ a[d.x_comp] .+ car .- hb[d.x_race]
 end
 
 """
@@ -1708,6 +1898,8 @@ end
 
 const START_PARAMS = (:γ1, :τ_sd, :u_sd, :τ_sc, :u_sc, :g1, :σ1, :a_π1, :a_λ1)
 const OTHER_PARAMS = (:μ_x, :τ_x, :u_x, :σ_x, :a_qx, :a_lx)    # the other laps (`alllaps`, #128)
+const INC_PARAMS = (:a_πi, :a_λi, :a_ρi, :δ_λi)                 # the incident term (`incident`, #128)
+const INC_DRV_PARAMS = (:τ_inc, :u_inc)                         # its driver offsets, unless given
 OTHER_TYPES(d::LapData) = sort(unique(d.group_type))
 const AGE_PARAMS = (:τ_age, :e_age)
 # Prior scale of the second-order age walk's τ_age (#124): on 2021–2026's ages the basis's largest singular value is
@@ -1739,8 +1931,9 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
            rwalk::Bool = false, sdrv::Bool = true, dinc1::Bool = false,
            cw = walk || rwalk ? CarWalks(d) : nothing, rwk = rwalk ? RaceWalk(d) : nothing, ctx = LapContext(),
            cond = LapConditions(), wcw = cond.on && cond.wetdev && cond.wetpool ? CarWalks(d) : nothing, rwrel::Bool = false,
-           rwrels::Bool = false, age_order::Int = 1, alllaps::Bool = false) =
-    filter(p -> (alllaps || first(p) ∉ OTHER_PARAMS) && (tyres || first(p) !== :β) && (slopes || first(p) ∉ (:τ_slope, :u_slope)) &&
+           rwrels::Bool = false, age_order::Int = 1, alllaps::Bool = false, incident::Bool = false, dinc_ext = nothing) =
+    filter(p -> (alllaps || first(p) ∉ OTHER_PARAMS) && (incident || first(p) ∉ INC_PARAMS) &&
+                (incident && dinc_ext === nothing || first(p) ∉ INC_DRV_PARAMS) && (tyres || first(p) !== :β) && (slopes || first(p) ∉ (:τ_slope, :u_slope)) &&
                 (dev || first(p) ∉ (:τ_dev, :u_dev)) && (lead || first(p) !== :η) &&
                 (tyre_mgmt || first(p) ∉ (:τ_td, :u_td, :τ_tm, :u_tm)) &&
                 (starts || first(p) ∉ START_PARAMS) && (age || first(p) ∉ AGE_PARAMS) &&
@@ -1818,7 +2011,9 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :u_x => (length(d.group_type), d.group_label),
                           :σ_x => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
                           :a_qx => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
-                          :a_lx => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)])])
+                          :a_lx => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
+                          :a_πi => (1, nothing), :a_λi => (1, nothing), :a_ρi => (1, nothing), :δ_λi => (1, nothing),
+                          :τ_inc => (1, nothing), :u_inc => (length(d.competitors), d.competitors)])
 
 # Inverse-metric entries for blocks a warm start's old fit doesn't have (career
 # slopes or car development added to a fit without them), on the sampler's scale
