@@ -1450,6 +1450,91 @@ end
         end
     end
 
+    @testset "standalone lap model unchanged by the incident term (#128)" begin
+        # value and gradient from the code before the incident term was folded into the lap likelihood
+        include("lap_golden.jl")
+        ref = read_lap_golden(joinpath(FIXTURES, "lap_golden.tsv"))
+        new = lap_golden_values()
+        @test first.(new) == first.(ref) && getindex.(new, 2) == getindex.(ref, 2)
+        for (a, b) in zip(new, ref)
+            @test isapprox(a[3], b[3]; rtol = 1e-12)
+            @test isapprox(a[4], b[4]; rtol = 1e-10, atol = 1e-10)
+        end
+    end
+
+    @testset "the incident term in the lap likelihood (#128)" begin
+        FD = Base.require(Base.PkgId(Base.UUID("f6369f11-7733-5829-9624-2563aa707210"), "ForwardDiff"))
+        lt, rows = lap_golden_data()
+        d = prepare_laps(lt, rows; pits = :inferred)
+        c0 = LapContext(d, lt; traffic = true)
+        N, nc, nm, nr = length(d.y), length(d.competitors), length(d.machines), length(d.races)
+        cs = LapContext(c0.tbin, c0.tnames, [0.4 * sin(0.9j) for j in 1:N], true, true, true)
+        R = Diomedes.IncidentRows(d)
+        ng = length(R.comp)
+        # one group per driver-race, counting its clean laps and its start; races of 24 laps
+        @test ng == 24 && sum(R.n) == N + length(d.s_y) && R.laps == fill(24.0, nr) &&
+              all(R.n[k] == count(==(k), R.gc) + count(==(k), R.gs) for k in 1:ng) &&
+              all((d.comp[j], d.race[j]) == (R.comp[R.gc[j]], R.race[R.gc[j]]) for j in 1:N)
+        z(n) = zeros(n)
+        args = ([0.3sin(r) for r in 1:nr], [0.2cos(r) for r in 1:nr], [0.4sin(2i) for i in 1:nc], [0.3cos(3i) for i in 1:nm],
+                0.5, [0.2 + 0.05r for r in 1:nr], [0.8 + 0.1r for r in 1:nr], [0.1sin(k) for k in eachindex(cs.tnames)],
+                [1 + 0.1sin(m) for m in 1:nm], [0.2sin(1.7k) for k in 1:(2nc + 2nm)], [0.3, -0.2],
+                [3.0 + r for r in 1:nr], [30.0 + 5r for r in 1:nr], 0.15,
+                [k % 3 == 0 ? -Inf : -1.0 + 0.3sin(k) for k in 1:ng], [0.05 + 0.1abs(sin(k)) for k in 1:ng])
+        fixed(γ, δ, a, b, σ, πr, λr) = (γ, δ, a, b, z(2length(d.eras)), z(nc), z(nm), z(1), z(nc), z(nm),
+                                        z(length(d.age_years)), z(nm * size(d.race_x, 2)), z(1), σ, πr, λr, z(nc))
+        inc(γ, δ, a, b, σ, πr, λr, ηt, φ, sh, κ, λI1, λI2, ρI, so, πg) =
+            Diomedes.lap_loglik_inc(fixed(γ, δ, a, b, σ, πr, λr)..., ηt, φ, sh, κ, z(1), z(1), λI1, λI2, ρI, so, πg, R,
+                                    RaceWalk(), cs, LapConditions(), d)
+        # a vanishing incident probability is the lap likelihood without it
+        γ, δ, a, b, σ, πr, λr, ηt, φ, sh, κ = args[1:11]
+        @test inc(args[1:14]..., fill(-Inf, ng), fill(1e-300, ng)) ≈
+              Diomedes.lap_loglik(fixed(args[1:7]...)..., 0.0, 1.0, ηt, φ, sh, κ, z(1), z(1), RaceWalk(), cs, LapConditions(), d)
+        # against a direct sum: each lap's f₀ and f₁ as lap_loglik's shortfall branch, and per driver-race
+        # log((1 - π)·∏ f₀ + π·mean_l f₁(l)·∏_{k≠l} f₀(k)), the other segments' f₁/f₀ summing to exp(so)
+        function ref(γ, δ, a, b, σ, πr, λr, ηt, φ, sh, κ, λI1, λI2, ρI, so, πg)
+            h, hbar = Diomedes.lap_h(a, b, z(2length(d.eras)), z(nc), z(nm), z(1), z(nc), z(nm), z(length(d.age_years)),
+                                     z(nm * size(d.race_x, 2)), z(1), ηt, φ, z(1), z(1), RaceWalk(), cs, LapConditions(), d)
+            v0, lr = [], [[] for _ in 1:ng]
+            for j in 1:N
+                r, c, m = d.race[j], d.comp[j], d.mach[j]
+                xb = Diomedes.logit(πr[r]) + sh[c] + sh[nc + m]
+                λb = λr[r] * exp(sh[nc + nm + c] + sh[2nc + nm + m])
+                q, λl = Diomedes.logistic(xb + κ[1] * cs.fp[j]), λb * exp(κ[end] * cs.fp[j])
+                x = d.y[j] - (γ[r] + δ[r] * d.fracc[j] + h[j] - hbar[r] - Diomedes.logistic(xb) * λb)
+                push!(v0, Diomedes.paceloss_logpdf(x, σ, q, λl))
+                push!(lr[R.gc[j]], Diomedes.paceinc_logpdf(x, σ, q, λl, λI1[r], λI2[r], ρI) - v0[end])
+            end
+            return sum(v0) + sum(log((1 - πg[k]) + πg[k] * (sum(exp, lr[k]) + exp(so[k])) / R.n[k]) for k in 1:ng)
+        end
+        @test inc(args...) ≈ ref(args...)
+        # gradients: the rule against ForwardDiff through the direct sum, and through ReverseDiff
+        # (the bindings; xr, cv and wv tracked placeholders as the model passes them); so's −Inf held fixed
+        lens = [length(x) for x in args]
+        offs = cumsum([0; lens])
+        unflat(v) = Tuple(args[i] isa AbstractVector ? v[(offs[i] + 1):offs[i + 1]] : v[offs[i] + 1] for i in eachindex(args))
+        mask = [isfinite(t) ? 0.0 : -Inf for t in args[15]]
+        x0 = reduce(vcat, [x isa AbstractVector ? [isfinite(t) ? t : 0.0 for t in x] : [x] for x in args])
+        keep = reduce(vcat, [i == 15 ? isfinite.(args[15]) : trues(lens[i]) for i in eachindex(args)])
+        gf = FD.gradient(v -> (u = unflat(v); ref(u[1:14]..., u[15] .+ mask, u[16])), x0)
+        _, pb = Diomedes.ChainRulesCore.rrule(Diomedes.lap_loglik_inc, fixed(args[1:7]...)..., ηt, φ, sh, κ, z(1), z(1),
+                                              args[12:16]..., R, RaceWalk(), cs, LapConditions(), d)
+        t = pb(1.0)
+        gr = reduce(vcat, [collect(t[p]) for p in (2, 3, 4, 5, 15, 16, 17, 19, 20, 21, 22, 25, 26, 27, 28, 29)])
+        @test isapprox(gr .* keep, gf .* keep; rtol = 1e-7, atol = 1e-9)
+        rv = Diomedes.ReverseDiff.gradient(x0) do v
+            u, t1 = unflat(v), 0 .* v[1:1]
+            fx = collect(Any, fixed(u[1:7]...)); fx[13] = t1
+            Diomedes.lap_loglik_inc(fx..., u[8:11]..., t1, 0 .* v[1:1], u[12:14]..., u[15] .+ mask, u[16], R, RaceWalk(),
+                                    cs, LapConditions(), d)
+        end
+        @test isapprox(rv .* keep, gf .* keep; rtol = 1e-7, atol = 1e-9)
+        # the incident term replaces the big losses
+        @test_throws ArgumentError Diomedes._lap_vg(fixed(args[1:7]...)..., 0.1, 1.0, ηt, φ, sh, κ, z(1), z(1),
+                                                    (; λI1 = args[12], λI2 = args[13], ρI = 0.15, so = args[15], πg = args[16], rows = R),
+                                                    RaceWalk(), cs, LapConditions(), d)
+    end
+
     @testset "joint race + lap model (#128)" begin
         rng = Xoshiro(128)
         res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)

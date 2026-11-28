@@ -461,6 +461,39 @@ function prepare_laps(laps::AbstractDataFrame, results::AbstractDataFrame; pits:
 end
 
 """
+    IncidentRows(d::LapData)
+
+The driver-races of the joint model's incident term (#128): every (driver, race) with a lap in `d`
+(lap 1, clean laps or other laps), with each segment's laps as indices into them (`gc`, `go`, `gs`),
+each group's driver and race (`comp`, `race`), and each race's length in laps (`laps`: its last lap
+number), which converts an incident's size in % of race time into the laps' units.
+"""
+struct IncidentRows
+    gc::Vector{Int}
+    go::Vector{Int}
+    gs::Vector{Int}
+    comp::Vector{Int}
+    race::Vector{Int}
+    n::Vector{Int}          # laps per group, all segments
+    laps::Vector{Float64}   # per race
+end
+function IncidentRows(d::LapData)
+    key = Dict{Tuple{Int,Int},Int}()
+    comp, race = Int[], Int[]
+    gid(c, r) = get!(key, (c, r)) do
+        push!(comp, c); push!(race, r); length(comp)
+    end
+    gs = [gid(d.s_comp[j], d.s_race[j]) for j in eachindex(d.s_y)]
+    gc = [gid(d.comp[j], d.race[j]) for j in eachindex(d.y)]
+    go = [gid(d.x_comp[k], d.x_race[k]) for k in eachindex(d.x_y)]
+    n = zeros(Int, length(comp))
+    for k in Iterators.flatten((gc, go, gs)); n[k] += 1; end
+    laps = zeros(length(d.races))
+    for r in eachrow(d.rows); i = findfirst(==(r.event_id), d.races); laps[i] = max(laps[i], r.lap); end
+    return IncidentRows(gc, go, gs, comp, race, n, laps)
+end
+
+"""
     lap_loglik(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, cv, wv, rwk, ctx, cond,
                d::LapData)
 
@@ -592,8 +625,78 @@ function lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk:
     return h, hbar
 end
 
-function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ,
-                              λ2, ηt, φ, sh, κ, cv, wv, rwk::RaceWalk, ctx, cond, d::LapData)
+# The clean laps' per-lap mean gradients gμ (and the race intercepts' gγ) taken back to the terms
+# of h (drivers, cars, slopes, tyres, conditions, …), added into the arrays of `G`. h enters every
+# lap of its race through the race mean: dμ_k/dh_j = [k = j] - 1/n_race. Shared by `lap_loglik`'s
+# rule and `lap_f01`'s (#128).
+function _lap_h_pullback!(G, gμ, gγ, rw::Bool, rwk::RaceWalk, ctx, cond, d::LapData, ncvg, rdmg)
+    nm, nc = length(d.machines), length(d.competitors)
+    N = length(d.y)
+    for j in 1:N
+        gh = gμ[j] - gγ[d.race[j]] / d.race_n[d.race[j]]
+        st = lap_age(cond, d, j) / 10
+        G.ga[d.comp[j]] += gh; G.gb[d.mach[j]] += gh
+        G.gsl[d.comp[j]] += gh * d.agec[j]
+        G.gdv[d.mach[j]] += gh * d.posc[j]
+        G.gβ[2d.era[j] - 1] += gh * st; G.gβ[2d.era[j]] += gh * st^2
+        G.gη[1] += gh * d.lead[j]
+        G.gtd[d.comp[j]] += gh * lap_age_cd(cond, d, j); G.gtm[d.mach[j]] += gh * lap_age_cm(cond, d, j)
+        d.abin[j] > 0 && (G.gfage[d.abin[j]] += gh)
+        for k in axes(d.race_x, 2)
+            G.gcx[(k - 1) * nm + d.mach[j]] += gh * d.race_x[d.race[j], k]
+        end
+        rw && (G.gxr[rwk.lap[j]] += gh)
+        if ctx.traffic
+            for g in axes(ctx.tbin, 2)
+                k = ctx.tbin[j, g]
+                k > 0 && (G.gηt[k] += gh)
+            end
+        end
+        ctx.fpace && (G.gφ[d.mach[j]] += gh * ctx.fp[j])
+        if cond.on
+            k = cond.comp[j]
+            k > 1 && (G.gcv[COND_OFFSET[k - 1]] += gh; G.gcv[COND_SLOPE[k - 1]] += gh * st)
+            cond.racedeg && (G.gcv[ncvg + d.race[j]] += gh * (st - rdmg[d.race[j]]))   # `racedeg`
+            G.gcv[COND_TT] += gh * cond.tt[j]; G.gcv[COND_RAIN] += gh * cond.rain[j]
+            if cond.wetdev
+                gw = gh * cond.wet[j]
+                G.gwv[d.mach[j]] += gw; G.gwv[nm + d.comp[j]] += gw
+                length(G.gwv) > nm + nc && (G.gwv[nm + nc + d.race[j]] += gw)   # `wetrace` offsets
+            end
+        end
+    end
+    return G
+end
+
+# One clean lap's shortfall-branch derivatives scattered into the gradients: pμ, pπ and pλ are
+# ∂ℓ/∂μ, ∂ℓ/∂q and ∂ℓ/∂λ_lap at the lap's q, λ_lap and the base q_b, λ_b (see `lap_loglik`)
+@inline function _short_scatter!(g, j, r, c, m, nc, nm, pμ, pπ, pλ, q, λl, qb, λb, f, big, cshort, πr, λr, ctx, cond, d)
+    # e = μ - q_b·λ_b: the base shortfall also moves the location, the field pace's part doesn't
+    wqm, wλm = pπ * q * (1 - q), pλ * λl     # through the mixture: ∂ℓ/∂(logit q), ∂ℓ/∂(log λ_lap)
+    wq = wqm - pμ * λb * qb * (1 - qb)       # ∂ℓ/∂(base logit q)
+    wλ = wλm - pμ * qb * λb                  # ∂ℓ/∂(base log λ)
+    g.gπr[r] += wq / (πr[r] * (1 - πr[r]))
+    big || (g.gπd[c] += wq)
+    g.gsh[c] += wq; g.gsh[nc + m] += wq
+    g.gsh[nc + nm + c] += wλ; g.gsh[2nc + nm + m] += wλ
+    ctx.fpace && (g.gκ[1] += wqm * f; g.gκ[end] += wλm * f)
+    if cshort
+        w, rn = cond.wet[j], cond.rain[j]
+        g.gcv[COND_KAPPA[1]] += wqm * w; g.gcv[COND_KAPPA[2]] += wλm * w
+        g.gcv[COND_KAPPA[3]] += wqm * rn; g.gcv[COND_KAPPA[4]] += wλm * rn
+    end
+    g.gμ[j] = pμ
+    g.gγ[r] += pμ; g.gδ[r] += pμ * d.fracc[j]
+    g.gλr[r] += wλ / λr[r]
+    return nothing
+end
+
+# `lap_loglik`'s value and gradients, and with an incident term `I` (`lap_loglik_inc`, #128) the
+# clean laps' share of it: each lap's log f₁ is taken in the same pass as its log f₀, and its
+# gradients are scattered after the pass, weighted by the lap's posterior incident share.
+function _lap_vg(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, cv, wv, I,
+                 rwk::RaceWalk, ctx, cond, d::LapData)
+    inc = I !== nothing
     h, hbar = lap_h(a, b, β, sl, dv, η, td, tm, fage, cx, xr, ηt, φ, cv, wv, rwk, ctx, cond, d)
     gcv, gwv = zeros(length(cv)), zeros(length(wv))
     cshort = cond.on && ctx.short && length(cv) >= last(COND_KAPPA)
@@ -614,6 +717,12 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
     big = !iszero(ρ)
     lρ = big ? (log1p(-ρ), log(ρ)) : (0.0, 0.0)
     gπr, gλr, gπd = zeros(length(πr)), zeros(length(λr)), zeros(length(πd))
+    gsc = (; gπr, gπd, gsh, gκ, gcv, gμ, gγ, gδ, gλr)
+    if inc
+        (ctx.short && !big) || throw(ArgumentError("the incident term is for the lap model with the shortfall and no big losses"))
+        V1, P = zeros(N), zeros(N, 11)          # log f₁; ∂ log f₀ (μ, σ, q, λ) and ∂ log f₁ (μ, σ, q, λ, λI1, λI2, ρI)
+        Qm = zeros(N, 4)                        # q, λ_lap, q_b, λ_b
+    end
     # per race: logit π and the log mixture weights, so a lap without a driver offset
     # costs no extra exp or log
     Lr = [log(p / (1 - p)) for p in πr]
@@ -656,24 +765,18 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
             else
                 v, pμ, pσ, pπ, pλ = paceloss_row_vg(y, e, σ, q, λl, lq)
             end
-            # e = μ - q_b·λ_b: the base shortfall also moves the location, the field pace's part doesn't
-            wqm, wλm = pπ * q * (1 - q), pλ * λl     # through the mixture: ∂ℓ/∂(logit q), ∂ℓ/∂(log λ_lap)
-            wq = wqm - pμ * λb * qb * (1 - qb)       # ∂ℓ/∂(base logit q)
-            wλ = wλm - pμ * qb * λb                  # ∂ℓ/∂(base log λ)
-            gπr[r] += wq / (πr[r] * (1 - πr[r]))
-            big || (gπd[c] += wq)
-            gsh[c] += wq; gsh[nc + m] += wq
-            gsh[nc + nm + c] += wλ; gsh[2nc + nm + m] += wλ
-            ctx.fpace && (gκ[1] += wqm * f; gκ[end] += wλm * f)
-            if cshort
-                w, rn = cond.wet[j], cond.rain[j]
-                gcv[COND_KAPPA[1]] += wqm * w; gcv[COND_KAPPA[2]] += wλm * w
-                gcv[COND_KAPPA[3]] += wqm * rn; gcv[COND_KAPPA[4]] += wλm * rn
-            end
             val += v
-            gμ[j] = pμ
-            gγ[r] += pμ; gδ[r] += pμ * d.fracc[j]
-            gσ += pσ; gλr[r] += wλ / λr[r]
+            if inc                                  # the incident's log f₁, scattered after the pass
+                v1, p1μ, p1σ, p1q, p1λ, p1I1, p1I2, p1ρ = paceinc_row_vg(y, e, σ, q, λl, I.λI1[r], I.λI2[r], I.ρI)
+                V1[j] = v1 - v
+                P[j, 1] = pμ; P[j, 2] = pσ; P[j, 3] = pπ; P[j, 4] = pλ
+                P[j, 5] = p1μ; P[j, 6] = p1σ; P[j, 7] = p1q; P[j, 8] = p1λ
+                P[j, 9] = p1I1; P[j, 10] = p1I2; P[j, 11] = p1ρ
+                Qm[j, 1] = q; Qm[j, 2] = λl; Qm[j, 3] = qb; Qm[j, 4] = λb
+                continue
+            end
+            _short_scatter!(gsc, j, r, c, m, nc, nm, pμ, pπ, pλ, q, λl, qb, λb, f, big, cshort, πr, λr, ctx, cond, d)
+            gσ += pσ
             continue
         end
         if noπd || big
@@ -705,48 +808,79 @@ function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η
         gγ[r] += pμ; gδ[r] += pμ * d.fracc[j]
         gσ += pσ; gλr[r] += pλ
     end
-    # h enters every lap of its race through the race mean: dμ_k/dh_j = [k = j] - 1/n_race
-    for j in 1:N
-        gh = gμ[j] - gγ[d.race[j]] / d.race_n[d.race[j]]
-        st = lap_age(cond, d, j) / 10
-        ga[d.comp[j]] += gh; gb[d.mach[j]] += gh
-        gsl[d.comp[j]] += gh * d.agec[j]
-        gdv[d.mach[j]] += gh * d.posc[j]
-        gβ[2d.era[j] - 1] += gh * st; gβ[2d.era[j]] += gh * st^2
-        gη[1] += gh * d.lead[j]
-        gtd[d.comp[j]] += gh * lap_age_cd(cond, d, j); gtm[d.mach[j]] += gh * lap_age_cm(cond, d, j)
-        d.abin[j] > 0 && (gfage[d.abin[j]] += gh)
-        for k in axes(d.race_x, 2)
-            gcx[(k - 1) * nm + d.mach[j]] += gh * d.race_x[d.race[j], k]
+    gI = nothing
+    if inc
+        # the driver-races: log D_g = log((1 - π_g) + π_g·M_g), M_g the mean of f₁/f₀ over the group's
+        # laps (exp(so_g) the other segments' sum); each lap's weight ω = π_g·(f₁/f₀)/(n_g·D_g)
+        R = I.rows
+        ng = length(R.comp)
+        mx = [x for x in I.so]
+        for j in 1:N; k = R.gc[j]; V1[j] > mx[k] && (mx[k] = V1[j]); end
+        sm = [isfinite(I.so[k]) ? exp(I.so[k] - mx[k]) : 0.0 for k in 1:ng]
+        for j in 1:N; k = R.gc[j]; sm[k] += exp(V1[j] - mx[k]); end
+        lme = [mx[k] + log(sm[k]) - log(R.n[k]) for k in 1:ng]
+        lπ = [log(p) for p in I.πg]
+        lD = [logaddexp(log1p(-I.πg[k]), lπ[k] + lme[k]) for k in 1:ng]
+        val += sum(lD)
+        gso = [isfinite(I.so[k]) ? exp(lπ[k] + I.so[k] - log(R.n[k]) - lD[k]) : 0.0 for k in 1:ng]
+        gπg = [expm1(lme[k]) * exp(-lD[k]) for k in 1:ng]
+        gλI1, gλI2, gρI = zeros(length(I.λI1)), zeros(length(I.λI2)), 0.0
+        for j in 1:N
+            r, c, m, k = d.race[j], d.comp[j], d.mach[j], R.gc[j]
+            w1 = exp(lπ[k] + V1[j] - log(R.n[k]) - lD[k])
+            w0 = 1 - w1
+            pμ = w0 * P[j, 1] + w1 * P[j, 5]
+            gσ += w0 * P[j, 2] + w1 * P[j, 6]
+            pπ = w0 * P[j, 3] + w1 * P[j, 7]
+            pλ = w0 * P[j, 4] + w1 * P[j, 8]
+            gλI1[r] += w1 * P[j, 9]; gλI2[r] += w1 * P[j, 10]; gρI += w1 * P[j, 11]
+            f = ctx.fpace ? ctx.fp[j] : 0.0
+            _short_scatter!(gsc, j, r, c, m, nc, nm, pμ, pπ, pλ, Qm[j, 1], Qm[j, 2], Qm[j, 3], Qm[j, 4], f, false, cshort,
+                            πr, λr, ctx, cond, d)
         end
-        rw && (gxr[rwk.lap[j]] += gh)
-        if ctx.traffic
-            for g in axes(ctx.tbin, 2)
-                k = ctx.tbin[j, g]
-                k > 0 && (gηt[k] += gh)
-            end
-        end
-        ctx.fpace && (gφ[d.mach[j]] += gh * ctx.fp[j])
-        if cond.on
-            k = cond.comp[j]
-            k > 1 && (gcv[COND_OFFSET[k - 1]] += gh; gcv[COND_SLOPE[k - 1]] += gh * st)
-            cond.racedeg && (gcv[ncvg + d.race[j]] += gh * (st - rdmg[d.race[j]]))   # `racedeg`
-            gcv[COND_TT] += gh * cond.tt[j]; gcv[COND_RAIN] += gh * cond.rain[j]
-            if cond.wetdev
-                gw = gh * cond.wet[j]
-                gwv[d.mach[j]] += gw; gwv[nm + d.comp[j]] += gw
-                length(wv) > nm + nc && (gwv[nm + nc + d.race[j]] += gw)     # `wetrace` offsets
-            end
-        end
+        gI = (gλI1, gλI2, gρI, gso, gπg)
     end
-    # the closure captures the scalar sums through `gs`, bound once: capturing gσ, gρ,
-    # gλ2 themselves (reassigned in the loop) boxed them, and the loop's updates were
-    # dynamic, ~40% of a gradient (#102)
-    gs = (gσ, gρ, gλ2)
-    pullback(Δ) = (NoTangent(), Δ .* gγ, Δ .* gδ, Δ .* ga, Δ .* gb, Δ .* gβ, Δ .* gsl, Δ .* gdv, Δ .* gη, Δ .* gtd, Δ .* gtm,
-                   Δ .* gfage, Δ .* gcx, Δ .* gxr, Δ * gs[1], Δ .* gπr, Δ .* gλr, Δ .* gπd, Δ * gs[2], Δ * gs[3],
-                   Δ .* gηt, Δ .* gφ, Δ .* gsh, Δ .* gκ, Δ .* gcv, Δ .* gwv, NoTangent(), NoTangent(), NoTangent(),
-                   NoTangent())
+    G = (; ga, gb, gsl, gdv, gβ, gη, gtd, gtm, gfage, gcx, gxr, gηt, gφ, gcv, gwv)
+    _lap_h_pullback!(G, gμ, gγ, rw, rwk, ctx, cond, d, ncvg, rdmg)
+    return val, (gγ, gδ, ga, gb, gβ, gsl, gdv, gη, gtd, gtm, gfage, gcx, gxr, gσ, gπr, gλr, gπd, gρ, gλ2, gηt, gφ, gsh, gκ,
+                 gcv, gwv), gI
+end
+
+function ChainRulesCore.rrule(::typeof(lap_loglik), γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ,
+                              λ2, ηt, φ, sh, κ, cv, wv, rwk::RaceWalk, ctx, cond, d::LapData)
+    val, g, _ = _lap_vg(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ρ, λ2, ηt, φ, sh, κ, cv, wv, nothing,
+                        rwk, ctx, cond, d)
+    # the closure captures the gradients as one tuple, bound once: capturing scalar sums that the
+    # loop reassigned boxed them, and the loop's updates were dynamic, ~40% of a gradient (#102)
+    pullback(Δ) = (NoTangent(), map(x -> Δ .* x, g)..., NoTangent(), NoTangent(), NoTangent(), NoTangent())
+    return val, pullback
+end
+
+"""
+    lap_loglik_inc(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ηt, φ, sh, κ, cv, wv,
+                   λI1, λI2, ρI, so, πg, rows::IncidentRows, rwk, ctx, cond, d) -> Real
+
+The clean laps' log-likelihood with the race model's incident process (#128): `lap_loglik`
+(with the shortfall and no big losses) plus, for each driver-race g of `rows`,
+log((1 - π_g) + π_g·M_g), M_g the mean of f₁/f₀ over the driver-race's laps — so its density
+is (1 - π_g)·∏ f₀ + π_g·mean_l (f₁(l)·∏_{k≠l} f₀(k)): at most one incident per driver-race,
+on any of its laps. f₁ is f₀ with an incident's loss added (`paceinc_row_vg`), of mean `λI1[race]`
+(routine) or `λI2[race]` (big, share `ρI`), in % of the clean lap. `so[g]` is the log of the
+summed f₁/f₀ over the driver-race's starts and other laps (−Inf for none: see `segment_inc`).
+One pass over the laps: each lap's f₁ is taken with its f₀.
+"""
+function lap_loglik_inc(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, ηt, φ, sh, κ, cv, wv,
+                        λI1, λI2, ρI, so, πg, rows::IncidentRows, rwk::RaceWalk, ctx, cond, d::LapData)
+    return first(_lap_vg(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, 0.0, 0.0, ηt, φ, sh, κ, cv, wv,
+                         (; λI1, λI2, ρI, so, πg, rows), rwk, ctx, cond, d))
+end
+function ChainRulesCore.rrule(::typeof(lap_loglik_inc), γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd,
+                              ηt, φ, sh, κ, cv, wv, λI1, λI2, ρI, so, πg, rows::IncidentRows, rwk::RaceWalk, ctx, cond,
+                              d::LapData)
+    val, g, gI = _lap_vg(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λr, πd, 0.0, 0.0, ηt, φ, sh, κ, cv, wv,
+                         (; λI1, λI2, ρI, so, πg, rows), rwk, ctx, cond, d)
+    gl = (g[1:17]..., g[20:25]..., gI...)        # without ρ and λ2
+    pullback(Δ) = (NoTangent(), map(x -> Δ .* x, gl)..., NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent())
     return val, pullback
 end
 # β (tyres), sl (career slopes), dv (car development), η (lead laps), td, tm
@@ -767,6 +901,22 @@ for Tβ in _TA_OR_CONST, Tsl in _TA_OR_CONST, Tdv in _TA_OR_CONST, Tη in _TA_OR
                                                        sh::ReverseDiff.TrackedArray, κ::ReverseDiff.TrackedArray,
                                                        cv::ReverseDiff.TrackedArray, wv::ReverseDiff.TrackedArray,
                                                        rwk::RaceWalk, ctx, cond, d::LapData)
+end
+for Tβ in _TA_OR_CONST, Tsl in _TA_OR_CONST, Tdv in _TA_OR_CONST, Tη in _TA_OR_CONST, Tt in _TA_OR_CONST,
+    Tf in _TA_OR_CONST, Tc in _TA_OR_CONST, Td in _TA_OR_CONST
+    @eval ReverseDiff.@grad_from_chainrules lap_loglik_inc(γ::ReverseDiff.TrackedArray, δ::ReverseDiff.TrackedArray,
+                                                           a::ReverseDiff.TrackedArray, b::ReverseDiff.TrackedArray,
+                                                           β::$Tβ, sl::$Tsl, dv::$Tdv, η::$Tη, td::$Tt, tm::$Tt,
+                                                           fage::$Tf, cx::$Tc, xr::ReverseDiff.TrackedArray,
+                                                           σ::ReverseDiff.TrackedReal,
+                                                           πr::ReverseDiff.TrackedArray, λr::ReverseDiff.TrackedArray,
+                                                           πd::$Td, ηt::ReverseDiff.TrackedArray, φ::ReverseDiff.TrackedArray,
+                                                           sh::ReverseDiff.TrackedArray, κ::ReverseDiff.TrackedArray,
+                                                           cv::ReverseDiff.TrackedArray, wv::ReverseDiff.TrackedArray,
+                                                           λI1::ReverseDiff.TrackedArray, λI2::ReverseDiff.TrackedArray,
+                                                           ρI::ReverseDiff.TrackedReal, so::ReverseDiff.TrackedArray,
+                                                           πg::ReverseDiff.TrackedArray, rows::IncidentRows,
+                                                           rwk::RaceWalk, ctx, cond, d::LapData)
 end
 
 """
