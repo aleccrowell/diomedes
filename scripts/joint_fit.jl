@@ -133,7 +133,7 @@ elseif action == "check"
     vi = DP.VarInfo(jm)
     vi = last(DP.init!!(jm, vi, Turing.InitFromParams(v), DP.UnlinkAll()))
     @printf("log prior %.1f, log likelihood %.1f\n", DP.getlogprior(vi), DP.getloglikelihood(vi))
-    rv = Turing.DynamicPPL.returned(jm, Turing.InitFromParams(v))
+    rv = first(DP.evaluate!!(jm, vi))                 # the model's return value at the starting point
     @printf("race part log lik %.1f; lap part log lik %.1f\n",
             DP.loglikelihood(Diomedes.race_given(jm.args.rm, rv.a_race, rv.fage, jd.Sr * rv.sl, rv.oir), v.race),
             DP.loglikelihood(Diomedes.lap_given(jm.args.lm, rv.a_lap, jd.Sl * rv.sl, rv.fage[jm.args.lapage], rv.oil), v.lap))
@@ -161,10 +161,10 @@ elseif action == "combine"
     chs = [c[iter = 1:m] for c in chs]
     arr(c, p) = reduce(hcat, [vec(Array(x[p])) for x in c])
     println("$(n) chains × $(m) draws")
-    for p in (:σ_a, :τ_r, :τ_l)
-        A = arr(chs, p)
-        @printf("%-4s %.3f ± %.3f (90%% %.3f to %.3f; R-hat %.3f, ESS %.0f)\n", p, mean(A), std(A), quantile(vec(A), 0.05),
-                quantile(vec(A), 0.95), MDT.rhat(reshape(A, size(A)..., 1))[1], MDT.ess(reshape(A, size(A)..., 1))[1])
+    for p in (:σ_a, :τ_r, :τ_l, :τ_inc)
+        P = arr(chs, p)
+        @printf("%-5s %.3f ± %.3f (90%% %.3f to %.3f; R-hat %.3f, ESS %.0f)\n", p, mean(P), std(P), quantile(vec(P), 0.05),
+                quantile(vec(P), 0.95), MDT.rhat(reshape(P, size(P)..., 1))[1], MDT.ess(reshape(P, size(P)..., 1))[1])
     end
     g, _, _ = race_model()
     d, _, _ = lap_model()

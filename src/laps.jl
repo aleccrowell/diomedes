@@ -720,8 +720,9 @@ function _lap_vg(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λ
     gsc = (; gπr, gπd, gsh, gκ, gcv, gμ, gγ, gδ, gλr)
     if inc
         (ctx.short && !big) || throw(ArgumentError("the incident term is for the lap model with the shortfall and no big losses"))
-        V1, P = zeros(N), zeros(N, 11)          # log f₁; ∂ log f₀ (μ, σ, q, λ) and ∂ log f₁ (μ, σ, q, λ, λI1, λI2, ρI)
-        Qm = zeros(N, 4)                        # q, λ_lap, q_b, λ_b
+        # log f₁ - log f₀; per lap (a column each): ∂ log f₀ (μ, σ, q, λ) and ∂ log f₁ (μ, σ, q, λ, λI1, λI2, ρI);
+        # q, λ_lap, q_b, λ_b
+        V1, P, Qm = zeros(N), zeros(11, N), zeros(4, N)
     end
     # per race: logit π and the log mixture weights, so a lap without a driver offset
     # costs no extra exp or log
@@ -762,17 +763,20 @@ function _lap_vg(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λ
                     w = pρ * ρl * (1 - ρl)
                     gρ += w / (ρ * (1 - ρ)); gπd[c] += w
                 end
+            elseif inc                              # log f₀ and the incident's log f₁, one EMG of the lap's loss for both
+                r0, r1 = paceloss_inc_row_vg(y, e, σ, q, λl, I.λI1[r], I.λI2[r], I.ρI, lq)
+                v, pμ, pσ, pπ, pλ = r0
             else
                 v, pμ, pσ, pπ, pλ = paceloss_row_vg(y, e, σ, q, λl, lq)
             end
             val += v
-            if inc                                  # the incident's log f₁, scattered after the pass
-                v1, p1μ, p1σ, p1q, p1λ, p1I1, p1I2, p1ρ = paceinc_row_vg(y, e, σ, q, λl, I.λI1[r], I.λI2[r], I.ρI)
+            if inc                                  # scattered after the pass
+                v1, p1μ, p1σ, p1q, p1λ, p1I1, p1I2, p1ρ = r1
                 V1[j] = v1 - v
-                P[j, 1] = pμ; P[j, 2] = pσ; P[j, 3] = pπ; P[j, 4] = pλ
-                P[j, 5] = p1μ; P[j, 6] = p1σ; P[j, 7] = p1q; P[j, 8] = p1λ
-                P[j, 9] = p1I1; P[j, 10] = p1I2; P[j, 11] = p1ρ
-                Qm[j, 1] = q; Qm[j, 2] = λl; Qm[j, 3] = qb; Qm[j, 4] = λb
+                P[1, j] = pμ; P[2, j] = pσ; P[3, j] = pπ; P[4, j] = pλ
+                P[5, j] = p1μ; P[6, j] = p1σ; P[7, j] = p1q; P[8, j] = p1λ
+                P[9, j] = p1I1; P[10, j] = p1I2; P[11, j] = p1ρ
+                Qm[1, j] = q; Qm[2, j] = λl; Qm[3, j] = qb; Qm[4, j] = λb
                 continue
             end
             _short_scatter!(gsc, j, r, c, m, nc, nm, pμ, pπ, pλ, q, λl, qb, λb, f, big, cshort, πr, λr, ctx, cond, d)
@@ -829,13 +833,13 @@ function _lap_vg(γ, δ, a, b, β, sl, dv, η, td, tm, fage, cx, xr, σ, πr, λ
             r, c, m, k = d.race[j], d.comp[j], d.mach[j], R.gc[j]
             w1 = exp(lπ[k] + V1[j] - log(R.n[k]) - lD[k])
             w0 = 1 - w1
-            pμ = w0 * P[j, 1] + w1 * P[j, 5]
-            gσ += w0 * P[j, 2] + w1 * P[j, 6]
-            pπ = w0 * P[j, 3] + w1 * P[j, 7]
-            pλ = w0 * P[j, 4] + w1 * P[j, 8]
-            gλI1[r] += w1 * P[j, 9]; gλI2[r] += w1 * P[j, 10]; gρI += w1 * P[j, 11]
+            pμ = w0 * P[1, j] + w1 * P[5, j]
+            gσ += w0 * P[2, j] + w1 * P[6, j]
+            pπ = w0 * P[3, j] + w1 * P[7, j]
+            pλ = w0 * P[4, j] + w1 * P[8, j]
+            gλI1[r] += w1 * P[9, j]; gλI2[r] += w1 * P[10, j]; gρI += w1 * P[11, j]
             f = ctx.fpace ? ctx.fp[j] : 0.0
-            _short_scatter!(gsc, j, r, c, m, nc, nm, pμ, pπ, pλ, Qm[j, 1], Qm[j, 2], Qm[j, 3], Qm[j, 4], f, false, cshort,
+            _short_scatter!(gsc, j, r, c, m, nc, nm, pμ, pπ, pλ, Qm[1, j], Qm[2, j], Qm[3, j], Qm[4, j], f, false, cshort,
                             πr, λr, ctx, cond, d)
         end
         gI = (gλI1, gλI2, gρI, gso, gπg)
@@ -1103,17 +1107,17 @@ end
 
 function _segment_inc(x, σ, q, λ, λI1, λI2, ρI, prev, grp::Vector{Int}, ng::Int)
     n = length(x)
-    V, P = zeros(n), zeros(n, 11)               # log f₁ - log f₀; ∂ log f₀ (x, σ, q, λ), ∂ log f₁ (x, σ, q, λ, λI1, λI2, ρI)
+    V, P = zeros(n), zeros(11, n)               # log f₁ - log f₀; per row ∂ log f₀ (x, σ, q, λ), ∂ log f₁ (x, σ, q, λ, λI1, λI2, ρI)
     s0 = 0.0
     for k in 1:n
-        lq = (log1p(-q[k]), log(q[k]))
-        v0, p0μ, p0σ, p0q, p0λ = paceloss_row_vg(x[k], 0.0, σ[k], q[k], λ[k], lq)
-        v1, p1μ, p1σ, p1q, p1λ, p1I1, p1I2, p1ρ = paceinc_row_vg(x[k], 0.0, σ[k], q[k], λ[k], λI1[k], λI2[k], ρI)
+        r0, r1 = paceloss_inc_row_vg(x[k], 0.0, σ[k], q[k], λ[k], λI1[k], λI2[k], ρI)
+        v0, p0μ, p0σ, p0q, p0λ = r0
+        v1, p1μ, p1σ, p1q, p1λ, p1I1, p1I2, p1ρ = r1
         s0 += v0
         V[k] = v1 - v0
-        P[k, 1] = -p0μ; P[k, 2] = p0σ; P[k, 3] = p0q; P[k, 4] = p0λ          # ∂/∂x = -∂/∂μ
-        P[k, 5] = -p1μ; P[k, 6] = p1σ; P[k, 7] = p1q; P[k, 8] = p1λ
-        P[k, 9] = p1I1; P[k, 10] = p1I2; P[k, 11] = p1ρ
+        P[1, k] = -p0μ; P[2, k] = p0σ; P[3, k] = p0q; P[4, k] = p0λ          # ∂/∂x = -∂/∂μ
+        P[5, k] = -p1μ; P[6, k] = p1σ; P[7, k] = p1q; P[8, k] = p1λ
+        P[9, k] = p1I1; P[10, k] = p1I2; P[11, k] = p1ρ
     end
     mx = [float(p) for p in prev]
     for k in 1:n; V[k] > mx[grp[k]] && (mx[grp[k]] = V[k]); end
@@ -1133,11 +1137,11 @@ function ChainRulesCore.rrule(::typeof(segment_inc), x, σ, q, λ, λI1, λI2, �
             g = grp[k]
             w1 = Δv[g] * exp(V[k] - out[g])         # ∂s_g/∂ log f₁ = f₁/f₀ over the group's sum
             w0 = Δv[ng + 1] - w1
-            gx[k] = w0 * P[k, 1] + w1 * P[k, 5]
-            gσ[k] = w0 * P[k, 2] + w1 * P[k, 6]
-            gq[k] = w0 * P[k, 3] + w1 * P[k, 7]
-            gλ[k] = w0 * P[k, 4] + w1 * P[k, 8]
-            gI1[k] = w1 * P[k, 9]; gI2[k] = w1 * P[k, 10]; gρ += w1 * P[k, 11]
+            gx[k] = w0 * P[1, k] + w1 * P[5, k]
+            gσ[k] = w0 * P[2, k] + w1 * P[6, k]
+            gq[k] = w0 * P[3, k] + w1 * P[7, k]
+            gλ[k] = w0 * P[4, k] + w1 * P[8, k]
+            gI1[k] = w1 * P[9, k]; gI2[k] = w1 * P[10, k]; gρ += w1 * P[11, k]
         end
         gp = [isfinite(prev[g]) ? Δv[g] * exp(prev[g] - out[g]) : 0.0 for g in 1:ng]
         return NoTangent(), gx, gσ, gq, gλ, gI1, gI2, gρ, gp, NoTangent(), NoTangent()
@@ -1531,11 +1535,11 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
     if xl !== nothing       # every other lap (`alllaps`, the joint model's lap part, #128)
         nt = length(xl.types)
         μ_x ~ IsoNormalVec(0.0, 20.0, nt)                         # each lap type's mean shift, % of the clean lap
-        τ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # spread of its groups' shifts
+        τ_x ~ HalfNormalVec(5.0, nt)                              # spread of its groups' shifts
         u_x ~ StdNormalVec(length(d.group_type))
         # each type's lap noise, as the clean laps' pace + loss: a Gaussian scale and an exponential loss
         # (probability, mean size); in this form an incident's size convolves exactly (#128)
-        σ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)
+        σ_x ~ HalfNormalVec(5.0, nt)
         a_qx ~ filldist(Normal(-1.5, 1.5), nt)                    # logit of a lap's loss probability
         a_lx ~ filldist(Normal(log(5.0), 1.5), nt)                # log of the mean loss, % of the clean lap
         inc === nothing && @addlogprob!(other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, a_qx, a_lx, xl, d))
@@ -1770,6 +1774,34 @@ function other_lap_mu(γ, a, b, xr, μ_x, τ_x, u_x, xl::OtherLaps, d::LapData)
     car = rw ? b[d.x_mach] .+ xr[xl.state] : b[d.x_mach]
     return γ[d.x_race] .+ ν[d.x_group] .+ a[d.x_comp] .+ car .- hb[d.x_race]
 end
+# a fused rule: as tracked arrays, the race means' dense products and the per-lap gathers were
+# ~20% of the joint lap part's gradient (#128)
+function ChainRulesCore.rrule(::typeof(other_lap_mu), γ, a, b, xr, μ_x, τ_x, u_x, xl::OtherLaps, d::LapData)
+    μ = other_lap_mu(γ, a, b, xr, μ_x, τ_x, u_x, xl, d)
+    rw = size(xl.Wx, 2) > 0
+    function pullback(Δ)
+        Δv = ChainRulesCore.unthunk(Δ)
+        gγ, ga, gb, gxr = zeros(length(γ)), zeros(length(a)), zeros(length(b)), zeros(length(xr))
+        gμx, gτx, gu = zeros(length(μ_x)), zeros(length(τ_x)), zeros(length(u_x))
+        ghb = zeros(length(γ))
+        for k in eachindex(d.x_y)
+            w, g, r = Δv[k], d.x_group[k], d.x_race[k]
+            t = xl.gt[g]
+            gγ[r] += w; ghb[r] -= w
+            gμx[t] += w; gτx[t] += w * u_x[g]; gu[g] += w * τ_x[t]
+            ga[d.x_comp[k]] += w; gb[d.x_mach[k]] += w
+            rw && (gxr[xl.state[k]] += w)
+        end
+        ga .+= xl.Wa' * ghb; gb .+= xl.Wb' * ghb
+        rw && (gxr .+= xl.Wx' * ghb)
+        return NoTangent(), gγ, ga, gb, gxr, gμx, gτx, gu, NoTangent(), NoTangent()
+    end
+    return μ, pullback
+end
+ReverseDiff.@grad_from_chainrules other_lap_mu(γ::ReverseDiff.TrackedArray, a::ReverseDiff.TrackedArray,
+                                               b::ReverseDiff.TrackedArray, xr::ReverseDiff.TrackedArray,
+                                               μ_x::ReverseDiff.TrackedArray, τ_x::ReverseDiff.TrackedArray,
+                                               u_x::ReverseDiff.TrackedArray, xl::OtherLaps, d::LapData)
 
 """
     fit_laps(d::LapData; n_samples=1000, n_chains=1, checkpoint=nothing, seed=1, ...)

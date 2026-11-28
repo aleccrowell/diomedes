@@ -263,13 +263,32 @@ end
 (μ, σ, q, λs, λI1, λI2, ρ), in closed form.
 """
 @inline function paceinc_row_vg(y, μ, σ, q, λs, λI1, λI2, ρ)
+    return paceinc_row_vg(y, μ, σ, q, λs, λI1, λI2, ρ, emg_logpdf_grad(y - μ, σ, λs))
+end
+# with log EMG(x; σ, λs) and its derivatives given (`Es`, from `emg_logpdf_grad`): shared with log f₀
+@inline function paceinc_row_vg(y, μ, σ, q, λs, λI1, λI2, ρ, Es)
     x = y - μ
-    Es = emg_logpdf_grad(x, σ, λs)
     g1 = _inc_one(Es, emg_logpdf_grad(x, σ, λI1), q, λs, λI1)
     g2 = _inc_one(Es, emg_logpdf_grad(x, σ, λI2), q, λs, λI2)
     l, v1, v2 = mix2(log1p(-ρ) + g1[1], log(ρ) + g2[1])
     return l, -(v1 * g1[2] + v2 * g2[2]), v1 * g1[3] + v2 * g2[3], v1 * g1[4] + v2 * g2[4], v1 * g1[5] + v2 * g2[5],
            v1 * g1[6], v2 * g2[6], v2 / ρ - v1 / (1 - ρ)
+end
+
+"""
+    paceloss_inc_row_vg(y, μ, σ, q, λs, λI1, λI2, ρ, lq) -> (f₀ partials, f₁ partials)
+
+A row's log f₀ (as `paceloss_row_vg`) and log f₁ (as `paceinc_row_vg`) with their derivatives,
+taking the EMG of the row's own loss once for both (#128).
+"""
+@inline function paceloss_inc_row_vg(y, μ, σ, q, λs, λI1, λI2, ρ, lq = (log1p(-q), log(q)))
+    x = y - μ
+    z = x / σ
+    a = normlogpdf(z) - log(σ)
+    Es = emg_logpdf_grad(x, σ, λs)
+    l, u1, u2 = mix2(lq[1] + a, lq[2] + Es[1])
+    f0 = (l, u1 * z / σ - u2 * Es[2], u1 * (z^2 - 1) / σ + u2 * Es[3], u2 / q - u1 / (1 - q), u2 * Es[4])
+    return f0, paceinc_row_vg(y, μ, σ, q, λs, λI1, λI2, ρ, Es)
 end
 
 "`log f₁` of the residual `x = y - μ` with an incident added (see `paceinc_row_vg`), generic (any number type)."
@@ -678,6 +697,38 @@ Turing.Distributions._rand!(rng::AbstractRNG, d::IsoNormalVec, x::AbstractVector
     (x .= d.μ .+ d.s .* randn(rng, length(x)); x)
 Turing.Distributions.mean(d::IsoNormalVec) = fill(d.μ, d.n)
 Turing.Distributions.var(d::IsoNormalVec) = fill(d.s^2, d.n)
+
+# Independent half-normals N⁺(0, s) on [0, ∞)^n (#128), the same density as
+# `filldist(truncated(Normal(0, s); lower = 0), n)`. That one links element by element, so under
+# ReverseDiff the value is a vector of tracked scalars, not a tracked array: indexing it per row
+# (a scale per lap type, on 18,000 laps) put every row's likelihood on the tape as scalars and
+# missed the fused rules (the joint model's gradient took 2.5 s, not ~0.2). Linked by a broadcast
+# log, so the value is one tracked array.
+struct HalfNormalVec{S<:Real} <: Turing.Distributions.ContinuousMultivariateDistribution
+    s::S
+    n::Int
+end
+Base.length(d::HalfNormalVec) = d.n
+Turing.Distributions._logpdf(d::HalfNormalVec, x::AbstractVector{<:Real}) =
+    all(>=(0), x) ? -sum(abs2.(x)) / (2 * d.s^2) + d.n * (log(2) - log(d.s) - log(2π) / 2) : oftype(float(d.s), -Inf)
+Turing.Distributions._rand!(rng::AbstractRNG, d::HalfNormalVec, x::AbstractVector{<:Real}) =
+    (x .= d.s .* abs.(randn(rng, length(x))); x)
+Turing.Distributions.insupport(::HalfNormalVec, x::AbstractVector) = all(>=(0), x)
+Turing.Distributions.mean(d::HalfNormalVec) = fill(d.s * sqrt(2 / π), d.n)
+Turing.Distributions.var(d::HalfNormalVec) = fill(d.s^2 * (1 - 2 / π), d.n)
+struct _BExp end             # broadcast exp and log, with their log Jacobians, for the linking
+struct _BLog end
+(::_BExp)(x) = exp.(x)
+(::_BLog)(x) = log.(x)
+const _VB = Turing.Bijectors.VectorBijectors
+_VB.with_logabsdet_jacobian(::_BExp, x::AbstractVector) = (exp.(x), sum(x))
+_VB.with_logabsdet_jacobian(::_BLog, x::AbstractVector) = (y = log.(x); (y, -sum(y)))
+_VB.inverse(::_BExp) = _BLog()
+_VB.inverse(::_BLog) = _BExp()
+_VB.from_linked_vec(::HalfNormalVec) = _BExp()
+_VB.to_linked_vec(::HalfNormalVec) = _BLog()
+_VB.linked_vec_length(d::HalfNormalVec) = length(d)
+_VB.linked_optic_vec(d::HalfNormalVec) = _VB.optic_vec(d)
 
 # Independent Student-t(ν) on R^n (#102), as `filldist(TDist(ν), n)` (random-walk
 # steps), vectorised for the same reason. Unconstrained, like the normals above.
