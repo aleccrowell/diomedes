@@ -222,6 +222,68 @@ end
     return ℓ, u1 * z / σ - u2 * Kx, u1 * (z^2 - 1) / σ + u2 * Kσ, u2 / π - u1 / (1 - π), u2 * (Kλ - 1 / λ)
 end
 
+# ---- an incident added to a pace + loss row (the joint model's lap part, #128) ----
+#
+# y - μ = ε + L + I: pace noise ε ~ N(0, σ), the lap's own loss L ~ q·Exp(λs), and an incident
+# I ~ Exp(λI) (mean λI), routine (λI1) or, with share ρ, big (λI2). For one incident size,
+#     g(λI) = (1 - q)·EMG(λI) + q·H,   H = (λI·EMG(λI) - λs·EMG(λs)) / (λI - λs)
+# (H: N ⊗ Exp(λs) ⊗ Exp(λI), the hypoexponential's weighted difference), and
+#     f₁ = (1 - ρ)·g(λI1) + ρ·g(λI2).
+# The incident sizes are far above the lap's own losses, so λI ≠ λs in practice; the
+# weighted difference is taken in whichever order keeps it positive.
+
+"`log EMG(x; σ, λ)` (the pace noise plus an Exp(mean λ) loss) and its (x, σ, λ) derivatives."
+@inline function emg_logpdf_grad(x, σ, λ)
+    K, Kx, Kσ, Kλ = emg_logkernel_grad(x, σ, λ)
+    return K - log(λ), Kx, Kσ, Kλ - 1 / λ
+end
+
+# log g(λI) and its (x, σ, q, λs, λI) derivatives, from the two EMGs (log value, x, σ, λ derivatives)
+@inline function _inc_one(Es, EI, q, λs, λI)
+    lA, lB = log(λI) + EI[1], log(λs) + Es[1]
+    if λI > λs
+        lAB = lA + log1mexp(lB - lA); lD = log(λI - λs); sgn = 1.0
+    else
+        lAB = lB + log1mexp(lA - lB); lD = log(λs - λI); sgn = -1.0
+    end
+    lH = lAB - lD
+    rA, rB = sgn * exp(lA - lAB), sgn * exp(lB - lAB)       # A/(A - B), B/(A - B), with signs
+    Hx = rA * EI[2] - rB * Es[2]
+    Hσ = rA * EI[3] - rB * Es[3]
+    HλI = rA * (1 / λI + EI[4]) - 1 / (λI - λs)
+    Hλs = -rB * (1 / λs + Es[4]) + 1 / (λI - λs)
+    l, u1, u2 = mix2(log1p(-q) + EI[1], log(q) + lH)
+    return l, u1 * EI[2] + u2 * Hx, u1 * EI[3] + u2 * Hσ, u2 / q - u1 / (1 - q), u2 * Hλs, u1 * EI[4] + u2 * HλI
+end
+
+"""
+    paceinc_row_vg(y, μ, σ, q, λs, λI1, λI2, ρ)
+
+`log f₁` of a pace + loss row with an incident added (see above), and its derivatives in
+(μ, σ, q, λs, λI1, λI2, ρ), in closed form.
+"""
+@inline function paceinc_row_vg(y, μ, σ, q, λs, λI1, λI2, ρ)
+    x = y - μ
+    Es = emg_logpdf_grad(x, σ, λs)
+    g1 = _inc_one(Es, emg_logpdf_grad(x, σ, λI1), q, λs, λI1)
+    g2 = _inc_one(Es, emg_logpdf_grad(x, σ, λI2), q, λs, λI2)
+    l, v1, v2 = mix2(log1p(-ρ) + g1[1], log(ρ) + g2[1])
+    return l, -(v1 * g1[2] + v2 * g2[2]), v1 * g1[3] + v2 * g2[3], v1 * g1[4] + v2 * g2[4], v1 * g1[5] + v2 * g2[5],
+           v1 * g1[6], v2 * g2[6], v2 / ρ - v1 / (1 - ρ)
+end
+
+"`log f₁` of the residual `x = y - μ` with an incident added (see `paceinc_row_vg`), generic (any number type)."
+function paceinc_logpdf(x, σ, q, λs, λI1, λI2, ρ)
+    Es = -log(λs) + emg_logkernel(x, σ, λs)
+    function g(λI)
+        EI = -log(λI) + emg_logkernel(x, σ, λI)
+        lA, lB = log(λI) + EI, log(λs) + Es
+        lH = (λI > λs ? lA + log1mexp(lB - lA) - log(λI - λs) : lB + log1mexp(lA - lB) - log(λs - λI))
+        return logaddexp(log1p(-q) + EI, log(q) + lH)
+    end
+    return logaddexp(log1p(-ρ) + g(λI1), log(ρ) + g(λI2))
+end
+
 # Value and (μ, σ, π, λ, ρ, λ2) derivatives of one row of the big-loss model:
 # `pacebig_logpdf(y - μ, …)` for a timed row, `pacebig_loginterval(lo - μ, hi - μ, …)`
 # for a lapped one (#102). Only the three components (pace noise, the two EMGs)

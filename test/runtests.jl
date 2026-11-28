@@ -1428,6 +1428,28 @@ end
                                                                   dense_scalars = true, external = Diomedes.block_nuts(b1.Minv, b1.ϵ))
     end
 
+    @testset "an incident on a pace + loss row (#128)" begin
+        D = Diomedes
+        quad(f, a, b; n = 100_000) = (h = (b - a) / n; h * (0.5f(a) + sum(f(a + k * h) for k in 1:(n - 1)) + 0.5f(b)))
+        σ, q, λs, λ1, λ2, ρ = 0.5, 0.2, 1.2, 40.0, 300.0, 0.05
+        for x in (0.3, 2.0, 25.0, 120.0)             # the closed form against the convolution, numerically
+            num = (1 - ρ) * quad(s -> exp(D.paceloss_logpdf(x - s, σ, q, λs)) * exp(-s / λ1) / λ1, 0.0, 30λ1) +
+                  ρ * quad(s -> exp(D.paceloss_logpdf(x - s, σ, q, λs)) * exp(-s / λ2) / λ2, 0.0, 30λ2)
+            @test exp(D.paceinc_logpdf(x, σ, q, λs, λ1, λ2, ρ)) ≈ num rtol = 1e-4
+            @test D.paceinc_row_vg(x, 0.0, σ, q, λs, λ1, λ2, ρ)[1] ≈ D.paceinc_logpdf(x, σ, q, λs, λ1, λ2, ρ)
+        end
+        # an incident smaller than the lap's own losses: the weighted difference the other way round
+        @test D.paceinc_logpdf(1.0, σ, q, 3.0, 2.0, 300.0, ρ) ≈ D.paceinc_row_vg(1.0, 0.0, σ, q, 3.0, 2.0, 300.0, ρ)[1]
+        # the derivatives in (μ, σ, q, λs, λI1, λI2, ρ) against central differences
+        θ = [0.4, 0.6, 0.25, 1.5, 35.0, 250.0, 0.07]
+        for y in (-0.5, 3.0, 60.0)
+            f(t) = D.paceinc_row_vg(y, t...)[1]
+            g = collect(D.paceinc_row_vg(y, θ...)[2:end])
+            fd = [(f(θ .+ (1e-6 * θ[i]) .* (1:7 .== i)) - f(θ .- (1e-6 * θ[i]) .* (1:7 .== i))) / (2e-6 * θ[i]) for i in 1:7]
+            @test g ≈ fd rtol = 1e-5
+        end
+    end
+
     @testset "joint race + lap model (#128)" begin
         rng = Xoshiro(128)
         res = fetch_results(ErgastCSV(joinpath(FIXTURES, "ergast")), 2019)
