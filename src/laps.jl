@@ -1242,8 +1242,12 @@ Lap time (% of the race's median clean lap) = race intercept + race slope·frac
         μ_x ~ IsoNormalVec(0.0, 20.0, nt)                         # each lap type's mean shift, % of the clean lap
         τ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # spread of its groups' shifts
         u_x ~ StdNormalVec(length(d.group_type))
-        σ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)    # each type's lap noise (Student-t(4) scale)
-        @addlogprob! other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl, d)
+        # each type's lap noise, as the clean laps' pace + loss: a Gaussian scale and an exponential loss
+        # (probability, mean size); in this form an incident's size convolves exactly (#128)
+        σ_x ~ filldist(truncated(Normal(0, 5); lower = 0), nt)
+        a_qx ~ filldist(Normal(-1.5, 1.5), nt)                    # logit of a lap's loss probability
+        a_lx ~ filldist(Normal(log(5.0), 1.5), nt)                # log of the mean loss, % of the clean lap
+        @addlogprob! other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, a_qx, a_lx, xl, d)
     end
 end
 
@@ -1396,31 +1400,35 @@ function other_laps_init(d::LapData, xl::OtherLaps)
     μ_x = [mean(gm[xl.gt .== t]) for t in 1:nt]
     τ_x = [count(==(t), xl.gt) > 1 ? max(std(gm[xl.gt .== t]), 0.5) : 1.0 for t in 1:nt]
     resid = d.x_y .- gm[d.x_group]
-    σ_x = [count(==(t), xl.xt) > 1 ? max(std(resid[xl.xt .== t]), 0.5) : 1.0 for t in 1:nt]
-    return (; μ_x, τ_x, u_x = (gm .- μ_x[xl.gt]) ./ τ_x[xl.gt], σ_x)
+    # the Gaussian scale from the middle of each type's residuals (MAD), the loss from what lies above
+    σ_x = [count(==(t), xl.xt) > 1 ? max(1.4826 * median(abs.(resid[xl.xt .== t] .- median(resid[xl.xt .== t]))), 0.5) : 1.0
+           for t in 1:nt]
+    a_qx = fill(-1.5, nt)
+    a_lx = [let r = resid[xl.xt .== t], hi = r[r .> 2σ_x[t]]; log(isempty(hi) ? 5.0 : max(mean(hi), 1.0)) end for t in 1:nt]
+    return (; μ_x, τ_x, u_x = (gm .- μ_x[xl.gt]) ./ τ_x[xl.gt], σ_x, a_qx, a_lx)
 end
 
 """
-    other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl::OtherLaps, d::LapData)
+    other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, a_qx, a_lx, xl::OtherLaps, d::LapData)
 
 Log likelihood of the other laps (`alllaps`, #128): lap k of driver c, car m, race r and group g,
 
-    y_k ~ μ_k + σ_t·t(4),   μ_k = γ_r + ν_g + a_c + b_m + x_s - (the race's clean-lap mean of a + b + x),
+    y_k = μ_k + ε + L,  ε ~ N(0, σ_t),  L ~ q_t·Exp(λ_t),
+    μ_k = γ_r + ν_g + a_c + b_m + x_s - (the race's clean-lap mean of a + b + x),
 
-with ν_g = μ_x[t] + τ_x[t]·u_g the group's shift (pooled by lap type t) and x_s the car's race-walk
+with q_t = logistic(a_qx[t]), λ_t = exp(a_lx[t]) (the clean laps' pace + loss form, so an incident's size
+convolves exactly), ν_g = μ_x[t] + τ_x[t]·u_g the group's shift (pooled by lap type t) and x_s the car's race-walk
 state at that race. The drivers' and cars' effects are on every lap, as the race model's are on the
 whole race time; the race-mean term puts them on the clean laps' centring (each clean lap's terms
 enter relative to its race's mean), and the group shifts take the rest.
 """
-function other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, xl::OtherLaps, d::LapData)
+function other_lap_loglik(γ, a, b, xr, μ_x, τ_x, u_x, σ_x, a_qx, a_lx, xl::OtherLaps, d::LapData)
     ν = μ_x[xl.gt] .+ τ_x[xl.gt] .* u_x
     rw = size(xl.Wx, 2) > 0
     hb = xl.Wa * a .+ xl.Wb * b .+ (rw ? xl.Wx * xr : zeros(size(xl.Wa, 1)))
     car = rw ? b[d.x_mach] .+ xr[xl.state] : b[d.x_mach]
     μ = γ[d.x_race] .+ ν[d.x_group] .+ a[d.x_comp] .+ car .- hb[d.x_race]
-    s = σ_x[xl.xt]
-    z = (d.x_y .- μ) ./ s
-    return sum(-2.5 .* log1p.(z .^ 2 ./ 4) .- log.(s)) + length(z) * (loggamma(2.5) - loggamma(2.0) - 0.5 * log(4π))
+    return sum(paceloss_logpdf.(d.x_y .- μ, σ_x[xl.xt], logistic.(a_qx[xl.xt]), exp.(a_lx[xl.xt])))
 end
 
 """
@@ -1549,7 +1557,7 @@ end
 # (2011–2019) skips that phase.
 
 const START_PARAMS = (:γ1, :τ_sd, :u_sd, :τ_sc, :u_sc, :g1, :σ1, :a_π1, :a_λ1)
-const OTHER_PARAMS = (:μ_x, :τ_x, :u_x, :σ_x)    # the other laps (`alllaps`, #128)
+const OTHER_PARAMS = (:μ_x, :τ_x, :u_x, :σ_x, :a_qx, :a_lx)    # the other laps (`alllaps`, #128)
 OTHER_TYPES(d::LapData) = sort(unique(d.group_type))
 const AGE_PARAMS = (:τ_age, :e_age)
 # Prior scale of the second-order age walk's τ_age (#124): on 2021–2026's ages the basis's largest singular value is
@@ -1658,7 +1666,9 @@ lap_layout(d::LapData; tyres::Bool = true, slopes::Bool = false, dev::Bool = fal
                           :μ_x => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
                           :τ_x => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
                           :u_x => (length(d.group_type), d.group_label),
-                          :σ_x => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)])])
+                          :σ_x => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
+                          :a_qx => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)]),
+                          :a_lx => (length(OTHER_TYPES(d)), [string(LAP_TYPES[t]) for t in OTHER_TYPES(d)])])
 
 # Inverse-metric entries for blocks a warm start's old fit doesn't have (career
 # slopes or car development added to a fit without them), on the sampler's scale

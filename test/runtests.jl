@@ -1581,13 +1581,14 @@ end
         nr = length(d.races)
         θ = (; σ_comp = 0.3, σ_mach = 0.3, σ = 0.5, a_comp = 0.2 .* randn(rng, 2), b_mach = 0.1 .* randn(rng, 2), μ_γ = 0.0,
              γ = 0.1 .* randn(rng, nr), μ_δ = 0.0, τ_δ = 0.3, δ = randn(rng, nr), β = [0.02, 0.01], a_π = -1.2, a_λ = 0.3)
-        θx = (; μ_x = 10 .* randn(rng, 4), τ_x = fill(2.0, 4), u_x = randn(rng, 4), σ_x = fill(1.5, 4))
+        θx = (; μ_x = 10 .* randn(rng, 4), τ_x = fill(2.0, 4), u_x = randn(rng, 4), σ_x = fill(1.5, 4),
+              a_qx = [-1.0, -2.0, -1.5, -0.5], a_lx = log.([3.0, 6.0, 2.0, 8.0]))
         a, b = θ.a_comp .- mean(θ.a_comp), θ.b_mach .- mean(θ.b_mach)
         hb = [mean(a[d.comp[d.race .== r]] .+ b[d.mach[d.race .== r]]) for r in 1:nr]
         ν = θx.μ_x[xl.gt] .+ θx.τ_x[xl.gt] .* θx.u_x
-        ll = sum(logpdf(Distributions.LocationScale(θ.γ[d.x_race[k]] + ν[d.x_group[k]] + a[d.x_comp[k]] + b[d.x_mach[k]] -
-                                                    hb[d.x_race[k]], θx.σ_x[xl.xt[k]], Distributions.TDist(4)), d.x_y[k])
-                 for k in eachindex(d.x_y))
+        ll = sum(Diomedes.paceloss_logpdf(d.x_y[k] - (θ.γ[d.x_race[k]] + ν[d.x_group[k]] + a[d.x_comp[k]] + b[d.x_mach[k]] -
+                                                     hb[d.x_race[k]]), θx.σ_x[xl.xt[k]], Diomedes.logistic(θx.a_qx[xl.xt[k]]),
+                                          exp(θx.a_lx[xl.xt[k]])) for k in eachindex(d.x_y))
         @test Turing.DynamicPPL.loglikelihood(lm1, merge(θ, θx)) - Turing.DynamicPPL.loglikelihood(lm0, θ) ≈ ll
         LDF = Turing.DynamicPPL.LogDensityFunction
         LDP = Turing.DynamicPPL.LogDensityProblems
@@ -1599,10 +1600,10 @@ end
         end
         # the other laps' terms come last in the sampler's vector, and the layout knows them
         lay = Diomedes.lap_layout(d; alllaps = true)
-        @test [first(p) for p in lay[end-3:end]] == [:μ_x, :τ_x, :u_x, :σ_x]
+        @test [first(p) for p in lay[end-5:end]] == [:μ_x, :τ_x, :u_x, :σ_x, :a_qx, :a_lx]
         @test sum(first(last(p)) for p in lay) == LDP.dimension(rd)
-        @test sum(first(last(p)) for p in Diomedes.lap_layout(d)) == LDP.dimension(rd) - (3 * 4 + 4)
-        @test last(last(lay[end-1])) == d.group_label
+        @test sum(first(last(p)) for p in Diomedes.lap_layout(d)) == LDP.dimension(rd) - (5 * 4 + 4)
+        @test last(last(lay[end-3])) == d.group_label
     end
 
     @testset "lap-time model (#12)" begin
